@@ -21,13 +21,13 @@ function Utils.HelpMarker(desc)
         error("Utils.HelpMarker: description parameter is required")
     end
     
-    imgui.SameLine(globals.ctx)
-    imgui.TextDisabled(globals.ctx, '(?)')
-    if imgui.BeginItemTooltip(globals.ctx) then
-        imgui.PushTextWrapPos(globals.ctx, imgui.GetFontSize(globals.ctx) * Constants.UI.HELP_MARKER_TEXT_WRAP)
-        imgui.Text(globals.ctx, desc)
-        imgui.PopTextWrapPos(globals.ctx)
-        imgui.EndTooltip(globals.ctx)
+    globals.imgui.SameLine(globals.ctx)
+    globals.imgui.TextDisabled(globals.ctx, '(?)')
+    if globals.imgui.BeginItemTooltip(globals.ctx) then
+        globals.imgui.PushTextWrapPos(globals.ctx, globals.imgui.GetFontSize(globals.ctx) * Constants.UI.HELP_MARKER_TEXT_WRAP)
+        globals.imgui.Text(globals.ctx, desc)
+        globals.imgui.PopTextWrapPos(globals.ctx)
+        globals.imgui.EndTooltip(globals.ctx)
     end
 end
 
@@ -506,7 +506,7 @@ function Utils.safeOpenPopup(popupName)
     -- Only open if not already active and if we're in a valid ImGui context
     if not globals.activePopups[popupName] then
         local success = pcall(function()
-            imgui.OpenPopup(globals.ctx, popupName)
+            globals.imgui.OpenPopup(globals.ctx, popupName)
         end)
         
         if success then
@@ -522,7 +522,7 @@ end
 function Utils.safeClosePopup(popupName)
     -- Use pcall to prevent crashes
     pcall(function()
-        imgui.CloseCurrentPopup(globals.ctx)
+        globals.imgui.CloseCurrentPopup(globals.ctx)
     end)
     
     -- Clean up the popup tracking
