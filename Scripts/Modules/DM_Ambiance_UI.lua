@@ -905,17 +905,19 @@ function UI.ShowMainWindow(open)
         local rightPanelWidth = windowWidth * 0.63
 
         -- Left panel: groups and containers
-        -- For BeginChild/EndChild: ALWAYS call EndChild regardless of return value
-        globals.imgui.BeginChild(globals.ctx, "LeftPanel", leftPanelWidth, 0)
-        drawLeftPanel(leftPanelWidth)
-        globals.imgui.EndChild(globals.ctx)
+        local leftVisible = globals.imgui.BeginChild(globals.ctx, "LeftPanel", leftPanelWidth, 0)
+        if leftVisible then
+            drawLeftPanel(leftPanelWidth)
+            globals.imgui.EndChild(globals.ctx)
+        end
 
         -- Right panel: container or group details
         globals.imgui.SameLine(globals.ctx)
-        -- For BeginChild/EndChild: ALWAYS call EndChild regardless of return value
-        globals.imgui.BeginChild(globals.ctx, "RightPanel", rightPanelWidth, 0)
-        drawRightPanel(rightPanelWidth)
-        globals.imgui.EndChild(globals.ctx)
+        local rightVisible = globals.imgui.BeginChild(globals.ctx, "RightPanel", rightPanelWidth, 0)
+        if rightVisible then
+            drawRightPanel(rightPanelWidth)
+            globals.imgui.EndChild(globals.ctx)
+        end
 
         -- CRITICAL: Only call End() if Begin() returned true
         globals.imgui.End(globals.ctx)
