@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="DM Renamer" commit="76ab68e76f40fe918cf481c4f10d5c5fda9ed31f">
+<index version="1" name="DM Ambiance Creator" commit="76ab68e76f40fe918cf481c4f10d5c5fda9ed31f">
   <category name="Scripts">
     <reapack name="DM_Ambiance Creator.lua" type="script" desc="DM_Ambiance Creator">
       <metadata>
