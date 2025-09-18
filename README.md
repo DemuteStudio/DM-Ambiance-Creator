@@ -35,7 +35,7 @@ To install Reapack follow these steps:
 
 If you have Reapack installed go to **Extensions->Reapack->Import Repositories** paste the following link there and press **Ok**.
 
---> https://raw.githubusercontent.com/DemuteStudio/DM-Ambiance-Creator/refs/heads/main/index.xml
+--> https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/main/index.xml
 
 Then in **Extensions->Reapack->Manage repositories** you should see **Ambiance Creator** double click it and then press **Install/update Ambiance Creator** and choose **Install all packages in this repository**. It should Install without any errors.
 
