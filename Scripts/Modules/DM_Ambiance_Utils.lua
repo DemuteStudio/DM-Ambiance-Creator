@@ -106,36 +106,47 @@ function Utils.getAllContainersInGroup(parentGroupIdx)
     if not parentGroupIdx then
         return {}
     end
-    
+
     local containers = {}
     local groupCount = reaper.CountTracks(0)
     local folderDepth = 1  -- We start inside the parent folder
-    
+    local currentLevel = 1  -- Track nesting level (1 = direct children of parent)
+
     -- Start scanning from the track right after the parent
     for i = parentGroupIdx + 1, groupCount - 1 do
         local track = reaper.GetTrack(0, i)
         if not track then break end
-        
+
         local _, name = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
         local depth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
-        
-        -- Add this track as a container
-        table.insert(containers, {
-            track = track,
-            index = i,
-            name = name,
-            originalDepth = depth
-        })
-        
+
+        -- Only add tracks at level 1 (direct children of the parent group)
+        -- This excludes multi-channel child tracks (level 2)
+        if currentLevel == 1 then
+            table.insert(containers, {
+                track = track,
+                index = i,
+                name = name,
+                originalDepth = depth
+            })
+        end
+
+        -- Update the nesting level for the next track
+        if depth == 1 then
+            currentLevel = currentLevel + 1  -- Entering a sub-folder (going deeper)
+        elseif depth == -1 then
+            currentLevel = currentLevel - 1  -- Exiting a folder (going up)
+        end
+
         -- Update folder depth
         folderDepth = folderDepth + depth
-        
+
         -- Stop if we exit the parent folder
         if folderDepth <= 0 then
             break
         end
     end
-    
+
     return containers
 end
 
@@ -146,32 +157,43 @@ function Utils.fixGroupFolderStructure(parentGroupIdx)
     if not parentGroupIdx or parentGroupIdx < 0 then
         return false
     end
-    
+
     -- Get fresh container list after any track insertions/deletions
     local containers = Utils.getAllContainersInGroup(parentGroupIdx)
-    
+
     if #containers == 0 then
         return false
     end
-    
-    -- Set proper folder depths with the correct logic
+
+    -- Set proper folder depths for containers
+    -- Multi-channel containers (depth = 1) manage their own children
     for i = 1, #containers do
         local container = containers[i]
-        if i == #containers then
-            -- Last container should end the folder
-            reaper.SetMediaTrackInfo_Value(container.track, "I_FOLDERDEPTH", Constants.TRACKS.FOLDER_END_DEPTH)
+
+        -- Check if this container is a multi-channel folder (depth = 1)
+        if container.originalDepth == 1 then
+            -- Don't modify multi-channel folders - they're already configured
+            -- Their children handle the folder structure
         else
-            -- All other containers should be normal tracks in folder
-            reaper.SetMediaTrackInfo_Value(container.track, "I_FOLDERDEPTH", Constants.TRACKS.NORMAL_TRACK_DEPTH)
+            -- Normal container without children
+            if i == #containers then
+                -- Last non-multi-channel container closes the parent group
+                reaper.SetMediaTrackInfo_Value(container.track, "I_FOLDERDEPTH", Constants.TRACKS.FOLDER_END_DEPTH)
+            else
+                -- Normal container in the middle
+                reaper.SetMediaTrackInfo_Value(container.track, "I_FOLDERDEPTH", Constants.TRACKS.NORMAL_TRACK_DEPTH)
+            end
         end
     end
-    
+
+    -- Note: If the last container is multi-channel, generateGroups() handles closing the parent folder
+
     -- Ensure the parent group has the correct folder start depth
     local parentTrack = reaper.GetTrack(0, parentGroupIdx)
     if parentTrack then
         reaper.SetMediaTrackInfo_Value(parentTrack, "I_FOLDERDEPTH", Constants.TRACKS.FOLDER_START_DEPTH)
     end
-    
+
     return true
 end
 
@@ -1381,6 +1403,27 @@ function Utils.processQueuedRandomizationUpdates()
     end
     -- Clear the queue
     randomizationUpdateQueue = {}
+end
+
+-- Update container track routing for multi-channel configuration
+-- @param containerTrack userdata: The container track to configure
+-- @param channelMode number: The channel mode (from Constants.CHANNEL_MODES)
+function Utils.updateContainerRouting(containerTrack, channelMode)
+    if not containerTrack then
+        return
+    end
+
+    if channelMode == nil or channelMode == 0 then
+        -- Default stereo mode
+        reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", 2)
+    else
+        local config = globals.Constants.CHANNEL_CONFIGS[channelMode]
+        if config then
+            -- Use totalChannels if defined, otherwise use channels
+            local requiredChannels = config.totalChannels or config.channels
+            reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", requiredChannels)
+        end
+    end
 end
 
 return Utils

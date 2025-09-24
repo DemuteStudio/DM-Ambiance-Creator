@@ -59,11 +59,258 @@ function Generation.deleteExistingGroups()
   end
 end
 
+-- Create multi-channel track structure for a container
+-- @param containerTrack userdata: The container track that will become a folder
+-- @param container table: The container configuration
+-- @return table: Array of channel tracks (including the container if in default mode)
+function Generation.createMultiChannelTracks(containerTrack, container)
+    if not container.channelMode or container.channelMode == 0 then
+        -- Default mode, no child tracks, generate on container
+        return {containerTrack}
+    end
+
+    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+    if not config or config.channels == 0 then
+        return {containerTrack}
+    end
+
+    -- Get the active configuration (with variant if applicable)
+    local activeConfig = config
+    if config.hasVariants then
+        activeConfig = config.variants[container.channelVariant or 0]
+    end
+
+    local channelTracks = {}
+
+    -- Update container track to handle multi-channel
+    globals.Utils.updateContainerRouting(containerTrack, container.channelMode)
+
+    -- Check if this is the last container in the group
+    local isLastInGroup = container.isLastInGroup or false
+
+    -- Container track becomes a folder
+    reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 1)
+
+    -- Get container track index
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+
+    -- Create all child tracks first, then configure them
+    -- This ensures the indices remain stable during configuration
+
+    -- Create child tracks in REVERSE order
+    -- Always insert at containerIdx + 1, which pushes previous tracks down
+    -- This results in the correct final order
+    for i = config.channels, 1, -1 do
+        -- Always insert immediately after the container
+        -- This ensures they're children
+        reaper.InsertTrackAtIndex(containerIdx + 1, false)
+    end
+
+    -- Now configure each track
+    for i = 1, config.channels do
+        -- Get the track at the correct position (container + i)
+        local channelTrack = reaper.GetTrack(0, containerIdx + i)
+
+        -- Name the track
+        local channelLabel = activeConfig.labels[i]
+        local trackName = container.name .. " - " .. channelLabel
+        reaper.GetSetMediaTrackInfo_String(channelTrack, "P_NAME", trackName, true)
+
+        -- Set track to mono (1 channel)
+        reaper.SetMediaTrackInfo_Value(channelTrack, "I_NCHAN", 1)
+
+        -- Disable master send
+        reaper.SetMediaTrackInfo_Value(channelTrack, "B_MAINSEND", 0)
+
+        -- Create send to parent track
+        local sendIdx = reaper.CreateTrackSend(channelTrack, containerTrack)
+        if sendIdx >= 0 then
+            -- Route to single channel (0-based)
+            local destChannel = activeConfig.routing[i] - 1
+
+            -- For mono to mono routing in Reaper:
+            -- Source: 1024 = mono mode (bit 10 set, channel 1)
+            local srcChannels = 1024
+
+            -- Destination: 1024 + channel number for mono routing
+            local dstChannels = 1024 + destChannel
+
+            reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "I_SRCCHAN", srcChannels)
+            reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "I_DSTCHAN", dstChannels)
+            reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "D_VOL", 1.0)  -- Unity gain
+        end
+
+        -- Apply channel-specific pan
+        if container.channelPanning and container.channelPanning[i] then
+            reaper.SetMediaTrackInfo_Value(channelTrack, "D_PAN", container.channelPanning[i])
+        end
+
+        -- Apply channel-specific volume
+        if container.channelVolumes and container.channelVolumes[i] then
+            local linearVol = globals.Utils.dbToLinear(container.channelVolumes[i])
+            reaper.SetMediaTrackInfo_Value(channelTrack, "D_VOL", linearVol)
+        end
+
+        -- Set folder depth (last track closes folder)
+        if i == config.channels then
+            reaper.SetMediaTrackInfo_Value(channelTrack, "I_FOLDERDEPTH", -1)
+        else
+            reaper.SetMediaTrackInfo_Value(channelTrack, "I_FOLDERDEPTH", 0)
+        end
+
+        table.insert(channelTracks, channelTrack)
+
+        -- Verify track was created correctly
+        local parent = reaper.GetParentTrack(channelTrack)
+        if parent ~= containerTrack then
+            -- Force proper folder structure by reapplying folder depth
+            -- This happens if the tracks are not properly nested
+            reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 1)
+            if i == config.channels then
+                reaper.SetMediaTrackInfo_Value(channelTrack, "I_FOLDERDEPTH", -1)
+            else
+                reaper.SetMediaTrackInfo_Value(channelTrack, "I_FOLDERDEPTH", 0)
+            end
+        end
+    end
+
+    -- Force update to ensure proper folder structure
+    reaper.UpdateArrange()
+    reaper.TrackList_AdjustWindows(false)
+
+    -- Additional refresh to ensure hierarchy is visible
+    reaper.Main_OnCommand(40031, 0) -- View: Zoom out project
+    reaper.Main_OnCommand(40295, 0) -- View: Zoom to project
+
+    return channelTracks
+end
+
+-- Get existing channel tracks for a container
+-- @param containerTrack userdata: The container track
+-- @return table: Array of tracks (channel tracks if multi-channel, or just the container)
+function Generation.getExistingChannelTracks(containerTrack)
+    local tracks = {}
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+    local folderDepth = reaper.GetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH")
+
+    if folderDepth == 1 then
+        -- Container is a folder, get ONLY direct children (not sub-folders)
+        local i = containerIdx + 1
+        local depth = 1
+        local currentLevel = 1  -- Track nesting level
+
+        while i < reaper.CountTracks(0) and depth > 0 do
+            local track = reaper.GetTrack(0, i)
+            local childDepth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+
+            -- Only add direct children (at level 1)
+            if currentLevel == 1 then
+                table.insert(tracks, track)
+            end
+
+            -- Update depth tracking
+            depth = depth + childDepth
+
+            -- Update level for next track
+            if childDepth == 1 then
+                currentLevel = currentLevel + 1  -- Entering a sub-folder
+            elseif childDepth == -1 then
+                currentLevel = currentLevel - 1  -- Exiting a folder
+            end
+
+            i = i + 1
+        end
+    else
+        -- Single track (default mode)
+        table.insert(tracks, containerTrack)
+    end
+
+    return tracks
+end
+
+-- Clear all items from channel tracks
+-- @param tracks table: Array of tracks to clear
+function Generation.clearChannelTracks(tracks)
+    for _, track in ipairs(tracks) do
+        while reaper.CountTrackMediaItems(track) > 0 do
+            local item = reaper.GetTrackMediaItem(track, 0)
+            reaper.DeleteTrackMediaItem(track, item)
+        end
+    end
+end
+
+-- Delete all child tracks of a container (for mode changes)
+-- @param containerTrack userdata: The container track
+function Generation.deleteContainerChildTracks(containerTrack)
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+    local folderDepth = reaper.GetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH")
+
+    if folderDepth == 1 then
+        -- Container is a folder, delete all children
+        local tracksToDelete = {}
+        local i = containerIdx + 1
+        local depth = 1
+
+        while i < reaper.CountTracks(0) and depth > 0 do
+            local track = reaper.GetTrack(0, i)
+            table.insert(tracksToDelete, track)
+            local childDepth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+            depth = depth + childDepth
+            i = i + 1
+        end
+
+        -- Delete in reverse order
+        for j = #tracksToDelete, 1, -1 do
+            reaper.DeleteTrack(tracksToDelete[j])
+        end
+
+        -- Reset container to non-folder
+        reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 0)
+    end
+end
 
 -- Function to place items for a container with inheritance support
 function Generation.placeItemsForContainer(group, container, containerGroup, xfadeshape)
     -- Get effective parameters considering inheritance from parent group
     local effectiveParams = globals.Structures.getEffectiveContainerParams(group, container)
+
+    -- Determine if we're in multi-channel mode
+    local isMultiChannel = container.channelMode and container.channelMode > 0
+
+    -- Handle multi-channel setup
+    local channelTracks = {}
+    if globals.keepExistingTracks then
+        if isMultiChannel then
+            -- Multi-channel mode: get existing child tracks
+            channelTracks = Generation.getExistingChannelTracks(containerGroup)
+
+            -- Check if channel configuration changed
+            local expectedChannels = globals.Constants.CHANNEL_CONFIGS[container.channelMode].channels
+
+            if #channelTracks ~= expectedChannels then
+                -- Configuration changed, recreate tracks
+                Generation.deleteContainerChildTracks(containerGroup)
+                channelTracks = Generation.createMultiChannelTracks(containerGroup, container)
+            else
+                -- Just clear items from existing tracks
+                Generation.clearChannelTracks(channelTracks)
+            end
+        else
+            -- Default mode: clear items from container itself
+            while reaper.CountTrackMediaItems(containerGroup) > 0 do
+                local item = reaper.GetTrackMediaItem(containerGroup, 0)
+                reaper.DeleteTrackMediaItem(containerGroup, item)
+            end
+            channelTracks = {containerGroup}
+        end
+    else
+        -- Create new structure based on mode
+        if isMultiChannel then
+            channelTracks = Generation.createMultiChannelTracks(containerGroup, container)
+        else
+            channelTracks = {containerGroup}
+        end
+    end
 
     local skippedItems = 0
     local minRequiredLength = 0
@@ -72,7 +319,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
     if effectiveParams.items and #effectiveParams.items > 0 then
         -- Calculate interval based on the selected mode
         local interval = effectiveParams.triggerRate -- Default (Absolute mode)
-        
+
         if effectiveParams.intervalMode == 1 then
             -- Relative mode: Interval is a percentage of time selection length
             interval = (globals.timeSelectionLength * effectiveParams.triggerRate) / 100
@@ -80,16 +327,16 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             -- Coverage mode: Calculate interval based on average item length and desired coverage
             local totalItemLength = 0
             local itemCount = #effectiveParams.items
-            
+
             if itemCount > 0 then
                 for _, item in ipairs(effectiveParams.items) do
                     totalItemLength = totalItemLength + item.length
                 end
-                
+
                 local averageItemLength = totalItemLength / itemCount
                 local desiredCoverage = effectiveParams.triggerRate / 100 -- Convert percentage to ratio
                 local totalNumberOfItems = (globals.timeSelectionLength * desiredCoverage) / averageItemLength
-                
+
                 if totalNumberOfItems > 0 then
                     interval = globals.timeSelectionLength / totalNumberOfItems
                 else
@@ -98,20 +345,28 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             end
         elseif effectiveParams.intervalMode == 3 then
             -- Chunk mode: Generate chunks with sound periods followed by silence periods
-            return Generation.placeItemsChunkMode(effectiveParams, containerGroup, xfadeshape)
+            -- For multi-channel, generate on each track
+            if container.channelMode and container.channelMode > 0 then
+                for _, channelTrack in ipairs(channelTracks) do
+                    Generation.placeItemsChunkMode(effectiveParams, channelTrack, xfadeshape)
+                end
+                return
+            else
+                return Generation.placeItemsChunkMode(effectiveParams, containerGroup, xfadeshape)
+            end
         end
-        
-        -- Référence pour le dernier item créé
-        local lastItemRef = nil
-        -- Flag pour savoir si nous plaçons le premier item
-        local isFirstItem = true
-        -- Position du dernier item
-        local lastItemEnd = globals.startTime
-        
-        while lastItemEnd < globals.endTime do
-    -- Select a random item from the container
-            local randomItemIndex = math.random(1, #effectiveParams.items)
-            local itemData = effectiveParams.items[randomItemIndex]
+
+        -- Generate items on each channel track independently
+        for _, targetTrack in ipairs(channelTracks) do
+            -- Reset for each track
+            local lastItemRef = nil
+            local isFirstItem = true
+            local lastItemEnd = globals.startTime
+
+            while lastItemEnd < globals.endTime do
+                -- Select a random item from the container
+                local randomItemIndex = math.random(1, #effectiveParams.items)
+                local itemData = effectiveParams.items[randomItemIndex]
             
             -- Vérification pour les intervalles négatifs
             if interval < 0 then
@@ -163,19 +418,19 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 break
             end
 
-            -- Create and configure the new item
-            local newItem = reaper.AddMediaItemToTrack(containerGroup)
+            -- Create and configure the new item on current track
+            local newItem = reaper.AddMediaItemToTrack(targetTrack)
             local newTake = reaper.AddTakeToMediaItem(newItem)
-            
+
             -- Configure the item
             local PCM_source = reaper.PCM_Source_CreateFromFile(itemData.filePath)
             reaper.SetMediaItemTake_Source(newTake, PCM_source)
             reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
-            
+
             -- Trim item so it never exceeds the selection end
             local maxLen = globals.endTime - position
             local actualLen = math.min(itemData.length, maxLen)
-            
+
             reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
             reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
             reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
@@ -201,7 +456,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 -- Use envelope instead of directly modifying the property
                 Items.createTakePanEnvelope(newTake, randomPan)
             end
-            
+
             -- Apply fade in if enabled
             if effectiveParams.fadeInEnabled then
                 local fadeInDuration = effectiveParams.fadeInDuration or 0.1
@@ -211,12 +466,12 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 end
                 -- Ensure fade doesn't exceed item length
                 fadeInDuration = math.min(fadeInDuration, actualLen)
-                
+
                 reaper.SetMediaItemInfo_Value(newItem, "D_FADEINLEN", fadeInDuration)
                 reaper.SetMediaItemInfo_Value(newItem, "C_FADEINSHAPE", effectiveParams.fadeInShape or 0)
                 reaper.SetMediaItemInfo_Value(newItem, "D_FADEINDIR", effectiveParams.fadeInCurve or 0.0)
             end
-            
+
             -- Apply fade out if enabled
             if effectiveParams.fadeOutEnabled then
                 local fadeOutDuration = effectiveParams.fadeOutDuration or 0.1
@@ -226,7 +481,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 end
                 -- Ensure fade doesn't exceed item length
                 fadeOutDuration = math.min(fadeOutDuration, actualLen)
-                
+
                 reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", fadeOutDuration)
                 reaper.SetMediaItemInfo_Value(newItem, "C_FADEOUTSHAPE", effectiveParams.fadeOutShape or 0)
                 reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
@@ -237,12 +492,14 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 Utils.createCrossfade(lastItemRef, newItem, xfadeshape)
             end
 
-            -- Update the last item end position and reference using the trimmed length
+            -- Update references for next iteration
             lastItemEnd = position + actualLen
             lastItemRef = newItem
             ::continue_loop::
-        end
-        -- Message d'erreur pour les items skippés (à ajouter à la fin de la fonction)
+            end  -- End of while loop for current track
+        end  -- End of for loop for each channel track
+
+        -- Message d'erreur pour les items skippés
         if skippedItems > 0 then
             local message = string.format(
                 "Warning: %d item(s) were skipped in container '%s'\n" ..
@@ -356,22 +613,62 @@ function Generation.generateGroups()
                 reaper.InsertTrackAtIndex(containerGroupIdx, true)
                 local containerGroup = reaper.GetTrack(0, containerGroupIdx)
                 reaper.GetSetMediaTrackInfo_String(containerGroup, "P_NAME", container.name, true)
-                
-                -- Set folder state based on position
+
+                -- Check if this is a multi-channel container
+                local isMultiChannel = container.channelMode and container.channelMode > 0
+
+                -- Set folder state based on position and channel mode
                 local folderState = 0 -- Default: normal group in a folder
-                if j == containerCount then
-                    -- If it's the last container, mark as folder end
-                    folderState = -1
+                if not isMultiChannel then
+                    -- Only set folder state for non-multi-channel containers
+                    if j == containerCount then
+                        -- If it's the last container, mark as folder end
+                        folderState = -1
+                    end
+                    reaper.SetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH", folderState)
+                else
+                    -- For multi-channel containers, don't set folder depth here
+                    -- Let createMultiChannelTracks handle it
+                    -- But we need to pass info about whether it's the last container
+                    container.isLastInGroup = (j == containerCount)
                 end
-                reaper.SetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH", folderState)
-                
+
                 -- Apply container track volume
                 local volumeDB = container.trackVolume or 0.0
                 local linearVolume = Utils.dbToLinear(volumeDB)
                 reaper.SetMediaTrackInfo_Value(containerGroup, "D_VOL", linearVolume)
-                
+
                 -- Place items on the timeline according to the chosen mode
                 Generation.placeItemsForContainer(group, container, containerGroup, xfadeshape)
+            end
+
+            -- After all containers are created, ensure proper folder closure
+            -- If the last container was multi-channel, we need to close the parent group
+            local lastContainer = group.containers[#group.containers]
+            if lastContainer and lastContainer.channelMode and lastContainer.channelMode > 0 then
+                -- The last container is multi-channel, its children need to close the parent group too
+                -- Find the last track in the entire group
+                local parentGroupIdx = reaper.GetMediaTrackInfo_Value(parentGroup, "IP_TRACKNUMBER") - 1
+                local depth = 1
+                local lastTrackIdx = parentGroupIdx
+
+                -- Find the last track in this group's hierarchy
+                local i = parentGroupIdx + 1
+                while i < reaper.CountTracks(0) and depth > 0 do
+                    lastTrackIdx = i
+                    local track = reaper.GetTrack(0, i)
+                    local trackDepth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+                    depth = depth + trackDepth
+                    i = i + 1
+                end
+
+                -- Get the actual last track and ensure it closes the parent group
+                if lastTrackIdx > parentGroupIdx then
+                    local lastTrack = reaper.GetTrack(0, lastTrackIdx)
+                    -- This track should close both its container and the parent group
+                    -- Since Reaper doesn't support -2, we use -1 which should close the outermost open folder
+                    reaper.SetMediaTrackInfo_Value(lastTrack, "I_FOLDERDEPTH", -1)
+                end
             end
         end
     end
@@ -578,9 +875,12 @@ function Generation.generateSingleContainer(groupIndex, containerIndex)
 
     if containerGroup then
         -- Container exists, clear it and regenerate
-        if globals.overrideExistingTracks then
-            Utils.clearGroupItemsInTimeSelection(containerGroup)
+        if globals.keepExistingTracks then
+            -- For multi-channel, only clear items from channel tracks
+            local channelTracks = Generation.getExistingChannelTracks(containerGroup)
+            Generation.clearChannelTracks(channelTracks)
         else
+            -- Delete all items from container and its children
             Utils.clearGroupItems(containerGroup)
         end
 
@@ -589,7 +889,7 @@ function Generation.generateSingleContainer(groupIndex, containerIndex)
         local linearVolume = Utils.dbToLinear(volumeDB)
         reaper.SetMediaTrackInfo_Value(containerGroup, "D_VOL", linearVolume)
 
-        -- Regenerate items for this container
+        -- Regenerate items for this container (will handle multi-channel internally)
         Generation.placeItemsForContainer(group, container, containerGroup, xfadeshape)
 
     else

@@ -78,6 +78,11 @@ function Structures.createContainer(name)
         intervalMode = Constants.TRIGGER_MODES.ABSOLUTE,
         overrideParent = false, -- Flag to override parent group settings
         trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT, -- Container track volume in dB
+        -- Multi-channel support
+        channelMode = Constants.CHANNEL_MODES.DEFAULT,  -- Default to stereo
+        channelVariant = 0,  -- Channel variant (0=ITU/Dolby, 1=SMPTE)
+        channelPanning = {},  -- Pan values per channel {1: 0.0, 2: -0.5, etc}
+        channelVolumes = {},  -- Volume per channel in dB
         -- Chunk Mode parameters
         chunkDuration = Constants.DEFAULTS.CHUNK_DURATION,
         chunkSilence = Constants.DEFAULTS.CHUNK_SILENCE,

@@ -50,9 +50,71 @@ Constants.TRACKS = {
 -- Trigger Mode Constants
 Constants.TRIGGER_MODES = {
     ABSOLUTE = 0,                       -- Absolute interval mode
-    RELATIVE = 1,                       -- Relative interval mode  
+    RELATIVE = 1,                       -- Relative interval mode
     COVERAGE = 2,                       -- Coverage interval mode
     CHUNK = 3,                          -- Chunk mode: structured sound/silence periods
+}
+
+-- Channel Mode Constants
+Constants.CHANNEL_MODES = {
+    DEFAULT = 0,                        -- Standard stereo (1/2)
+    QUAD = 1,                          -- 4.0: L, R, LS, RS
+    FIVE_ZERO = 2,                     -- 5.0: L, R, C, LS, RS or L, C, R, LS, RS
+    SEVEN_ZERO = 3                     -- 7.0: L, R, C, LS, RS, LB, RB or L, C, R, LS, RS, LB, RB
+}
+
+-- Channel Configuration Details
+Constants.CHANNEL_CONFIGS = {
+    [0] = {
+        name = "Default (Stereo)",
+        channels = 0,  -- No child tracks, generate on container
+        totalChannels = 2,
+        routing = nil,
+        labels = nil
+    },
+    [1] = {
+        name = "4.0 Quad",
+        channels = 4,
+        totalChannels = 4,
+        routing = {1, 2, 3, 4},  -- Each track to single channel
+        labels = {"L", "R", "LS", "RS"}
+    },
+    [2] = {
+        name = "5.0",
+        channels = 5,
+        totalChannels = 5,
+        hasVariants = true,
+        variants = {
+            [0] = {
+                name = "Dolby/ITU",
+                routing = {1, 2, 3, 4, 5},
+                labels = {"L", "R", "C", "LS", "RS"}
+            },
+            [1] = {
+                name = "SMPTE",
+                routing = {1, 3, 2, 4, 5},  -- C in position 2
+                labels = {"L", "C", "R", "LS", "RS"}
+            }
+        }
+    },
+    [3] = {
+        name = "7.0",
+        channels = 7,
+        totalChannels = 7,
+        hasVariants = true,
+        variants = {
+            [0] = {
+                name = "Dolby/ITU",
+                routing = {1, 2, 3, 4, 5, 6, 7},
+                labels = {"L", "R", "C", "LS", "RS", "LB", "RB"}
+            },
+            [1] = {
+                name = "SMPTE",
+                routing = {1, 3, 2, 4, 5, 6, 7},  -- C in position 2
+                labels = {"L", "C", "R", "LS", "RS", "LB", "RB"}
+            }
+        }
+    }
 }
 
 -- Fade Shape Constants (Reaper API values)
