@@ -86,12 +86,12 @@ Constants.CHANNEL_CONFIGS = {
         hasVariants = true,
         variants = {
             [0] = {
-                name = "Dolby/ITU",
+                name = "Dolby/ITU (L R C LS RS)",
                 routing = {1, 2, 3, 4, 5},
                 labels = {"L", "R", "C", "LS", "RS"}
             },
             [1] = {
-                name = "SMPTE",
+                name = "SMPTE (L C R LS RS)",
                 routing = {1, 3, 2, 4, 5},  -- C in position 2
                 labels = {"L", "C", "R", "LS", "RS"}
             }
@@ -104,12 +104,12 @@ Constants.CHANNEL_CONFIGS = {
         hasVariants = true,
         variants = {
             [0] = {
-                name = "Dolby/ITU",
+                name = "Dolby/ITU (L R C LS RS LB RB)",
                 routing = {1, 2, 3, 4, 5, 6, 7},
                 labels = {"L", "R", "C", "LS", "RS", "LB", "RB"}
             },
             [1] = {
-                name = "SMPTE",
+                name = "SMPTE (L C R LS RS LB RB)",
                 routing = {1, 3, 2, 4, 5, 6, 7},  -- C in position 2
                 labels = {"L", "C", "R", "LS", "RS", "LB", "RB"}
             }

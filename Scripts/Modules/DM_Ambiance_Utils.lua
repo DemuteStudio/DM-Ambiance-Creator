@@ -1426,4 +1426,36 @@ function Utils.updateContainerRouting(containerTrack, channelMode)
     end
 end
 
+-- Ensure parent tracks have enough channels for multi-channel routing
+-- Recursively updates parent tracks up to the Master if necessary
+-- @param childTrack userdata: The child track requiring channels
+-- @param requiredChannels number: Minimum number of channels needed
+function Utils.ensureParentHasEnoughChannels(childTrack, requiredChannels)
+    if not childTrack or not requiredChannels then
+        return
+    end
+
+    local parentTrack = reaper.GetParentTrack(childTrack)
+    if parentTrack then
+        local parentChannels = reaper.GetMediaTrackInfo_Value(parentTrack, "I_NCHAN")
+        if parentChannels < requiredChannels then
+            reaper.SetMediaTrackInfo_Value(parentTrack, "I_NCHAN", requiredChannels)
+            -- Recursively update grand-parents if necessary
+            Utils.ensureParentHasEnoughChannels(parentTrack, requiredChannels)
+        end
+    else
+        -- No parent track means we might be at a top-level track
+        -- Check if we need to update the Master track
+        local masterTrack = reaper.GetMasterTrack(0)
+        if masterTrack then
+            local masterChannels = reaper.GetMediaTrackInfo_Value(masterTrack, "I_NCHAN")
+            -- Ensure Master has at least the required channels (minimum 2 for stereo)
+            local neededChannels = math.max(2, requiredChannels)
+            if masterChannels < neededChannels then
+                reaper.SetMediaTrackInfo_Value(masterTrack, "I_NCHAN", neededChannels)
+            end
+        end
+    end
+end
+
 return Utils

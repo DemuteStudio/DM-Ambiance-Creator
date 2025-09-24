@@ -85,6 +85,10 @@ function Generation.createMultiChannelTracks(containerTrack, container)
     -- Update container track to handle multi-channel
     globals.Utils.updateContainerRouting(containerTrack, container.channelMode)
 
+    -- Ensure parent tracks have enough channels for proper routing
+    local requiredChannels = config.totalChannels or config.channels
+    globals.Utils.ensureParentHasEnoughChannels(containerTrack, requiredChannels)
+
     -- Check if this is the last container in the group
     local isLastInGroup = container.isLastInGroup or false
 
@@ -673,9 +677,32 @@ function Generation.generateGroups()
         end
     end
 
+    -- Ensure Master track has enough channels for all multi-channel groups
+    local maxChannels = 2  -- Minimum stereo
+    for i, group in ipairs(globals.groups) do
+        for j, container in ipairs(group.containers) do
+            if container.channelMode and container.channelMode > 0 then
+                local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+                if config then
+                    local requiredChannels = config.totalChannels or config.channels
+                    maxChannels = math.max(maxChannels, requiredChannels)
+                end
+            end
+        end
+    end
+
+    -- Update Master track if necessary
+    local masterTrack = reaper.GetMasterTrack(0)
+    if masterTrack then
+        local currentMasterChannels = reaper.GetMediaTrackInfo_Value(masterTrack, "I_NCHAN")
+        if currentMasterChannels < maxChannels then
+            reaper.SetMediaTrackInfo_Value(masterTrack, "I_NCHAN", maxChannels)
+        end
+    end
+
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
-    
+
     if globals.keepExistingTracks then
         reaper.Undo_EndBlock("Regenerate all groups", -1)
     else
