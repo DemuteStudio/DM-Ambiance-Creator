@@ -43,7 +43,7 @@ local function getIconPaths()
             return {
                 delete = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_delete_garbage_icon.png",
                 regen = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_refresh_reload_icon.png",
-                upload = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_export_share_upload_up_icon.png",
+                upload = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_save_icon.png",
                 download = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_download_import_save_down_storage_icon.png",
                 settings = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_settings_icon.png",
                 folder = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_folder_icon.png",
