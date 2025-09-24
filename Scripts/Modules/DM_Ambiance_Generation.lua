@@ -83,10 +83,16 @@ function Generation.createMultiChannelTracks(containerTrack, container)
     local channelTracks = {}
 
     -- Update container track to handle multi-channel
-    globals.Utils.updateContainerRouting(containerTrack, container.channelMode)
+    local requiredChannels = config.totalChannels or config.channels
+    -- If using custom routing, ensure we have enough channels for the highest channel
+    if container.customRouting then
+        requiredChannels = math.max(requiredChannels, math.max(table.unpack(container.customRouting)))
+    end
+
+    -- Set container track channel count
+    reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", requiredChannels)
 
     -- Ensure parent tracks have enough channels for proper routing
-    local requiredChannels = config.totalChannels or config.channels
     globals.Utils.ensureParentHasEnoughChannels(containerTrack, requiredChannels)
 
     -- Check if this is the last container in the group
@@ -130,7 +136,9 @@ function Generation.createMultiChannelTracks(containerTrack, container)
         local sendIdx = reaper.CreateTrackSend(channelTrack, containerTrack)
         if sendIdx >= 0 then
             -- Route to single channel (0-based)
-            local destChannel = activeConfig.routing[i] - 1
+            -- Use custom routing if available (for conflict resolution)
+            local routing = container.customRouting or activeConfig.routing
+            local destChannel = routing[i] - 1
 
             -- For mono to mono routing in Reaper:
             -- Source: 1024 = mono mode (bit 10 set, channel 1)
@@ -700,6 +708,9 @@ function Generation.generateGroups()
         end
     end
 
+    -- Check for routing conflicts after generating all groups
+    Generation.checkAndResolveConflicts()
+
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
 
@@ -857,6 +868,9 @@ function Generation.generateSingleGroup(groupIndex)
         end
     end
 
+    -- Check for routing conflicts after generating single group
+    Generation.checkAndResolveConflicts()
+
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
     reaper.Undo_EndBlock("Regenerate group '" .. group.name .. "'", -1)
@@ -964,6 +978,9 @@ function Generation.generateSingleContainer(groupIndex, containerIndex)
     if finalParentGroup then
         Utils.validateAndRepairGroupStructure(finalParentGroupIdx)
     end
+
+    -- Check for routing conflicts after generating single container
+    Generation.checkAndResolveConflicts()
 
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
@@ -1205,5 +1222,132 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
     return lastItemRef
 end
 
+-- Apply routing fixes to resolve conflicts
+-- @param suggestions table: Array of routing suggestions
+function Generation.applyRoutingFixes(suggestions)
+    for _, suggestion in ipairs(suggestions) do
+        local container = suggestion.container
+
+        -- Update the container's channel configuration with custom routing
+        container.customRouting = suggestion.newRouting
+
+        -- Find and update the actual tracks if they exist
+        local group = nil
+        for _, g in ipairs(globals.groups) do
+            if g.name == suggestion.groupName then
+                group = g
+                break
+            end
+        end
+
+        if group then
+            local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+            if groupTrack then
+                local containerTrack, containerTrackIdx = Utils.findContainerGroup(
+                    groupTrackIdx,
+                    container.name
+                )
+
+                if containerTrack then
+                    -- Update the routing of existing channel tracks
+                    local channelTracks = Generation.getExistingChannelTracks(containerTrack)
+                    for i, channelTrack in ipairs(channelTracks) do
+                        if i <= #suggestion.newRouting then
+                            -- Update the send routing to new channel
+                            local sendCount = reaper.GetTrackNumSends(channelTrack, 0)
+                            for s = 0, sendCount - 1 do
+                                local destTrack = reaper.GetTrackSendInfo_Value(channelTrack, 0, s, "P_DESTTRACK")
+                                if destTrack == containerTrack then
+                                    local newDestChannel = suggestion.newRouting[i] - 1
+                                    local dstChannels = 1024 + newDestChannel  -- Mono routing format
+                                    reaper.SetTrackSendInfo_Value(channelTrack, 0, s, "I_DSTCHAN", dstChannels)
+
+                                    -- Update track name with new channel label if needed
+                                    local channelLabel = suggestion.labels[i]
+                                    local trackName = container.name .. " - " .. channelLabel
+                                    reaper.GetSetMediaTrackInfo_String(channelTrack, "P_NAME", trackName, true)
+                                end
+                            end
+                        end
+                    end
+
+                    -- Update container and parent track channel count if needed
+                    local maxChannel = math.max(table.unpack(suggestion.newRouting))
+                    reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", maxChannel)
+                    Utils.ensureParentHasEnoughChannels(containerTrack, maxChannel)
+                end
+            end
+        end
+    end
+
+    reaper.UpdateArrange()
+end
+
+-- Centralized conflict detection and resolution
+-- Call this from any generation function
+function Generation.checkAndResolveConflicts()
+    -- Detect and resolve routing conflicts
+    reaper.ShowConsoleMsg("\n=== CALLING CONFLICT DETECTION ===\n")
+
+    -- Temporary debug message box
+    reaper.MB("Starting conflict detection...", "DEBUG - Conflict Detection", 0)
+
+    local conflictInfo = globals.Utils.detectRoutingConflicts()
+    reaper.ShowConsoleMsg("conflictInfo returned: " .. tostring(conflictInfo) .. "\n")
+
+    -- Show result in message box
+    if conflictInfo then
+        reaper.ShowConsoleMsg("ConflictInfo has " .. #conflictInfo.conflicts .. " conflicts\n")
+        reaper.ShowConsoleMsg("ConflictInfo has " .. #conflictInfo.containers .. " containers\n")
+
+        reaper.MB(string.format("Conflicts found:\n- %d conflicts\n- %d containers analyzed",
+            #conflictInfo.conflicts, #conflictInfo.containers), "DEBUG - Conflicts Found", 0)
+
+        local suggestions = globals.Utils.suggestRoutingFix(conflictInfo)
+        reaper.ShowConsoleMsg("Number of suggestions: " .. #suggestions .. "\n")
+
+        if #suggestions > 0 then
+            reaper.ShowConsoleMsg("Building conflict message dialog...\n")
+            local message = "Routing conflicts detected!\n\n"
+
+            -- Build detailed conflict message
+            for _, suggestion in ipairs(suggestions) do
+                message = message .. string.format(
+                    "• %s - %s: Channels %s conflict with 5.0/7.0\n",
+                    suggestion.groupName,
+                    suggestion.containerName,
+                    table.concat(suggestion.originalRouting, ",")
+                )
+            end
+
+            message = message .. "\nSuggested fix:\n"
+            for _, suggestion in ipairs(suggestions) do
+                message = message .. string.format(
+                    "• Reroute %s - %s to channels %s\n",
+                    suggestion.groupName,
+                    suggestion.containerName,
+                    table.concat(suggestion.newRouting, ",")
+                )
+            end
+
+            message = message .. "\nApply these routing changes?"
+
+            reaper.ShowConsoleMsg("Showing message box...\n")
+            local response = reaper.MB(message, "Routing Conflict Detected", 4)
+            reaper.ShowConsoleMsg("User response: " .. response .. "\n")
+            if response == 6 then  -- User clicked Yes
+                reaper.ShowConsoleMsg("Applying routing fixes...\n")
+                Generation.applyRoutingFixes(suggestions)
+            end
+        else
+            reaper.ShowConsoleMsg("No suggestions generated despite conflicts\n")
+            reaper.MB("Conflicts found but no suggestions generated", "DEBUG - No Suggestions", 0)
+        end
+    else
+        reaper.ShowConsoleMsg("No conflicts detected\n")
+        reaper.MB("No conflicts detected - all routing is compatible", "DEBUG - No Conflicts", 0)
+    end
+    reaper.ShowConsoleMsg("=== END CONFLICT DETECTION ===\n\n")
+end
 
 return Generation

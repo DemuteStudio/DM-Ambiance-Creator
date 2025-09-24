@@ -1458,4 +1458,259 @@ function Utils.ensureParentHasEnoughChannels(childTrack, requiredChannels)
     end
 end
 
+-- Detect routing conflicts between containers
+-- @return table: conflict info or nil if no conflicts
+function Utils.detectRoutingConflicts()
+    reaper.ShowConsoleMsg("\n=== DETECTING ROUTING CONFLICTS ===\n")
+    local channelUsage = {}  -- Track which channels are used for what
+    local conflicts = {}
+    local containers = {}  -- Store all containers with their routing
+
+    -- Debug: Count groups and multi-channel containers
+    local groupCount = #globals.groups
+    local multiChannelCount = 0
+    local containerInfo = ""
+    for i, group in ipairs(globals.groups) do
+        containerInfo = containerInfo .. string.format("\nGroup '%s':", group.name)
+        for j, container in ipairs(group.containers) do
+            containerInfo = containerInfo .. string.format("\n  - %s: mode=%s",
+                container.name, tostring(container.channelMode or 0))
+            if container.channelMode and container.channelMode > 0 then
+                multiChannelCount = multiChannelCount + 1
+            end
+        end
+    end
+
+    reaper.MB(string.format("Debug Info:\nGroups: %d\nMulti-channel containers: %d\n%s",
+        groupCount, multiChannelCount, containerInfo), "Conflict Detection Analysis", 0)
+
+    -- Collect all containers with multi-channel routing
+    reaper.ShowConsoleMsg("Number of groups: " .. #globals.groups .. "\n")
+    for i, group in ipairs(globals.groups) do
+        reaper.ShowConsoleMsg("Checking group '" .. group.name .. "' with " .. #group.containers .. " containers\n")
+        for j, container in ipairs(group.containers) do
+            reaper.ShowConsoleMsg("  Container '" .. container.name .. "' - channelMode: " ..
+                tostring(container.channelMode) .. "\n")
+
+            if container.channelMode and container.channelMode > 0 then
+                local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+                reaper.ShowConsoleMsg("    Config found: " .. tostring(config ~= nil) .. "\n")
+
+                if config then
+                    local activeConfig = config
+                    if config.hasVariants then
+                        activeConfig = config.variants[container.channelVariant or 0]
+                        activeConfig.channels = config.channels  -- Copy channels count from parent config
+                        reaper.ShowConsoleMsg("    Using variant: " .. tostring(container.channelVariant or 0) .. "\n")
+                    end
+
+                    reaper.ShowConsoleMsg("    Routing: " .. table.concat(activeConfig.routing, ",") .. "\n")
+                    reaper.ShowConsoleMsg("    Labels: " .. table.concat(activeConfig.labels, ",") .. "\n")
+
+                    table.insert(containers, {
+                        group = group,
+                        container = container,
+                        config = activeConfig,
+                        channels = config.channels,  -- Store the actual channel count
+                        groupName = group.name,
+                        containerName = container.name
+                    })
+
+                    -- Track channel usage
+                    for idx, channelNum in ipairs(activeConfig.routing) do
+                        local label = activeConfig.labels[idx]
+                        reaper.ShowConsoleMsg("      Channel " .. channelNum .. " -> " .. label .. "\n")
+
+                        if not channelUsage[channelNum] then
+                            channelUsage[channelNum] = {}
+                        end
+
+                        -- Check for conflicts
+                        local existingUsage = channelUsage[channelNum]
+                        for _, usage in ipairs(existingUsage) do
+                            reaper.ShowConsoleMsg("        Checking against existing: " ..
+                                usage.containerInfo.containerName .. " label: " .. usage.label .. "\n")
+                            if usage.label ~= label then
+                                -- Conflict detected!
+                                reaper.ShowConsoleMsg("        CONFLICT DETECTED! '" .. usage.label ..
+                                    "' vs '" .. label .. "' on channel " .. channelNum .. "\n")
+
+                                -- Debug message box for conflict
+                                reaper.MB(string.format("CONFLICT FOUND!\n\nChannel %d conflict:\n- %s uses it for '%s'\n- %s uses it for '%s'",
+                                    channelNum,
+                                    usage.containerInfo.containerName, usage.label,
+                                    container.name, label), "Conflict Detected!", 0)
+
+                                table.insert(conflicts, {
+                                    channel = channelNum,
+                                    container1 = usage.containerInfo,
+                                    container2 = {
+                                        group = group,
+                                        container = container,
+                                        groupName = group.name,
+                                        containerName = container.name,
+                                        label = label
+                                    }
+                                })
+                            end
+                        end
+
+                        table.insert(channelUsage[channelNum], {
+                            label = label,
+                            containerInfo = {
+                                group = group,
+                                container = container,
+                                groupName = group.name,
+                                containerName = container.name,
+                                label = label
+                            }
+                        })
+                    end
+                end
+            else
+                reaper.ShowConsoleMsg("    Skipping - not multi-channel\n")
+            end
+        end
+    end
+
+    reaper.ShowConsoleMsg("Total conflicts found: " .. #conflicts .. "\n")
+    reaper.ShowConsoleMsg("Total containers analyzed: " .. #containers .. "\n")
+    reaper.ShowConsoleMsg("=== END CONFLICT DETECTION ===\n\n")
+
+    if #conflicts > 0 then
+        return {conflicts = conflicts, containers = containers}
+    end
+    return nil
+end
+
+-- Suggest alternative routing to avoid conflicts
+-- @param conflictInfo table: The conflict information
+-- @return table: Suggested routing changes
+function Utils.suggestRoutingFix(conflictInfo)
+    reaper.ShowConsoleMsg("\n=== SUGGESTING ROUTING FIXES ===\n")
+    local suggestions = {}
+    local usedChannels = {}
+
+    -- Debug message box
+    reaper.MB(string.format("Starting routing fix suggestions\nContainers to analyze: %d",
+        #conflictInfo.containers), "DEBUG - Suggestion Generation", 0)
+
+    -- First, mark all channels used by larger configurations
+    reaper.ShowConsoleMsg("Marking channels used by larger configs...\n")
+    for _, containerInfo in ipairs(conflictInfo.containers) do
+        local config = containerInfo.config
+        local channels = containerInfo.channels or config.channels or 2  -- Use stored channels or fallback
+        reaper.ShowConsoleMsg("  Container: " .. containerInfo.containerName ..
+            " Channels: " .. channels .. "\n")
+        if channels >= 5 then  -- Prioritize larger configs (5.0, 7.0)
+            reaper.ShowConsoleMsg("    Marking as priority (5+ channels)\n")
+            for _, channel in ipairs(config.routing) do
+                usedChannels[channel] = true
+                reaper.ShowConsoleMsg("      Channel " .. channel .. " marked as used\n")
+            end
+        end
+    end
+
+    -- Then find alternative routing for smaller configs
+    reaper.ShowConsoleMsg("Finding alternative routing for smaller configs...\n")
+    for _, containerInfo in ipairs(conflictInfo.containers) do
+        local config = containerInfo.config
+        local channels = containerInfo.channels or config.channels or 2  -- Use stored channels or fallback
+        reaper.ShowConsoleMsg("  Checking container: " .. containerInfo.containerName ..
+            " with " .. channels .. " channels\n")
+
+        if channels == 4 then  -- Quad needs rerouting
+            reaper.ShowConsoleMsg("    This is a Quad config - checking for rerouting...\n")
+            local newRouting = {}
+            local channelOffset = 0
+
+            -- Find free channels
+            for i = 1, channels do
+                local originalChannel = config.routing[i]
+                reaper.ShowConsoleMsg("      Channel " .. i .. " originally: " .. originalChannel)
+
+                if i <= 2 then
+                    -- Keep L/R on channels 1/2
+                    newRouting[i] = originalChannel
+                    reaper.ShowConsoleMsg(" -> keeping as " .. originalChannel .. "\n")
+                else
+                    -- Find next free channel for surrounds
+                    local newChannel = 5 + channelOffset
+                    while usedChannels[newChannel] and newChannel <= 8 do
+                        channelOffset = channelOffset + 1
+                        newChannel = 5 + channelOffset
+                    end
+
+                    -- If we run out of channels in the 5-8 range, try higher
+                    if newChannel > 8 then
+                        newChannel = 9
+                        while usedChannels[newChannel] and newChannel <= 16 do
+                            newChannel = newChannel + 1
+                        end
+                    end
+
+                    newRouting[i] = newChannel
+                    usedChannels[newChannel] = true
+                    channelOffset = channelOffset + 1
+                    reaper.ShowConsoleMsg(" -> remapping to " .. newChannel .. "\n")
+                end
+            end
+
+            -- Only suggest rerouting if it's different from the original
+            local needsRerouting = false
+            reaper.ShowConsoleMsg("    Comparing original vs new routing:\n")
+            for i = 1, #config.routing do
+                reaper.ShowConsoleMsg("      " .. i .. ": " .. config.routing[i] ..
+                    " vs " .. newRouting[i])
+                if config.routing[i] ~= newRouting[i] then
+                    needsRerouting = true
+                    reaper.ShowConsoleMsg(" -> DIFFERENT!\n")
+                else
+                    reaper.ShowConsoleMsg(" -> same\n")
+                end
+            end
+
+            reaper.ShowConsoleMsg("    Needs rerouting: " .. tostring(needsRerouting) .. "\n")
+            if needsRerouting then
+                reaper.ShowConsoleMsg("    Adding suggestion for " .. containerInfo.containerName .. "\n")
+                table.insert(suggestions, {
+                    container = containerInfo.container,
+                    containerName = containerInfo.containerName,
+                    groupName = containerInfo.groupName,
+                    originalRouting = config.routing,
+                    newRouting = newRouting,
+                    labels = config.labels,
+                    reason = "Conflicts with 5.0/7.0 center and surround channel routing"
+                })
+            else
+                reaper.ShowConsoleMsg("    No rerouting needed - skipping\n")
+            end
+        else
+            reaper.ShowConsoleMsg("    Not a Quad config - skipping\n")
+        end
+    end
+
+    reaper.ShowConsoleMsg("Total suggestions: " .. #suggestions .. "\n")
+    reaper.ShowConsoleMsg("=== END SUGGESTING ROUTING FIXES ===\n\n")
+
+    -- Debug message showing suggestions
+    if #suggestions > 0 then
+        local suggestionsText = ""
+        for _, suggestion in ipairs(suggestions) do
+            suggestionsText = suggestionsText .. string.format(
+                "\n- %s: %s -> %s",
+                suggestion.containerName,
+                table.concat(suggestion.originalRouting, ","),
+                table.concat(suggestion.newRouting, ",")
+            )
+        end
+        reaper.MB(string.format("Suggestions generated: %d%s",
+            #suggestions, suggestionsText), "DEBUG - Suggestions Complete", 0)
+    else
+        reaper.MB("No suggestions generated", "DEBUG - No Suggestions", 0)
+    end
+
+    return suggestions
+end
+
 return Utils
