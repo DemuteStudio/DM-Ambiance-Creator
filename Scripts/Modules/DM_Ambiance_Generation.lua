@@ -62,8 +62,9 @@ end
 -- Create multi-channel track structure for a container
 -- @param containerTrack userdata: The container track that will become a folder
 -- @param container table: The container configuration
+-- @param isLastInGroup boolean: Whether this is the last container in the group (optional)
 -- @return table: Array of channel tracks (including the container if in default mode)
-function Generation.createMultiChannelTracks(containerTrack, container)
+function Generation.createMultiChannelTracks(containerTrack, container, isLastInGroup)
     if not container.channelMode or container.channelMode == 0 then
         -- Default mode, no child tracks, generate on container
         return {containerTrack}
@@ -95,8 +96,10 @@ function Generation.createMultiChannelTracks(containerTrack, container)
     -- Ensure parent tracks have enough channels for proper routing
     globals.Utils.ensureParentHasEnoughChannels(containerTrack, requiredChannels)
 
-    -- Check if this is the last container in the group
-    local isLastInGroup = container.isLastInGroup or false
+    -- Use the passed parameter or fallback to container property
+    if isLastInGroup == nil then
+        isLastInGroup = container.isLastInGroup or false
+    end
 
     -- Container track becomes a folder
     reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 1)
@@ -194,6 +197,9 @@ function Generation.createMultiChannelTracks(containerTrack, container)
     reaper.Main_OnCommand(40031, 0) -- View: Zoom out project
     reaper.Main_OnCommand(40295, 0) -- View: Zoom to project
 
+    -- Store GUIDs for future reference
+    Generation.storeTrackGUIDs(container, containerTrack, channelTracks)
+    
     return channelTracks
 end
 
@@ -240,6 +246,130 @@ function Generation.getExistingChannelTracks(containerTrack)
     return tracks
 end
 
+-- Get track GUID
+-- @param track userdata: The track
+-- @return string: The track GUID
+function Generation.getTrackGUID(track)
+    if not track then return nil end
+    return reaper.GetTrackGUID(track)
+end
+
+-- Find track by GUID
+-- @param guid string: The track GUID
+-- @return userdata: The track or nil if not found
+function Generation.findTrackByGUID(guid)
+    if not guid then return nil end
+    
+    local trackCount = reaper.CountTracks(0)
+    for i = 0, trackCount - 1 do
+        local track = reaper.GetTrack(0, i)
+        if reaper.GetTrackGUID(track) == guid then
+            return track
+        end
+    end
+    return nil
+end
+
+-- Store track GUIDs in container structure
+-- @param container table: The container
+-- @param containerTrack userdata: The container track
+-- @param channelTracks table: Array of channel tracks
+function Generation.storeTrackGUIDs(container, containerTrack, channelTracks)
+    -- Store container track GUID
+    container.trackGUID = Generation.getTrackGUID(containerTrack)
+    
+    -- Store channel track GUIDs
+    container.channelTrackGUIDs = {}
+    for _, track in ipairs(channelTracks) do
+        table.insert(container.channelTrackGUIDs, Generation.getTrackGUID(track))
+    end
+end
+
+-- Find existing tracks by stored GUIDs
+-- @param container table: The container with stored GUIDs
+-- @return containerTrack, channelTracks: The found tracks or nil
+function Generation.findTracksByGUIDs(container)
+    if not container.trackGUID then
+        return nil, {}
+    end
+    
+    -- Find container track
+    local containerTrack = Generation.findTrackByGUID(container.trackGUID)
+    if not containerTrack then
+        return nil, {}
+    end
+    
+    -- Find channel tracks
+    local channelTracks = {}
+    if container.channelTrackGUIDs then
+        for _, guid in ipairs(container.channelTrackGUIDs) do
+            local track = Generation.findTrackByGUID(guid)
+            if track then
+                table.insert(channelTracks, track)
+            else
+                -- Missing track, structure is broken
+                return containerTrack, {}
+            end
+        end
+    end
+    
+    return containerTrack, channelTracks
+end
+
+-- Restore folder structure for found tracks
+-- @param containerTrack userdata: The container track
+-- @param channelTracks table: Array of channel tracks
+function Generation.restoreFolderStructure(containerTrack, channelTracks)
+    if #channelTracks == 0 then
+        return
+    end
+    
+    -- Set container as folder
+    reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 1)
+    
+    -- Set middle tracks as normal
+    for i = 1, #channelTracks - 1 do
+        reaper.SetMediaTrackInfo_Value(channelTracks[i], "I_FOLDERDEPTH", 0)
+    end
+    
+    -- Last track closes folder
+    reaper.SetMediaTrackInfo_Value(channelTracks[#channelTracks], "I_FOLDERDEPTH", -1)
+end
+
+-- Check if container is last in group and adjust folder closing
+-- @param containerTrack userdata: The container track
+-- @param channelTracks table: Array of channel tracks
+-- @param isLastInGroup boolean: Whether this is the last container in group
+function Generation.adjustFolderClosing(containerTrack, channelTracks, isLastInGroup)
+    if #channelTracks == 0 then
+        -- No channel tracks, container itself should close if last
+        if isLastInGroup then
+            reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", -1)
+        else
+            reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 0)
+        end
+    else
+        -- Has channel tracks (multichannel)
+        -- Container is a folder
+        reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 1)
+        
+        -- Middle tracks are normal
+        for i = 1, #channelTracks - 1 do
+            reaper.SetMediaTrackInfo_Value(channelTracks[i], "I_FOLDERDEPTH", 0)
+        end
+        
+        -- Last track must close both container and possibly group
+        if isLastInGroup then
+            -- Need to close both container and group
+            -- Set to -1 which should close all open folders up to this point
+            reaper.SetMediaTrackInfo_Value(channelTracks[#channelTracks], "I_FOLDERDEPTH", -1)
+        else
+            -- Just close the container
+            reaper.SetMediaTrackInfo_Value(channelTracks[#channelTracks], "I_FOLDERDEPTH", -1)
+        end
+    end
+end
+
 -- Function to validate multi-channel track structure
 -- @param containerTrack userdata: The container track
 -- @param expectedChannels number: Expected number of channel tracks
@@ -269,6 +399,59 @@ function Generation.validateMultiChannelStructure(containerTrack, expectedChanne
     end
     
     return true
+end
+
+-- Find channel tracks by name pattern when folder structure is lost
+-- @param containerTrack userdata: The container track
+-- @param container table: The container configuration
+-- @return table: Array of channel tracks if found, empty otherwise
+function Generation.findChannelTracksByName(containerTrack, container)
+    local tracks = {}
+    local containerName = container.name
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+    
+    -- Look for tracks immediately after the container
+    local expectedChannels = globals.Constants.CHANNEL_CONFIGS[container.channelMode].channels
+    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+    local activeConfig = config
+    if config.hasVariants then
+        activeConfig = config.variants[container.channelVariant or 0]
+    end
+    
+    -- Check the next N tracks for matching names
+    for i = 1, expectedChannels do
+        local trackIdx = containerIdx + i
+        if trackIdx < reaper.CountTracks(0) then
+            local track = reaper.GetTrack(0, trackIdx)
+            local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
+            
+            -- Check if name matches pattern "ContainerName - ChannelLabel"
+            local expectedName = containerName .. " - " .. activeConfig.labels[i]
+            if trackName == expectedName then
+                table.insert(tracks, track)
+            else
+                -- Structure is broken, return empty
+                return {}
+            end
+        else
+            -- Not enough tracks
+            return {}
+        end
+    end
+    
+    -- If we found all expected tracks, restore folder structure
+    if #tracks == expectedChannels then
+        -- Restore container as folder
+        reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 1)
+        -- Set middle tracks as normal
+        for i = 1, #tracks - 1 do
+            reaper.SetMediaTrackInfo_Value(tracks[i], "I_FOLDERDEPTH", 0)
+        end
+        -- Set last track to close folder
+        reaper.SetMediaTrackInfo_Value(tracks[#tracks], "I_FOLDERDEPTH", -1)
+    end
+    
+    return tracks
 end
 
 -- Clear all items from channel tracks
@@ -324,39 +507,80 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
     local channelTracks = {}
     if globals.keepExistingTracks then
         if isMultiChannel then
-            -- Multi-channel mode: check existing structure
-            local expectedChannels = globals.Constants.CHANNEL_CONFIGS[container.channelMode].channels
-            local containerFolderDepth = reaper.GetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH")
+            -- Try to find tracks by stored GUIDs first
+            local foundContainer, foundChannelTracks = Generation.findTracksByGUIDs(container)
             
-            -- Check if container is properly configured as a folder
-            local hasValidStructure = (containerFolderDepth == 1)
-            
-            if hasValidStructure then
-                -- Get existing child tracks
-                channelTracks = Generation.getExistingChannelTracks(containerGroup)
+            if foundContainer and #foundChannelTracks > 0 then
+                -- Found all tracks by GUID
+                -- Check if this is the last container in the group
+                local isLastInGroup = false
+                local groupIndex = nil
+                local containerIndex = nil
                 
-                -- Verify we have the correct number of tracks
-                if #channelTracks ~= expectedChannels then
-                    hasValidStructure = false
-                else
-                    -- Verify all tracks are direct children of the container
-                    for _, track in ipairs(channelTracks) do
-                        local parent = reaper.GetParentTrack(track)
-                        if parent ~= containerGroup then
-                            hasValidStructure = false
+                -- Find group and container indices
+                for gi, g in ipairs(globals.groups) do
+                    for ci, c in ipairs(g.containers) do
+                        if c == container then
+                            groupIndex = gi
+                            containerIndex = ci
+                            isLastInGroup = (ci == #g.containers)
                             break
                         end
                     end
+                    if groupIndex then break end
                 end
-            end
-            
-            if not hasValidStructure then
-                -- Structure is invalid or configuration changed, recreate tracks
-                Generation.deleteContainerChildTracks(containerGroup)
-                channelTracks = Generation.createMultiChannelTracks(containerGroup, container)
-            else
-                -- Structure is valid, just clear items from existing tracks
+                
+                -- Restore folder structure with proper closing
+                Generation.adjustFolderClosing(foundContainer, foundChannelTracks, isLastInGroup)
+                channelTracks = foundChannelTracks
                 Generation.clearChannelTracks(channelTracks)
+            else
+                -- GUIDs not found or incomplete, try other methods
+                channelTracks = Generation.getExistingChannelTracks(containerGroup)
+                
+                -- If we don't find child tracks or only find the container itself,
+                -- the folder structure might be lost - try to find tracks by name
+                if #channelTracks == 0 or (#channelTracks == 1 and channelTracks[1] == containerGroup) then
+                    -- Try to find and restore tracks by name pattern
+                    channelTracks = Generation.findChannelTracksByName(containerGroup, container)
+                end
+                
+                -- Check if we have the expected number
+                local expectedChannels = globals.Constants.CHANNEL_CONFIGS[container.channelMode].channels
+                
+                if #channelTracks == expectedChannels then
+                    -- Found existing structure, store GUIDs for next time
+                    Generation.storeTrackGUIDs(container, containerGroup, channelTracks)
+                    Generation.clearChannelTracks(channelTracks)
+                elseif #channelTracks == 0 then
+                    -- No existing structure found, create new one
+                    -- Check if this is the last container in the group
+                    local isLastInGroup = false
+                    for gi, g in ipairs(globals.groups) do
+                        for ci, c in ipairs(g.containers) do
+                            if c == container then
+                                isLastInGroup = (ci == #g.containers)
+                                break
+                            end
+                        end
+                        if isLastInGroup then break end
+                    end
+                    channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
+                else
+                    -- Partial or incorrect structure, recreate
+                    local isLastInGroup = false
+                    for gi, g in ipairs(globals.groups) do
+                        for ci, c in ipairs(g.containers) do
+                            if c == container then
+                                isLastInGroup = (ci == #g.containers)
+                                break
+                            end
+                        end
+                        if isLastInGroup then break end
+                    end
+                    Generation.deleteContainerChildTracks(containerGroup)
+                    channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
+                end
             end
         else
             -- Default mode: clear items from container itself
@@ -365,13 +589,28 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 reaper.DeleteTrackMediaItem(containerGroup, item)
             end
             channelTracks = {containerGroup}
+            -- Store GUID for non-multichannel container
+            container.trackGUID = Generation.getTrackGUID(containerGroup)
         end
     else
         -- Create new structure based on mode
         if isMultiChannel then
-            channelTracks = Generation.createMultiChannelTracks(containerGroup, container)
+            -- Check if this is the last container in the group
+            local isLastInGroup = false
+            for gi, g in ipairs(globals.groups) do
+                for ci, c in ipairs(g.containers) do
+                    if c == container then
+                        isLastInGroup = (ci == #g.containers)
+                        break
+                    end
+                end
+                if isLastInGroup then break end
+            end
+            channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
         else
             channelTracks = {containerGroup}
+            -- Store GUID for non-multichannel container
+            container.trackGUID = Generation.getTrackGUID(containerGroup)
         end
     end
 
@@ -859,14 +1098,27 @@ function Generation.generateSingleGroup(groupIndex)
             Generation.placeItemsForContainer(group, container, containerGroup, xfadeshape)
         end
 
-        -- Fix folder structure: ensure the last container has folder end (-1)
-        if #containerGroups > 0 then
-            -- Reset all containers to normal folder state
-            for i = 1, #containerGroups - 1 do
-                reaper.SetMediaTrackInfo_Value(containerGroups[i], "I_FOLDERDEPTH", 0)
+        -- Ensure the group folder is properly closed
+        -- Find the last track in the group hierarchy
+        local lastTrackInGroup = nil
+        local i = existingGroupIdx + 1
+        local depth = 1
+        
+        while i < reaper.CountTracks(0) and depth > 0 do
+            local track = reaper.GetTrack(0, i)
+            lastTrackInGroup = track
+            local trackDepth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+            depth = depth + trackDepth
+            i = i + 1
+        end
+        
+        -- If we found the last track, ensure it closes the group
+        if lastTrackInGroup then
+            local currentDepth = reaper.GetMediaTrackInfo_Value(lastTrackInGroup, "I_FOLDERDEPTH")
+            if currentDepth >= 0 then
+                -- Track doesn't close folder, fix it
+                reaper.SetMediaTrackInfo_Value(lastTrackInGroup, "I_FOLDERDEPTH", -1)
             end
-            -- Set the last container as folder end
-            reaper.SetMediaTrackInfo_Value(containerGroups[#containerGroups], "I_FOLDERDEPTH", -1)
         end
 
     else
@@ -954,8 +1206,20 @@ function Generation.generateSingleContainer(groupIndex, containerIndex)
         reaper.SetMediaTrackInfo_Value(parentGroup, "I_FOLDERDEPTH", 1)
     end
 
-    -- Find the specific container group
-    local containerGroup, containerGroupIdx = Utils.findContainerGroup(parentGroupIdx, container.name)
+    -- Try to find container by GUID first
+    local containerGroup, containerGroupIdx = nil, nil
+    
+    if container.trackGUID then
+        containerGroup = Generation.findTrackByGUID(container.trackGUID)
+        if containerGroup then
+            containerGroupIdx = reaper.GetMediaTrackInfo_Value(containerGroup, "IP_TRACKNUMBER") - 1
+        end
+    end
+    
+    -- If not found by GUID, search by name
+    if not containerGroup then
+        containerGroup, containerGroupIdx = Utils.findContainerGroup(parentGroupIdx, container.name)
+    end
 
     if containerGroup then
         -- Container exists, clear it and regenerate
