@@ -247,7 +247,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix)
     do
         imgui.BeginGroup(globals.ctx)
         imgui.PushItemWidth(globals.ctx, controlWidth)
-        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0\0"
+        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0"
         local rv, newIntervalMode = imgui.Combo(globals.ctx, "##IntervalMode", dataObj.intervalMode, intervalModes)
         if rv then callbacks.setIntervalMode(newIntervalMode) end
         imgui.EndGroup(globals.ctx)
@@ -665,7 +665,7 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
         imgui.SameLine(globals.ctx)
         imgui.SetCursorPosX(globals.ctx, colShape)
         imgui.PushItemWidth(globals.ctx, shapeWidth)
-        local fadeShapes = "Linear\0Fast Start\0Fast End\0Fast S/E\0Slow S/E\0Bezier\0S-Curve\0\0"
+        local fadeShapes = "Linear\0Fast Start\0Fast End\0Fast S/E\0Slow S/E\0Bezier\0S-Curve\0"
         local rv, newShape = imgui.Combo(globals.ctx, "##Shape" .. suffix, shape or 0, fadeShapes)
         if rv then
             if isIn then obj.fadeInShape = newShape

@@ -36,7 +36,6 @@ function UI_Groups.drawGroupPresetControls(i)
     for _, name in ipairs(groupPresetList) do
         groupPresetItems = groupPresetItems .. name .. "\0"
     end
-    groupPresetItems = groupPresetItems .. "\0"
 
     -- Group preset dropdown selector
     imgui.PushItemWidth(globals.ctx, Constants.UI.PRESET_SELECTOR_WIDTH)

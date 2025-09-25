@@ -113,7 +113,7 @@ function UI_Generation.drawGlobalGenerationSettings()
     
     if globals.enableCrossfades then
         globals.imgui.PushItemWidth(globals.ctx, 200)
-        local crossfadeShapes = "Linear\0Slow start/end\0Fast start\0Fast end\0Sharp\0\0"
+        local crossfadeShapes = "Linear\0Slow start/end\0Fast start\0Fast end\0Sharp\0"
         local rv, newShape = globals.imgui.Combo(globals.ctx, "Crossfade shape", globals.crossfadeShape, crossfadeShapes)
         if rv then globals.crossfadeShape = newShape end
     end

@@ -42,7 +42,6 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex)
     for _, name in ipairs(containerPresetList) do
         containerPresetItems = containerPresetItems .. name .. "\0"
     end
-    containerPresetItems = containerPresetItems .. "\0"
 
     -- Preset dropdown control
     imgui.PushItemWidth(globals.ctx, 200)
@@ -265,11 +264,12 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
     -- Build dropdown items
     local channelModeItems = ""
-    for i = 0, 3 do  -- Changed from 4 to 3 (removed 5.1 and 7.1)
+    for i = 0, 3 do  -- Channel modes: Default, Quad, 5.0, 7.0
         local config = globals.Constants.CHANNEL_CONFIGS[i]
-        channelModeItems = channelModeItems .. config.name .. "\0"
+        if config then
+            channelModeItems = channelModeItems .. config.name .. "\0"
+        end
     end
-    channelModeItems = channelModeItems .. "\0"
 
     -- Initialize if needed
     if container.channelMode == nil then
@@ -302,10 +302,11 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
             -- Build variant dropdown items
             local variantItems = ""
-            for i = 0, #config.variants do
-                variantItems = variantItems .. config.variants[i].name .. "\0"
+            for i = 0, 1 do  -- Always exactly 2 variants (0 and 1)
+                if config.variants[i] then
+                    variantItems = variantItems .. config.variants[i].name .. "\0"
+                end
             end
-            variantItems = variantItems .. "\0"
 
             -- Initialize if needed
             if container.channelVariant == nil then

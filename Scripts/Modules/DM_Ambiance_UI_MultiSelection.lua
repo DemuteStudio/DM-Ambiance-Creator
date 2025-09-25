@@ -237,7 +237,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             
             -- Add a dropdown to set all values to the same value
             imgui.PushItemWidth(globals.ctx, width * 0.5)
-            local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0\0"
+            local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0"
             local rv, newIntervalMode = imgui.Combo(globals.ctx, "Set all to##IntervalMode", 0, intervalModes)
             if rv then
                 -- Apply to all selected containers
