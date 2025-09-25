@@ -545,8 +545,13 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
     local Constants = require("DM_Ambiance_Constants")
     
     -- Ensure all fade properties are properly initialized with defaults
-    obj.fadeInEnabled = obj.fadeInEnabled or Constants.DEFAULTS.FADE_IN_ENABLED
-    obj.fadeOutEnabled = obj.fadeOutEnabled or Constants.DEFAULTS.FADE_OUT_ENABLED
+    -- Only initialize if nil (not if false) to allow unchecking
+    if obj.fadeInEnabled == nil then
+        obj.fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED
+    end
+    if obj.fadeOutEnabled == nil then
+        obj.fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED
+    end
     obj.fadeInShape = obj.fadeInShape or Constants.DEFAULTS.FADE_IN_SHAPE
     obj.fadeOutShape = obj.fadeOutShape or Constants.DEFAULTS.FADE_OUT_SHAPE
     obj.fadeInCurve = obj.fadeInCurve or Constants.DEFAULTS.FADE_IN_CURVE
