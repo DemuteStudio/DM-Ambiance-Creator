@@ -783,25 +783,30 @@ function ConflictResolver.applyResolution()
     
     reaper.Undo_BeginBlock()
     
+    local allSuccess = true
+    
     for _, resolution in ipairs(globals.pendingResolutionData) do
-        -- Find the container
+        -- Find the container in the data structure
         for _, group in ipairs(globals.groups) do
             if group.name == resolution.groupName then
                 for _, container in ipairs(group.containers) do
                     if container.name == resolution.containerName then
-                        -- Apply the new routing
+                        -- Store the new routing in the container configuration
                         container.customRouting = resolution.newRouting
                         
-                        -- Find and update the actual track if it exists
-                        local groupTrack, groupTrackIdx = globals.Utils.findGroupByName(group.name)
-                        if groupTrack then
-                            local containerTrack = globals.Utils.findContainerGroup(groupTrackIdx, container.name)
-                            if containerTrack then
-                                -- The actual routing update will be applied on next generation
-                                -- Mark container as needing regeneration
-                                container.needsRegeneration = true
-                            end
+                        -- Apply routing to existing tracks immediately
+                        local success = ConflictResolver.applyRoutingToExistingTracks(
+                            resolution.groupName, 
+                            resolution.containerName, 
+                            resolution.newRouting
+                        )
+                        
+                        if not success then
+                            -- If tracks don't exist, mark for regeneration
+                            container.needsRegeneration = true
+                            allSuccess = false
                         end
+                        
                         break
                     end
                 end
@@ -809,12 +814,81 @@ function ConflictResolver.applyResolution()
         end
     end
     
-    reaper.Undo_EndBlock("Apply Channel Routing Resolution", -1)
-    
-    -- Trigger regeneration of affected containers
-    if globals.Generation then
+    -- Only regenerate if some tracks were not found
+    if not allSuccess and globals.Generation then
         globals.Generation.generateGroups()
     end
+    
+    reaper.Undo_EndBlock("Apply Channel Routing Resolution", -1)
+    
+    -- Update the arrange view to reflect changes
+    reaper.UpdateArrange()
+    reaper.TrackList_AdjustWindows(false)
+end
+
+-- Apply routing changes to existing multi-channel tracks
+-- @param groupName string: Name of the group
+-- @param containerName string: Name of the container  
+-- @param newRouting table: New routing configuration
+-- @return boolean: Success status
+function ConflictResolver.applyRoutingToExistingTracks(groupName, containerName, newRouting)
+    -- Find the group track
+    local groupTrack, groupTrackIdx = globals.Utils.findGroupByName(groupName)
+    if not groupTrack then
+        return false
+    end
+    
+    -- Find the container track within the group
+    local containerTrack = globals.Utils.findContainerGroup(groupTrackIdx, containerName)
+    if not containerTrack then
+        return false
+    end
+    
+    -- Get container track index
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+    
+    -- Check if this is a multi-channel container (has child tracks)
+    local folderDepth = reaper.GetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH")
+    if folderDepth ~= 1 then
+        return false -- Not a folder, no child tracks to update
+    end
+    
+    -- Find all child tracks and update their sends
+    local trackIdx = containerIdx + 1
+    local depth = 1
+    local channelIndex = 1
+    
+    while trackIdx < reaper.CountTracks(0) and depth > 0 do
+        local childTrack = reaper.GetTrack(0, trackIdx)
+        if not childTrack then break end
+        
+        -- Check if this is a direct child (not a grandchild)
+        local parent = reaper.GetParentTrack(childTrack)
+        if parent == containerTrack and channelIndex <= #newRouting then
+            -- Find the send to parent track
+            local sendCount = reaper.GetTrackNumSends(childTrack, 0)
+            for sendIdx = 0, sendCount - 1 do
+                local destTrack = reaper.GetTrackSendInfo_Value(childTrack, 0, sendIdx, "P_DESTTRACK")
+                if destTrack == containerTrack then
+                    -- Update the destination channel for this send
+                    local destChannel = newRouting[channelIndex] - 1  -- Convert to 0-based
+                    local dstChannels = 1024 + destChannel  -- Mono routing to specific channel
+                    
+                    reaper.SetTrackSendInfo_Value(childTrack, 0, sendIdx, "I_DSTCHAN", dstChannels)
+                    break
+                end
+            end
+            
+            channelIndex = channelIndex + 1
+        end
+        
+        -- Update depth tracking
+        local childDepth = reaper.GetMediaTrackInfo_Value(childTrack, "I_FOLDERDEPTH")
+        depth = depth + childDepth
+        trackIdx = trackIdx + 1
+    end
+    
+    return true
 end
 
 -- Check if there are active conflicts requiring resolution
