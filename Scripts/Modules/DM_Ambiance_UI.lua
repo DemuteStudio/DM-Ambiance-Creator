@@ -887,6 +887,103 @@ function UI.ShowMainWindow(open)
 
     -- CRITICAL: Only call End() if Begin() returned true (visible)
     if visible then
+        -- Handle keyboard input for Delete key
+        if globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Delete) then
+            -- Check if we're in multi-selection mode
+            if globals.inMultiSelectMode and next(globals.selectedContainers) then
+                -- Build list of containers to delete (sorted in reverse to maintain indices)
+                local toDelete = {}
+                for key, _ in pairs(globals.selectedContainers) do
+                    local groupIdx, containerIdx = key:match("(%d+)_(%d+)")
+                    if groupIdx and containerIdx then
+                        table.insert(toDelete, {
+                            groupIndex = tonumber(groupIdx),
+                            containerIndex = tonumber(containerIdx)
+                        })
+                    end
+                end
+                
+                -- Sort in reverse order (highest indices first)
+                table.sort(toDelete, function(a, b)
+                    if a.groupIndex == b.groupIndex then
+                        return a.containerIndex > b.containerIndex
+                    end
+                    return a.groupIndex > b.groupIndex
+                end)
+                
+                -- Delete containers
+                for _, item in ipairs(toDelete) do
+                    local group = globals.groups[item.groupIndex]
+                    if group and group.containers[item.containerIndex] then
+                        table.remove(group.containers, item.containerIndex)
+                    end
+                end
+                
+                -- Clear selections
+                globals.selectedContainers = {}
+                globals.inMultiSelectMode = false
+                globals.selectedContainerIndex = nil
+                
+            -- Check if a single container is selected
+            elseif globals.selectedGroupIndex and globals.selectedContainerIndex then
+                local group = globals.groups[globals.selectedGroupIndex]
+                if group and group.containers[globals.selectedContainerIndex] then
+                    -- Store current indices
+                    local containerIdx = globals.selectedContainerIndex
+                    
+                    -- Remove the container
+                    table.remove(group.containers, containerIdx)
+                    
+                    -- Clear selection
+                    globals.selectedContainerIndex = nil
+                    
+                    -- Clear from multi-selection if present
+                    local selectionKey = globals.selectedGroupIndex .. "_" .. containerIdx
+                    if globals.selectedContainers[selectionKey] then
+                        globals.selectedContainers[selectionKey] = nil
+                    end
+                    
+                    -- Update selection indices for containers after the deleted one
+                    for k = containerIdx + 1, #group.containers + 1 do
+                        local oldKey = globals.selectedGroupIndex .. "_" .. k
+                        local newKey = globals.selectedGroupIndex .. "_" .. (k-1)
+                        if globals.selectedContainers[oldKey] then
+                            globals.selectedContainers[newKey] = true
+                            globals.selectedContainers[oldKey] = nil
+                        end
+                    end
+                end
+            -- Check if only a group is selected (no container selected)
+            elseif globals.selectedGroupIndex and not globals.selectedContainerIndex then
+                local groupIdx = globals.selectedGroupIndex
+                
+                -- Remove the group and all its containers
+                table.remove(globals.groups, groupIdx)
+                
+                -- Clear selection
+                globals.selectedGroupIndex = nil
+                
+                -- Clear any selected containers from this group
+                for key in pairs(globals.selectedContainers) do
+                    local t, c = key:match("(%d+)_(%d+)")
+                    if tonumber(t) == groupIdx then
+                        globals.selectedContainers[key] = nil
+                    end
+                    -- Update indices for groups after the deleted one
+                    if tonumber(t) > groupIdx then
+                        local newKey = (tonumber(t) - 1) .. "_" .. c
+                        globals.selectedContainers[newKey] = globals.selectedContainers[key]
+                        globals.selectedContainers[key] = nil
+                    end
+                end
+                
+                -- Update selected group index if needed
+                if globals.selectedGroupIndex and globals.selectedGroupIndex > groupIdx then
+                    globals.selectedGroupIndex = globals.selectedGroupIndex - 1
+                end
+            end
+        end
+        
         -- Top section: preset controls and generation button
         UI_Preset.drawPresetControls()
         globals.imgui.SameLine(globals.ctx)
