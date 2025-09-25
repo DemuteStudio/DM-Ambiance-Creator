@@ -31,6 +31,77 @@ function ConflictResolver.initModule(g)
     globals.pendingResolutionData = nil
 end
 
+-- Get actual channel routing from existing tracks
+-- @param groupName string: Name of the group
+-- @param containerName string: Name of the container
+-- @return table|nil: Actual routing configuration or nil if tracks don't exist
+function ConflictResolver.getActualTrackRouting(groupName, containerName)
+    -- Find the group track
+    local groupTrack, groupTrackIdx = globals.Utils.findGroupByName(groupName)
+    if not groupTrack then
+        return nil
+    end
+    
+    -- Find the container track within the group
+    local containerTrack = globals.Utils.findContainerGroup(groupTrackIdx, containerName)
+    if not containerTrack then
+        return nil
+    end
+    
+    -- Get container track index
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+    
+    -- Check if this is a multi-channel container (has child tracks)
+    local folderDepth = reaper.GetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH")
+    if folderDepth ~= 1 then
+        return nil -- Not a folder, no child tracks to read
+    end
+    
+    -- Read routing from child tracks
+    local actualRouting = {}
+    local trackIdx = containerIdx + 1
+    local depth = 1
+    
+    while trackIdx < reaper.CountTracks(0) and depth > 0 do
+        local childTrack = reaper.GetTrack(0, trackIdx)
+        if not childTrack then break end
+        
+        -- Check if this is a direct child (not a grandchild)
+        local parent = reaper.GetParentTrack(childTrack)
+        if parent == containerTrack then
+            -- Find the send to parent track and read its destination channel
+            local sendCount = reaper.GetTrackNumSends(childTrack, 0)
+            local destChannel = 1 -- Default to channel 1 if no send found
+            
+            for sendIdx = 0, sendCount - 1 do
+                local destTrack = reaper.GetTrackSendInfo_Value(childTrack, 0, sendIdx, "P_DESTTRACK")
+                if destTrack == containerTrack then
+                    -- Read the destination channel for this send
+                    local dstChan = reaper.GetTrackSendInfo_Value(childTrack, 0, sendIdx, "I_DSTCHAN")
+                    -- Convert from Reaper's channel format (1024 + channel) to 1-based channel number
+                    if dstChan >= 1024 then
+                        destChannel = (dstChan - 1024) + 1
+                    else
+                        -- Handle stereo pairs and other formats
+                        destChannel = math.floor(dstChan / 2) + 1
+                    end
+                    break
+                end
+            end
+            
+            table.insert(actualRouting, destChannel)
+        end
+        
+        -- Update depth tracking
+        local childDepth = reaper.GetMediaTrackInfo_Value(childTrack, "I_FOLDERDEPTH")
+        depth = depth + childDepth
+        trackIdx = trackIdx + 1
+    end
+    
+    -- Return routing if we found child tracks
+    return #actualRouting > 0 and actualRouting or nil
+end
+
 -- Detect routing conflicts between containers
 -- @return table|nil: Conflict information or nil if no conflicts
 function ConflictResolver.detectConflicts()
@@ -54,6 +125,11 @@ function ConflictResolver.detectConflicts()
                     end
 
                     local containerKey = group.name .. "_" .. container.name
+                    
+                    -- Get actual routing from tracks if they exist
+                    local actualRouting = ConflictResolver.getActualTrackRouting(group.name, container.name)
+                    local routing = actualRouting or container.customRouting or activeConfig.routing
+                    
                     containers[containerKey] = {
                         group = group,
                         container = container,
@@ -62,13 +138,12 @@ function ConflictResolver.detectConflicts()
                         channelMode = container.channelMode,
                         channelCount = config.channels,
                         config = activeConfig,
-                        routing = container.customRouting or activeConfig.routing,
+                        routing = routing,
                         labels = activeConfig.labels,
                         conflicts = {}
                     }
 
-                    -- Track channel usage
-                    local routing = container.customRouting or activeConfig.routing
+                    -- Track channel usage (routing already determined above)
                     for idx, channelNum in ipairs(routing) do
                         local label = activeConfig.labels[idx]
 
@@ -195,13 +270,17 @@ end
 -- @param masterConfig table: Master configuration (e.g., 5.0)
 -- @return table: Routing resolution
 function ConflictResolver.matchChannelsByLabel(subConfig, masterConfig)
+    -- Get actual routing if tracks exist, otherwise use config routing
+    local actualRouting = ConflictResolver.getActualTrackRouting(subConfig.groupName, subConfig.containerName)
+    local currentRouting = actualRouting or subConfig.routing
+    
     local resolution = {
         containerKey = subConfig.groupName .. "_" .. subConfig.containerName,
         groupName = subConfig.groupName,
         containerName = subConfig.containerName,
         affectedBy = masterConfig.groupName .. "_" .. masterConfig.containerName,
         changes = {},
-        originalRouting = subConfig.routing,
+        originalRouting = currentRouting,
         newRouting = {}
     }
     
@@ -213,7 +292,7 @@ function ConflictResolver.matchChannelsByLabel(subConfig, masterConfig)
     
     -- Match each channel of subordinate config
     for idx, label in ipairs(subConfig.labels) do
-        local oldChannel = subConfig.routing[idx]
+        local oldChannel = currentRouting[idx]
         local newChannel = oldChannel  -- Default: keep same
         local reason = "Keep original"
         local matched = nil
@@ -791,9 +870,6 @@ function ConflictResolver.applyResolution()
             if group.name == resolution.groupName then
                 for _, container in ipairs(group.containers) do
                     if container.name == resolution.containerName then
-                        -- Store the new routing in the container configuration
-                        container.customRouting = resolution.newRouting
-                        
                         -- Apply routing to existing tracks immediately
                         local success = ConflictResolver.applyRoutingToExistingTracks(
                             resolution.groupName, 
@@ -801,8 +877,24 @@ function ConflictResolver.applyResolution()
                             resolution.newRouting
                         )
                         
-                        if not success then
-                            -- If tracks don't exist, mark for regeneration
+                        if success then
+                            -- Store the new routing in the container configuration
+                            container.customRouting = resolution.newRouting
+                            
+                            -- Verify the routing was applied correctly by reading it back
+                            local verifiedRouting = ConflictResolver.getActualTrackRouting(
+                                resolution.groupName, 
+                                resolution.containerName
+                            )
+                            
+                            -- If we can verify the routing, update with the actual values
+                            if verifiedRouting then
+                                container.customRouting = verifiedRouting
+                            end
+                        else
+                            -- If tracks don't exist, still update the container configuration
+                            -- so it will be used when tracks are generated
+                            container.customRouting = resolution.newRouting
                             container.needsRegeneration = true
                             allSuccess = false
                         end
@@ -820,6 +912,9 @@ function ConflictResolver.applyResolution()
     end
     
     reaper.Undo_EndBlock("Apply Channel Routing Resolution", -1)
+    
+    -- Clear conflict data after applying resolution
+    ConflictResolver.clearConflicts()
     
     -- Update the arrange view to reflect changes
     reaper.UpdateArrange()
