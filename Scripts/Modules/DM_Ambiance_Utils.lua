@@ -779,13 +779,22 @@ function Utils.normalizedToDbRelative(normalizedValue)
     end
     
     if normalizedValue < 0.5 then
-        -- Left half: -144dB to 0dB with power curve for Reaper-like behavior
+        -- Left half: -144dB to 0dB with audio taper curve (convex, not concave)
         local ratio = normalizedValue / 0.5  -- 0 to 1 for left half
-        -- Apply power curve (cubed for good balance)
-        -- When ratio is near 1 (close to 0dB), the curve is flatter
-        -- When ratio is near 0 (close to -inf), the curve is steeper
-        local curvedRatio = ratio * ratio * ratio  -- Cubic curve
-        return Constants.AUDIO.VOLUME_RANGE_DB_MIN * (1 - curvedRatio)
+        
+        -- Use audio taper curve for natural mixing console feel
+        -- This provides better resolution in the mixing range (-40dB to 0dB)
+        if ratio < 0.001 then
+            -- Very close to zero, return minimum
+            return Constants.AUDIO.VOLUME_RANGE_DB_MIN
+        else
+            -- Use exponential curve for natural audio taper
+            -- This creates a convex curve that matches professional mixing consoles
+            -- At ratio 0.5 (position 0.25), this gives approximately -20dB
+            local dB = 60 * (math.log(ratio) / math.log(10))
+            -- Clamp to minimum
+            return math.max(dB, Constants.AUDIO.VOLUME_RANGE_DB_MIN)
+        end
     else
         -- Right half: 0dB to +24dB (linear)
         local ratio = (normalizedValue - 0.5) / 0.5
@@ -804,12 +813,13 @@ function Utils.dbToNormalizedRelative(volumeDB)
     if volumeDB <= Constants.AUDIO.VOLUME_RANGE_DB_MIN then
         return 0.0
     elseif volumeDB <= 0 then
-        -- Map -144dB to 0dB → 0.0 to 0.5 with inverse power curve
-        -- First get linear ratio of where we are in the range
-        local linearRatio = (volumeDB - Constants.AUDIO.VOLUME_RANGE_DB_MIN) / (0 - Constants.AUDIO.VOLUME_RANGE_DB_MIN)
-        -- Apply inverse of cubic curve (cube root)
-        local curvedRatio = linearRatio^(1/3)
-        return curvedRatio * 0.5
+        -- Map -144dB to 0dB → 0.0 to 0.5 with inverse audio taper curve
+        -- Use the inverse of the exponential curve for consistency
+        -- 10^(dB/60) gives us the ratio for our audio taper
+        local ratio = 10^(volumeDB / 60)
+        -- Clamp ratio to valid range [0, 1]
+        ratio = math.max(0, math.min(1, ratio))
+        return ratio * 0.5
     else
         -- Map 0dB to +24dB → 0.5 to 1.0
         local ratio = volumeDB / Constants.AUDIO.VOLUME_RANGE_DB_MAX
