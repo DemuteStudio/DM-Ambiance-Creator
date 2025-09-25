@@ -324,17 +324,40 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
     local channelTracks = {}
     if globals.keepExistingTracks then
         if isMultiChannel then
-            -- Multi-channel mode: just get existing tracks and clear items
-            -- NEVER modify structure when keepExistingTracks is true
-            channelTracks = Generation.getExistingChannelTracks(containerGroup)
+            -- Multi-channel mode: check existing structure
+            local expectedChannels = globals.Constants.CHANNEL_CONFIGS[container.channelMode].channels
+            local containerFolderDepth = reaper.GetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH")
             
-            -- If no child tracks found, use the container itself
-            if #channelTracks == 0 then
-                channelTracks = {containerGroup}
+            -- Check if container is properly configured as a folder
+            local hasValidStructure = (containerFolderDepth == 1)
+            
+            if hasValidStructure then
+                -- Get existing child tracks
+                channelTracks = Generation.getExistingChannelTracks(containerGroup)
+                
+                -- Verify we have the correct number of tracks
+                if #channelTracks ~= expectedChannels then
+                    hasValidStructure = false
+                else
+                    -- Verify all tracks are direct children of the container
+                    for _, track in ipairs(channelTracks) do
+                        local parent = reaper.GetParentTrack(track)
+                        if parent ~= containerGroup then
+                            hasValidStructure = false
+                            break
+                        end
+                    end
+                end
             end
             
-            -- Just clear items from existing tracks
-            Generation.clearChannelTracks(channelTracks)
+            if not hasValidStructure then
+                -- Structure is invalid or configuration changed, recreate tracks
+                Generation.deleteContainerChildTracks(containerGroup)
+                channelTracks = Generation.createMultiChannelTracks(containerGroup, container)
+            else
+                -- Structure is valid, just clear items from existing tracks
+                Generation.clearChannelTracks(channelTracks)
+            end
         else
             -- Default mode: clear items from container itself
             while reaper.CountTrackMediaItems(containerGroup) > 0 do
@@ -797,15 +820,6 @@ function Generation.generateSingleGroup(groupIndex)
             if folderDepth <= 0 then break end
         end
 
-        -- Clear items from existing container groups (respecting keep setting)
-        for i, containerGroup in ipairs(containerGroups) do
-            if globals.keepExistingTracks then
-                Utils.clearGroupItemsInTimeSelection(containerGroup)
-            else
-                Utils.clearGroupItems(containerGroup)
-            end
-        end
-
         -- Process each container in the structure
         for j, container in ipairs(group.containers) do
             local containerGroup = nil
@@ -814,6 +828,7 @@ function Generation.generateSingleGroup(groupIndex)
             if containerIndex then
                 -- Container exists, use it
                 containerGroup = containerGroups[containerIndex]
+                -- Items will be cleared by placeItemsForContainer
             else
                 -- Container doesn't exist, create it
                 local insertPosition = existingGroupIdx + #containerGroups + 1
@@ -945,9 +960,20 @@ function Generation.generateSingleContainer(groupIndex, containerIndex)
     if containerGroup then
         -- Container exists, clear it and regenerate
         if globals.keepExistingTracks then
-            -- For multi-channel, only clear items from channel tracks
-            local channelTracks = Generation.getExistingChannelTracks(containerGroup)
-            Generation.clearChannelTracks(channelTracks)
+            -- Check if container is supposed to be multi-channel
+            local isMultiChannel = container.channelMode and container.channelMode > 0
+            
+            if isMultiChannel then
+                -- Multi-channel: clear items from channel tracks
+                local channelTracks = Generation.getExistingChannelTracks(containerGroup)
+                Generation.clearChannelTracks(channelTracks)
+            else
+                -- Default mode: clear items from container itself
+                while reaper.CountTrackMediaItems(containerGroup) > 0 do
+                    local item = reaper.GetTrackMediaItem(containerGroup, 0)
+                    reaper.DeleteTrackMediaItem(containerGroup, item)
+                end
+            end
         else
             -- Delete all items from container and its children
             Utils.clearGroupItems(containerGroup)
