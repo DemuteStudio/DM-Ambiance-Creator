@@ -234,10 +234,24 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
     end
     
-    -- Display actual dB value
+    -- Manual dB input field
     imgui.SameLine(globals.ctx)
-    local displayText = container.trackVolume <= -144 and "-inf dB" or string.format("%.1f dB", container.trackVolume)
-    imgui.Text(globals.ctx, displayText)
+    imgui.PushItemWidth(globals.ctx, 65)
+    local displayValue = container.trackVolume <= -144 and -144 or container.trackVolume
+    local rv2, manualDB = imgui.InputDouble(
+        globals.ctx,
+        "##TrackVolumeInput_" .. containerId,
+        displayValue,
+        0, 0,  -- step, step_fast (not used)
+        "%.1f dB"
+    )
+    if rv2 then
+        -- Clamp to valid range
+        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
+                           math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
+        container.trackVolume = manualDB
+        globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, manualDB)
+    end
     imgui.PopItemWidth(globals.ctx)
 
     -- Multi-Channel Configuration
@@ -365,10 +379,25 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             end
             imgui.PopItemWidth(globals.ctx)
             
-            -- Display actual dB value
+            -- Manual dB input field
             imgui.SameLine(globals.ctx)
-            local displayText = container.channelVolumes[i] <= -144 and "-inf" or string.format("%.1f dB", container.channelVolumes[i])
-            imgui.Text(globals.ctx, displayText)
+            imgui.PushItemWidth(globals.ctx, 65)
+            local displayValue = container.channelVolumes[i] <= -144 and -144 or container.channelVolumes[i]
+            local rv2, manualDB = imgui.InputDouble(
+                globals.ctx,
+                "##VolInput_" .. i,
+                displayValue,
+                0, 0,  -- step, step_fast (not used)
+                "%.1f dB"
+            )
+            if rv2 then
+                -- Clamp to valid range
+                manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
+                                   math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
+                container.channelVolumes[i] = manualDB
+                globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, manualDB)
+            end
+            imgui.PopItemWidth(globals.ctx)
             
             imgui.PopID(globals.ctx)
         end

@@ -63,10 +63,24 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         globals.Utils.setGroupTrackVolume(groupIndex, newVolumeDB)
     end
     
-    -- Display actual dB value next to slider
+    -- Manual dB input field
     imgui.SameLine(globals.ctx)
-    local displayText = group.trackVolume <= -144 and "-inf dB" or string.format("%.1f dB", group.trackVolume)
-    imgui.Text(globals.ctx, displayText)
+    imgui.PushItemWidth(globals.ctx, 65)
+    local displayValue = group.trackVolume <= -144 and -144 or group.trackVolume
+    local rv2, manualDB = imgui.InputDouble(
+        globals.ctx,
+        "##GroupTrackVolumeInput_" .. groupId,
+        displayValue,
+        0, 0,  -- step, step_fast (not used)
+        "%.1f dB"
+    )
+    if rv2 then
+        -- Clamp to valid range
+        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
+                           math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
+        group.trackVolume = manualDB
+        globals.Utils.setGroupTrackVolume(groupIndex, manualDB)
+    end
     imgui.PopItemWidth(globals.ctx)
     
     -- Group preset controls

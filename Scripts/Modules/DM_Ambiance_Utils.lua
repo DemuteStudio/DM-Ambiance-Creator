@@ -779,9 +779,13 @@ function Utils.normalizedToDbRelative(normalizedValue)
     end
     
     if normalizedValue < 0.5 then
-        -- Left half: -144dB to 0dB (exponential curve for better precision near 0dB)
-        local ratio = normalizedValue / 0.5
-        return Constants.AUDIO.VOLUME_RANGE_DB_MIN * (1 - ratio)
+        -- Left half: -144dB to 0dB with power curve for Reaper-like behavior
+        local ratio = normalizedValue / 0.5  -- 0 to 1 for left half
+        -- Apply power curve (cubed for good balance)
+        -- When ratio is near 1 (close to 0dB), the curve is flatter
+        -- When ratio is near 0 (close to -inf), the curve is steeper
+        local curvedRatio = ratio * ratio * ratio  -- Cubic curve
+        return Constants.AUDIO.VOLUME_RANGE_DB_MIN * (1 - curvedRatio)
     else
         -- Right half: 0dB to +24dB (linear)
         local ratio = (normalizedValue - 0.5) / 0.5
@@ -800,10 +804,12 @@ function Utils.dbToNormalizedRelative(volumeDB)
     if volumeDB <= Constants.AUDIO.VOLUME_RANGE_DB_MIN then
         return 0.0
     elseif volumeDB <= 0 then
-        -- Map -144dB to 0dB → 0.0 to 0.5
-        -- Linear interpolation: (volumeDB - min) / (0 - min) * range
-        local ratio = (volumeDB - Constants.AUDIO.VOLUME_RANGE_DB_MIN) / (0 - Constants.AUDIO.VOLUME_RANGE_DB_MIN)
-        return ratio * 0.5
+        -- Map -144dB to 0dB → 0.0 to 0.5 with inverse power curve
+        -- First get linear ratio of where we are in the range
+        local linearRatio = (volumeDB - Constants.AUDIO.VOLUME_RANGE_DB_MIN) / (0 - Constants.AUDIO.VOLUME_RANGE_DB_MIN)
+        -- Apply inverse of cubic curve (cube root)
+        local curvedRatio = linearRatio^(1/3)
+        return curvedRatio * 0.5
     else
         -- Map 0dB to +24dB → 0.5 to 1.0
         local ratio = volumeDB / Constants.AUDIO.VOLUME_RANGE_DB_MAX
