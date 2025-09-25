@@ -1252,18 +1252,36 @@ function Utils.applyFadeSettingsToContainerItems(groupIndex, containerIndex, mod
     local Structures = require("DM_Ambiance_Structures")
     local effectiveParams = Structures.getEffectiveContainerParams(group, container)
     
-    -- Get all media items from the container's track
-    local itemCount = reaper.CountTrackMediaItems(containerTrack)
-    if itemCount == 0 then
+    -- Determine which tracks to process based on channel mode
+    local tracksToProcess = {}
+    if container.channelMode and container.channelMode > 0 then
+        -- Multi-channel mode: get child tracks where items are actually placed
+        local Generation = require("DM_Ambiance_Generation")
+        tracksToProcess = Generation.getExistingChannelTracks(containerTrack)
+    else
+        -- Default mode: items are on the container track itself
+        tracksToProcess = {containerTrack}
+    end
+    
+    -- Check if we have any tracks to process
+    local totalItemCount = 0
+    for _, track in ipairs(tracksToProcess) do
+        totalItemCount = totalItemCount + reaper.CountTrackMediaItems(track)
+    end
+    
+    if totalItemCount == 0 then
         return -- No items to update
     end
     
     -- Begin undo block for batch operation
     reaper.Undo_BeginBlock()
     
-    for i = 0, itemCount - 1 do
-        local item = reaper.GetTrackMediaItem(containerTrack, i)
-        if item then
+    -- Process items on all relevant tracks
+    for _, track in ipairs(tracksToProcess) do
+        local itemCount = reaper.CountTrackMediaItems(track)
+        for i = 0, itemCount - 1 do
+            local item = reaper.GetTrackMediaItem(track, i)
+            if item then
             local itemLength = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
             
             -- Calculate desired fade durations
@@ -1328,6 +1346,7 @@ function Utils.applyFadeSettingsToContainerItems(groupIndex, containerIndex, mod
                 reaper.SetMediaItemInfo_Value(item, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
             else
                 reaper.SetMediaItemInfo_Value(item, "D_FADEOUTLEN", 0)
+                end
             end
         end
     end

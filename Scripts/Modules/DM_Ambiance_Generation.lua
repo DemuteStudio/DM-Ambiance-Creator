@@ -460,6 +460,33 @@ function Generation.clearChannelTracks(tracks)
     end
 end
 
+-- Get tracks for container in a unified way
+-- @param container table: The container configuration
+-- @param containerTrack userdata: The container track
+-- @return table: Array of tracks to process (channel tracks if multichannel, container track if not)
+function Generation.getTracksForContainer(container, containerTrack)
+    if container.channelMode and container.channelMode > 0 then
+        -- Multi-channel mode: get child tracks
+        return Generation.getExistingChannelTracks(containerTrack)
+    else
+        -- Default mode: just the container track
+        return {containerTrack}
+    end
+end
+
+-- Clear items from container (unified function for both modes)
+-- @param container table: The container configuration
+-- @param containerTrack userdata: The container track
+function Generation.clearContainerItems(container, containerTrack)
+    local tracks = Generation.getTracksForContainer(container, containerTrack)
+    for _, track in ipairs(tracks) do
+        while reaper.CountTrackMediaItems(track) > 0 do
+            local item = reaper.GetTrackMediaItem(track, 0)
+            reaper.DeleteTrackMediaItem(track, item)
+        end
+    end
+end
+
 -- Delete all child tracks of a container (for mode changes)
 -- @param containerTrack userdata: The container track
 function Generation.deleteContainerChildTracks(containerTrack)

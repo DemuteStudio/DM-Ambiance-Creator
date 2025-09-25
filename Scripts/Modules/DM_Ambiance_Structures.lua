@@ -152,9 +152,25 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.chunkDurationVariation = group.chunkDurationVariation
     effectiveParams.chunkSilenceVariation = group.chunkSilenceVariation
     
-    -- Inherit fade settings
-    effectiveParams.fadeInEnabled = group.fadeInEnabled
-    effectiveParams.fadeOutEnabled = group.fadeOutEnabled
+    -- Inherit fade settings with proper boolean handling
+    -- Ensure fadeEnabled values are never nil (fixes checkbox persistence issue)
+    if container.fadeInEnabled ~= nil then
+        effectiveParams.fadeInEnabled = container.fadeInEnabled
+    elseif group.fadeInEnabled ~= nil then
+        effectiveParams.fadeInEnabled = group.fadeInEnabled
+    else
+        effectiveParams.fadeInEnabled = false  -- Default to false if both are nil
+    end
+    
+    if container.fadeOutEnabled ~= nil then
+        effectiveParams.fadeOutEnabled = container.fadeOutEnabled
+    elseif group.fadeOutEnabled ~= nil then
+        effectiveParams.fadeOutEnabled = group.fadeOutEnabled
+    else
+        effectiveParams.fadeOutEnabled = false  -- Default to false if both are nil
+    end
+    
+    -- Inherit other fade settings (these can be nil without issues)
     effectiveParams.fadeInDuration = group.fadeInDuration
     effectiveParams.fadeOutDuration = group.fadeOutDuration
     effectiveParams.fadeInUsePercentage = group.fadeInUsePercentage
