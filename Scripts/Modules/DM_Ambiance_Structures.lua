@@ -81,7 +81,6 @@ function Structures.createContainer(name)
         -- Multi-channel support
         channelMode = Constants.CHANNEL_MODES.DEFAULT,  -- Default to stereo
         channelVariant = 0,  -- Channel variant (0=ITU/Dolby, 1=SMPTE)
-        channelPanning = {},  -- Pan values per channel {1: 0.0, 2: -0.5, etc}
         channelVolumes = {},  -- Volume per channel in dB
         -- Chunk Mode parameters
         chunkDuration = Constants.DEFAULTS.CHUNK_DURATION,

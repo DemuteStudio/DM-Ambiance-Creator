@@ -767,7 +767,7 @@ function Utils.linearToDb(linearVolume)
         return Constants.AUDIO.VOLUME_RANGE_DB_MIN
     end
     
-    return 20 * math.log10(linearVolume)
+    return 20 * (math.log(linearVolume) / math.log(10))
 end
 
 -- Set the volume of a container's track in Reaper
@@ -816,6 +816,182 @@ function Utils.setContainerTrackVolume(groupIndex, containerIndex, volumeDB)
     reaper.UpdateArrange()
     
     return true
+end
+
+-- Set the volume of a specific channel track within a multichannel container
+-- @param groupIndex number: Index of the group containing the container
+-- @param containerIndex number: Index of the container within the group
+-- @param channelIndex number: Index of the channel within the container (1-based)
+-- @param volumeDB number: Volume in decibels
+-- @return boolean: true if successful, false otherwise
+function Utils.setChannelTrackVolume(groupIndex, containerIndex, channelIndex, volumeDB)
+    if not groupIndex or groupIndex < 1 then
+        error("Utils.setChannelTrackVolume: valid groupIndex is required")
+    end
+    
+    if not containerIndex or containerIndex < 1 then
+        error("Utils.setChannelTrackVolume: valid containerIndex is required")
+    end
+    
+    if not channelIndex or channelIndex < 1 then
+        error("Utils.setChannelTrackVolume: valid channelIndex is required")
+    end
+    
+    if type(volumeDB) ~= "number" then
+        error("Utils.setChannelTrackVolume: volumeDB must be a number")
+    end
+    
+    -- Validate that the group and container exist
+    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
+        return false
+    end
+    
+    local group = globals.groups[groupIndex]
+    local container = group.containers[containerIndex]
+    
+    -- Only apply if container is in multichannel mode
+    if not container.channelMode or container.channelMode == 0 then
+        return false
+    end
+    
+    -- Find the group track
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return false
+    end
+    
+    -- Find the container track within the group
+    local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
+    if not containerTrack then
+        return false
+    end
+    
+    -- Get the number of tracks in the project
+    local trackCount = reaper.CountTracks(0)
+    
+    -- Find the channel track (it should be a child of the container track)
+    local foundChannelCount = 0
+    for i = containerTrackIdx + 1, trackCount - 1 do
+        local track = reaper.GetTrack(0, i)
+        if track then
+            -- Check if this track is a child of the container track
+            local parent = reaper.GetParentTrack(track)
+            if parent == containerTrack then
+                foundChannelCount = foundChannelCount + 1
+                if foundChannelCount == channelIndex then
+                    -- Found the target channel track
+                    -- Convert dB to linear factor and apply to track
+                    local linearVolume = Utils.dbToLinear(volumeDB)
+                    reaper.SetMediaTrackInfo_Value(track, "D_VOL", linearVolume)
+                    
+                    -- Update arrange view to reflect changes
+                    reaper.UpdateArrange()
+                    return true
+                end
+            else
+                -- We've gone past the container's children
+                break
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Get the volume of a specific channel track within a multichannel container
+-- @param groupIndex number: Index of the group containing the container
+-- @param containerIndex number: Index of the container within the group
+-- @param channelIndex number: Index of the channel within the container (1-based)
+-- @return number|nil: Volume in decibels, or nil if track not found
+function Utils.getChannelTrackVolume(groupIndex, containerIndex, channelIndex)
+    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 or not channelIndex or channelIndex < 1 then
+        return nil
+    end
+    
+    -- Validate that the group and container exist
+    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
+        return nil
+    end
+    
+    local group = globals.groups[groupIndex]
+    local container = group.containers[containerIndex]
+    
+    -- Only apply if container is in multichannel mode
+    if not container.channelMode or container.channelMode == 0 then
+        return nil
+    end
+    
+    -- Find the group track
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return nil
+    end
+    
+    -- Find the container track within the group
+    local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
+    if not containerTrack then
+        return nil
+    end
+    
+    -- Get the number of tracks in the project
+    local trackCount = reaper.CountTracks(0)
+    
+    -- Find the channel track (it should be a child of the container track)
+    local foundChannelCount = 0
+    for i = containerTrackIdx + 1, trackCount - 1 do
+        local track = reaper.GetTrack(0, i)
+        if track then
+            -- Check if this track is a child of the container track
+            local parent = reaper.GetParentTrack(track)
+            if parent == containerTrack then
+                foundChannelCount = foundChannelCount + 1
+                if foundChannelCount == channelIndex then
+                    -- Found the target channel track
+                    local linearVolume = reaper.GetMediaTrackInfo_Value(track, "D_VOL")
+                    return Utils.linearToDb(linearVolume)
+                end
+            else
+                -- We've gone past the container's children
+                break
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Sync channel volumes from Reaper tracks to container data
+-- @param groupIndex number: Index of the group containing the container
+-- @param containerIndex number: Index of the container within the group
+function Utils.syncChannelVolumesFromTracks(groupIndex, containerIndex)
+    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 then
+        return
+    end
+    
+    -- Validate that the group and container exist
+    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
+        return
+    end
+    
+    local container = globals.groups[groupIndex].containers[containerIndex]
+    
+    -- Only sync if container is in multichannel mode
+    if not container.channelMode or container.channelMode == 0 then
+        return
+    end
+    
+    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+    if not config then
+        return
+    end
+    
+    -- Sync each channel's volume
+    for i = 1, config.channels do
+        local volumeDB = Utils.getChannelTrackVolume(groupIndex, containerIndex, i)
+        if volumeDB then
+            container.channelVolumes[i] = volumeDB
+        end
+    end
 end
 
 -- Get the current volume of a container's track from Reaper

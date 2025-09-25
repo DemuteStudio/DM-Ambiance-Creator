@@ -117,6 +117,11 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local container = group.containers[containerIndex]
     local groupId = "group" .. groupIndex
     local containerId = groupId .. "_container" .. containerIndex
+    
+    -- Sync channel volumes from tracks if in multichannel mode
+    if container.channelMode and container.channelMode > 0 then
+        globals.Utils.syncChannelVolumesFromTracks(groupIndex, containerIndex)
+    end
 
     -- Panel title showing which container is being edited
     imgui.Text(globals.ctx, "Container Settings: " .. container.name)
@@ -128,178 +133,6 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local rv, newContainerName = imgui.InputText(globals.ctx, "Name##detail_" .. containerId, containerName)
     if rv then container.name = newContainerName end
     
-    -- Container track volume slider
-    imgui.Text(globals.ctx, "Track Volume")
-    imgui.SameLine(globals.ctx)
-    globals.Utils.HelpMarker("Controls the volume of the container's track in Reaper. Affects all items in this container.")
-    
-    imgui.PushItemWidth(globals.ctx, width * 0.6)
-    
-    -- Ensure trackVolume is initialized
-    if container.trackVolume == nil then
-        container.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
-    end
-    
-    local volumeDB = container.trackVolume
-    local rv, newVolumeDB = imgui.SliderDouble(
-        globals.ctx, 
-        "##TrackVolume_" .. containerId, 
-        volumeDB, 
-        Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
-        Constants.AUDIO.VOLUME_RANGE_DB_MAX, 
-        "%.1f dB"
-    )
-    if rv then 
-        container.trackVolume = newVolumeDB
-        -- Apply volume to track in real-time
-        globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
-    end
-    imgui.PopItemWidth(globals.ctx)
-
-    -- Multi-Channel Configuration
-    imgui.Separator(globals.ctx)
-    imgui.Text(globals.ctx, "Multi-Channel Configuration")
-    imgui.Separator(globals.ctx)
-
-    imgui.Text(globals.ctx, "Channel Mode")
-    imgui.SameLine(globals.ctx)
-    globals.Utils.HelpMarker("Select channel configuration. Creates multiple child tracks for surround output.")
-
-    -- Build dropdown items
-    local channelModeItems = ""
-    for i = 0, 3 do  -- Changed from 4 to 3 (removed 5.1 and 7.1)
-        local config = globals.Constants.CHANNEL_CONFIGS[i]
-        channelModeItems = channelModeItems .. config.name .. "\0"
-    end
-    channelModeItems = channelModeItems .. "\0"
-
-    -- Initialize if needed
-    if container.channelMode == nil then
-        container.channelMode = 0
-    end
-
-    imgui.PushItemWidth(globals.ctx, width * 0.6)
-    local rv, newMode = imgui.Combo(
-        globals.ctx,
-        "##ChannelMode_" .. containerId,
-        container.channelMode,
-        channelModeItems
-    )
-    if rv and newMode ~= container.channelMode then
-        container.channelMode = newMode
-        -- Reset channel settings when mode changes
-        container.channelPanning = {}
-        container.channelVolumes = {}
-    end
-    imgui.PopItemWidth(globals.ctx)
-
-    -- Show channel-specific controls for multi-channel modes
-    if container.channelMode > 0 then
-        local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
-
-        -- Show variant dropdown if the mode has variants
-        if config.hasVariants then
-            imgui.Text(globals.ctx, "Channel Order")
-            imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Select channel order standard (ITU/Dolby or SMPTE)")
-
-            -- Build variant dropdown items
-            local variantItems = ""
-            for i = 0, #config.variants do
-                variantItems = variantItems .. config.variants[i].name .. "\0"
-            end
-            variantItems = variantItems .. "\0"
-
-            -- Initialize if needed
-            if container.channelVariant == nil then
-                container.channelVariant = 0
-            end
-
-            imgui.PushItemWidth(globals.ctx, width * 0.6)
-            local rv, newVariant = imgui.Combo(
-                globals.ctx,
-                "##ChannelVariant_" .. containerId,
-                container.channelVariant,
-                variantItems
-            )
-            if rv then
-                container.channelVariant = newVariant
-                -- Reset channel settings when variant changes
-                container.channelPanning = {}
-                container.channelVolumes = {}
-            end
-            imgui.PopItemWidth(globals.ctx)
-        end
-
-        -- Get the active configuration (with variant if applicable)
-        local activeConfig = config
-        if config.hasVariants then
-            activeConfig = config.variants[container.channelVariant or 0]
-        end
-
-        -- Channel-specific controls
-        imgui.Text(globals.ctx, "Channel Settings:")
-
-        for i = 1, config.channels do
-            local label = activeConfig.labels and activeConfig.labels[i] or ("Channel " .. i)
-
-            imgui.PushID(globals.ctx, "channel_" .. i .. "_" .. containerId)
-            imgui.Text(globals.ctx, label .. ":")
-
-            -- Initialize if needed
-            if container.channelPanning[i] == nil then
-                container.channelPanning[i] = 0.0
-            end
-            if container.channelVolumes[i] == nil then
-                container.channelVolumes[i] = 0.0
-            end
-
-            -- Pan control
-            imgui.Text(globals.ctx, "  Pan:")
-            imgui.SameLine(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, width * 0.3)
-            local rv, newPan = imgui.SliderDouble(
-                globals.ctx,
-                "##Pan",
-                container.channelPanning[i],
-                -1.0, 1.0,
-                "%.2f"
-            )
-            if rv then
-                container.channelPanning[i] = newPan
-            end
-            imgui.PopItemWidth(globals.ctx)
-
-            -- Volume control
-            imgui.SameLine(globals.ctx)
-            imgui.Text(globals.ctx, "Vol:")
-            imgui.SameLine(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, width * 0.3)
-            local rv, newVol = imgui.SliderDouble(
-                globals.ctx,
-                "##Vol",
-                container.channelVolumes[i],
-                -12.0, 12.0,
-                "%.1f dB"
-            )
-            if rv then
-                container.channelVolumes[i] = newVol
-            end
-            imgui.PopItemWidth(globals.ctx)
-
-            imgui.PopID(globals.ctx)
-        end
-    end
-
-    imgui.Separator(globals.ctx)
-
-    -- "Override Parent Settings" checkbox
-    local overrideParent = container.overrideParent
-    local rv, newOverrideParent = imgui.Checkbox(globals.ctx, "Override Parent Settings##" .. containerId, overrideParent)
-    imgui.SameLine(globals.ctx)
-    globals.Utils.HelpMarker("Enable 'Override Parent Settings' to customize parameters for this container instead of inheriting from the group.")
-    if rv then container.overrideParent = newOverrideParent end
-
     -- Container preset controls (load/save)
     UI_Container.drawContainerPresetControls(groupIndex, containerIndex)
 
@@ -366,6 +199,160 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         
         imgui.PopID(globals.ctx)
     end
+
+    -- Container track volume slider
+    imgui.Separator(globals.ctx)
+    imgui.Text(globals.ctx, "Track Volume")
+    imgui.SameLine(globals.ctx)
+    globals.Utils.HelpMarker("Controls the volume of the container's track in Reaper. Affects all items in this container.")
+    
+    imgui.PushItemWidth(globals.ctx, width * 0.6)
+    
+    -- Ensure trackVolume is initialized
+    if container.trackVolume == nil then
+        container.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
+    end
+    
+    local volumeDB = container.trackVolume
+    local rv, newVolumeDB = imgui.SliderDouble(
+        globals.ctx, 
+        "##TrackVolume_" .. containerId, 
+        volumeDB, 
+        Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
+        Constants.AUDIO.VOLUME_RANGE_DB_MAX, 
+        "%.1f dB"
+    )
+    if rv then 
+        container.trackVolume = newVolumeDB
+        -- Apply volume to track in real-time
+        globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
+    end
+    imgui.PopItemWidth(globals.ctx)
+
+    -- Multi-Channel Configuration
+    imgui.Separator(globals.ctx)
+    imgui.Text(globals.ctx, "Multi-Channel Configuration")
+    imgui.Separator(globals.ctx)
+
+    imgui.Text(globals.ctx, "Channel Mode")
+    imgui.SameLine(globals.ctx)
+    globals.Utils.HelpMarker("Select channel configuration. Creates multiple child tracks for surround output.")
+
+    -- Build dropdown items
+    local channelModeItems = ""
+    for i = 0, 3 do  -- Changed from 4 to 3 (removed 5.1 and 7.1)
+        local config = globals.Constants.CHANNEL_CONFIGS[i]
+        channelModeItems = channelModeItems .. config.name .. "\0"
+    end
+    channelModeItems = channelModeItems .. "\0"
+
+    -- Initialize if needed
+    if container.channelMode == nil then
+        container.channelMode = 0
+    end
+
+    imgui.PushItemWidth(globals.ctx, width * 0.6)
+    local rv, newMode = imgui.Combo(
+        globals.ctx,
+        "##ChannelMode_" .. containerId,
+        container.channelMode,
+        channelModeItems
+    )
+    if rv and newMode ~= container.channelMode then
+        container.channelMode = newMode
+        -- Reset channel settings when mode changes
+        container.channelVolumes = {}
+    end
+    imgui.PopItemWidth(globals.ctx)
+
+    -- Show channel-specific controls for multi-channel modes
+    if container.channelMode > 0 then
+        local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+
+        -- Show variant dropdown if the mode has variants
+        if config.hasVariants then
+            imgui.Text(globals.ctx, "Channel Order")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Select channel order standard (ITU/Dolby or SMPTE)")
+
+            -- Build variant dropdown items
+            local variantItems = ""
+            for i = 0, #config.variants do
+                variantItems = variantItems .. config.variants[i].name .. "\0"
+            end
+            variantItems = variantItems .. "\0"
+
+            -- Initialize if needed
+            if container.channelVariant == nil then
+                container.channelVariant = 0
+            end
+
+            imgui.PushItemWidth(globals.ctx, width * 0.6)
+            local rv, newVariant = imgui.Combo(
+                globals.ctx,
+                "##ChannelVariant_" .. containerId,
+                container.channelVariant,
+                variantItems
+            )
+            if rv then
+                container.channelVariant = newVariant
+                -- Reset channel settings when variant changes
+                container.channelVolumes = {}
+            end
+            imgui.PopItemWidth(globals.ctx)
+        end
+
+        -- Get the active configuration (with variant if applicable)
+        local activeConfig = config
+        if config.hasVariants then
+            activeConfig = config.variants[container.channelVariant or 0]
+        end
+
+        -- Channel-specific controls
+        imgui.Text(globals.ctx, "Channel Settings:")
+
+        for i = 1, config.channels do
+            local label = activeConfig.labels and activeConfig.labels[i] or ("Channel " .. i)
+
+            imgui.PushID(globals.ctx, "channel_" .. i .. "_" .. containerId)
+            
+            -- Channel label and volume on same line
+            imgui.Text(globals.ctx, label .. ":")
+            imgui.SameLine(globals.ctx)
+            
+            -- Initialize volume if needed
+            if container.channelVolumes[i] == nil then
+                container.channelVolumes[i] = 0.0
+            end
+            
+            -- Volume control on same line as label
+            imgui.PushItemWidth(globals.ctx, width * 0.5)
+            local rv, newVol = imgui.SliderDouble(
+                globals.ctx,
+                "##Vol_" .. i,
+                container.channelVolumes[i],
+                -12.0, 12.0,
+                "%.1f dB"
+            )
+            if rv then
+                container.channelVolumes[i] = newVol
+                -- Apply volume to channel track in real-time
+                globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, newVol)
+            end
+            imgui.PopItemWidth(globals.ctx)
+
+            imgui.PopID(globals.ctx)
+        end
+    end
+
+    imgui.Separator(globals.ctx)
+
+    -- "Override Parent Settings" checkbox
+    local overrideParent = container.overrideParent
+    local rv, newOverrideParent = imgui.Checkbox(globals.ctx, "Override Parent Settings##" .. containerId, overrideParent)
+    imgui.SameLine(globals.ctx)
+    globals.Utils.HelpMarker("Enable 'Override Parent Settings' to customize parameters for this container instead of inheriting from the group.")
+    if rv then container.overrideParent = newOverrideParent end
 
     -- Display trigger/randomization settings or inheritance info
     if container.overrideParent then

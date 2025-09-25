@@ -155,11 +155,6 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
             reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "D_VOL", 1.0)  -- Unity gain
         end
 
-        -- Apply channel-specific pan
-        if container.channelPanning and container.channelPanning[i] then
-            reaper.SetMediaTrackInfo_Value(channelTrack, "D_PAN", container.channelPanning[i])
-        end
-
         -- Apply channel-specific volume
         if container.channelVolumes and container.channelVolumes[i] then
             local linearVol = globals.Utils.dbToLinear(container.channelVolumes[i])
