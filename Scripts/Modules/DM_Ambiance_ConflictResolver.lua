@@ -292,7 +292,7 @@ function ConflictResolver.renderModal()
     
     -- Set initial window size
     if modalFirstOpen then
-        imgui.SetNextWindowSize(ctx, 900, 600, imgui.Cond_FirstUseEver)
+        imgui.SetNextWindowSize(ctx, 900, 700, imgui.Cond_FirstUseEver)
         imgui.OpenPopup(ctx, "Channel Routing Conflict Resolver")
         modalFirstOpen = false
     end
@@ -304,8 +304,8 @@ function ConflictResolver.renderModal()
         -- Get window dimensions for proper layout
         local windowWidth, windowHeight = imgui.GetWindowSize(ctx)
         local headerHeight = 60  -- Space for title and separator
-        local footerHeight = 50  -- Space for buttons
-        local contentHeight = windowHeight - headerHeight - footerHeight - 20  -- Extra padding
+        local footerHeight = 60  -- More space for buttons and padding below
+        local contentHeight = windowHeight - headerHeight - footerHeight - 30  -- Increased padding for better spacing
         
         -- Header
         imgui.PushStyleColor(ctx, imgui.Col_Text, 0xFF8800FF)

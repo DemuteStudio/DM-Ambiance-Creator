@@ -80,6 +80,18 @@ function UI_Preset.drawPresetControls()
         globals.Utils.openPresetsFolder("Presets")
     end
     
+    -- Button to open the conflict resolver
+    imgui.SameLine(globals.ctx)
+    if globals.Icons.createConflictButton(globals.ctx, "conflictResolver", "Open Channel Routing Conflict Resolver") then
+        -- Check for conflicts
+        local conflicts = globals.ConflictResolver.detectConflicts()
+        if conflicts then
+            globals.ConflictResolver.showResolutionModal(conflicts)
+        else
+            reaper.ShowMessageBox("No channel routing conflicts detected.", "Conflict Resolver", 0)
+        end
+    end
+    
     -- Handle the save preset popup modal window
     UI_Preset.handleSavePresetPopup(presetList)
     

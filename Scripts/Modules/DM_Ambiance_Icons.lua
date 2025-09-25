@@ -47,6 +47,7 @@ local function getIconPaths()
                 download = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_download_import_save_down_storage_icon.png",
                 settings = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_settings_icon.png",
                 folder = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_folder_icon.png",
+                conflict = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_conflict_resolution_icon.png",
                 add = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_+_add_increase_icon.png",
                 link = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_link_icon.png",
                 unlink = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_unlink_icon.png",
@@ -63,6 +64,7 @@ local function getIconPaths()
         download = "",
         settings = "",
         folder = "",
+        conflict = "",
         add = "",
         link = "",
         unlink = "",
@@ -208,6 +210,25 @@ function Icons.loadIcons()
         iconTextures.folder = nil
     end
     
+    -- Try to load conflict icon from file
+    if fileExists(iconPaths.conflict) then
+        local success, result = pcall(function()
+            local img = globals.imgui.CreateImage(iconPaths.conflict)
+            if img then
+                globals.imgui.Attach(globals.ctx, img)
+            end
+            return img
+        end)
+        
+        if success and result then
+            iconTextures.conflict = result
+        else
+            iconTextures.conflict = nil
+        end
+    else
+        iconTextures.conflict = nil
+    end
+    
     -- Try to load add icon from file
     if fileExists(iconPaths.add) then
         local success, result = pcall(function()
@@ -284,7 +305,7 @@ function Icons.loadIcons()
         iconTextures.mirror = nil
     end
     
-    return iconTextures.delete ~= nil or iconTextures.regen ~= nil or iconTextures.upload ~= nil or iconTextures.download ~= nil or iconTextures.settings ~= nil or iconTextures.folder ~= nil or iconTextures.add ~= nil or iconTextures.link ~= nil or iconTextures.unlink ~= nil or iconTextures.mirror ~= nil
+    return iconTextures.delete ~= nil or iconTextures.regen ~= nil or iconTextures.upload ~= nil or iconTextures.download ~= nil or iconTextures.settings ~= nil or iconTextures.folder ~= nil or iconTextures.conflict ~= nil or iconTextures.add ~= nil or iconTextures.link ~= nil or iconTextures.unlink ~= nil or iconTextures.mirror ~= nil
 end
 
 -- Get icon size (48x48 based on actual icon files)
@@ -438,6 +459,29 @@ function Icons.createFolderButton(ctx, id, tooltip)
     return result
 end
 
+-- Create a conflict resolution icon button
+function Icons.createConflictButton(ctx, id, tooltip)
+    if not iconTextures.conflict then
+        -- Fallback to text button if icon failed to load
+        local result = globals.imgui.Button(ctx, "Conflicts##" .. id)
+        if globals.imgui.IsItemHovered(ctx) then
+            globals.imgui.SetTooltip(ctx, tooltip or "Channel Routing Conflicts")
+        end
+        return result
+    end
+    
+    local width, height = Icons.getIconSize()
+    
+    local buttonId = "##ImgConflict_" .. id
+    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.conflict, width, height)
+    
+    if globals.imgui.IsItemHovered(ctx) then
+        globals.imgui.SetTooltip(ctx, tooltip or "Channel Routing Conflicts")
+    end
+    
+    return result
+end
+
 -- Create a delete button with text fallback
 function Icons.createDeleteButtonWithFallback(ctx, id, fallbackText, tooltip)
     if iconTextures.delete then
@@ -476,6 +520,10 @@ function Icons.getFolderIcon()
     return iconTextures.folder
 end
 
+function Icons.getConflictIcon()
+    return iconTextures.conflict
+end
+
 -- Create an add icon button
 function Icons.createAddButton(ctx, id, tooltip)
     if not iconTextures.add then
@@ -510,8 +558,9 @@ function Icons.areAllLoaded()
     return iconTextures.delete ~= nil and iconTextures.regen ~= nil and 
            iconTextures.upload ~= nil and iconTextures.download ~= nil and
            iconTextures.settings ~= nil and iconTextures.folder ~= nil and
-           iconTextures.add ~= nil and iconTextures.link ~= nil and
-           iconTextures.unlink ~= nil and iconTextures.mirror ~= nil
+           iconTextures.conflict ~= nil and iconTextures.add ~= nil and 
+           iconTextures.link ~= nil and iconTextures.unlink ~= nil and 
+           iconTextures.mirror ~= nil
 end
 
 -- Create a link/unlink/mirror cycling button that changes mode on click
