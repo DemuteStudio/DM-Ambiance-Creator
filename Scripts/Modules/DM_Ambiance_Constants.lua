@@ -31,7 +31,7 @@ Constants.COLORS = {
 Constants.AUDIO = {
     DEFAULT_CROSSFADE_MARGIN = 0.1,     -- Default crossfade margin in seconds
     DEFAULT_FADE_SHAPE = 0,             -- Default fade shape
-    VOLUME_RANGE_DB_MIN = -60,          -- Minimum volume range for sliders (dB)
+    VOLUME_RANGE_DB_MIN = -144,         -- Minimum volume range for sliders (dB, -inf)
     VOLUME_RANGE_DB_MAX = 24,           -- Maximum volume range for sliders (dB)
 }
 

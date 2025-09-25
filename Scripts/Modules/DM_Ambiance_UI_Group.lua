@@ -20,6 +20,9 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     local group = globals.groups[groupIndex]
     local groupId = "group" .. groupIndex
     
+    -- Sync group volume from track
+    globals.Utils.syncGroupVolumeFromTrack(groupIndex)
+    
     -- Panel title showing which group is being edited
     imgui.Text(globals.ctx, "Group Settings: " .. group.name)
     imgui.Separator(globals.ctx)

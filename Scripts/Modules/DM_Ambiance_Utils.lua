@@ -1090,6 +1090,25 @@ function Utils.getGroupTrackVolume(groupIndex)
     return Utils.linearToDb(linearVolume)
 end
 
+-- Sync container volume from Reaper track to container data
+-- @param groupIndex number: Index of the group containing the container
+-- @param containerIndex number: Index of the container within the group
+function Utils.syncContainerVolumeFromTrack(groupIndex, containerIndex)
+    local volumeDB = Utils.getContainerTrackVolume(groupIndex, containerIndex)
+    if volumeDB then
+        globals.groups[groupIndex].containers[containerIndex].trackVolume = volumeDB
+    end
+end
+
+-- Sync group volume from Reaper track to group data
+-- @param groupIndex number: Index of the group
+function Utils.syncGroupVolumeFromTrack(groupIndex)
+    local volumeDB = Utils.getGroupTrackVolume(groupIndex)
+    if volumeDB then
+        globals.groups[groupIndex].trackVolume = volumeDB
+    end
+end
+
 -- Initialize trackVolume property for all existing containers and groups that don't have it
 -- This ensures backward compatibility with existing projects
 function Utils.initializeContainerVolumes()

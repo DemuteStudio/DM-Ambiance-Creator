@@ -122,6 +122,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     if container.channelMode and container.channelMode > 0 then
         globals.Utils.syncChannelVolumesFromTracks(groupIndex, containerIndex)
     end
+    
+    -- Sync container volume from track
+    globals.Utils.syncContainerVolumeFromTrack(groupIndex, containerIndex)
 
     -- Panel title showing which container is being edited
     imgui.Text(globals.ctx, "Container Settings: " .. container.name)
@@ -311,27 +314,36 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         -- Channel-specific controls
         imgui.Text(globals.ctx, "Channel Settings:")
 
+        -- Define fixed positions for alignment
+        local labelPosX = 10      -- Starting position for labels
+        local sliderPosX = 90     -- Fixed position for all sliders (after longest label)
+        
         for i = 1, config.channels do
             local label = activeConfig.labels and activeConfig.labels[i] or ("Channel " .. i)
 
             imgui.PushID(globals.ctx, "channel_" .. i .. "_" .. containerId)
             
-            -- Channel label and volume on same line
+            -- Position and draw the label
+            imgui.SetCursorPosX(globals.ctx, labelPosX)
             imgui.Text(globals.ctx, label .. ":")
-            imgui.SameLine(globals.ctx)
             
             -- Initialize volume if needed
             if container.channelVolumes[i] == nil then
                 container.channelVolumes[i] = 0.0
             end
             
-            -- Volume control on same line as label
-            imgui.PushItemWidth(globals.ctx, width * 0.5)
+            -- Move to same line and position the slider
+            imgui.SameLine(globals.ctx)
+            imgui.SetCursorPosX(globals.ctx, sliderPosX)
+            
+            -- Volume control at fixed position
+            imgui.PushItemWidth(globals.ctx, width * 0.6)
             local rv, newVol = imgui.SliderDouble(
                 globals.ctx,
                 "##Vol_" .. i,
                 container.channelVolumes[i],
-                -12.0, 12.0,
+                Constants.AUDIO.VOLUME_RANGE_DB_MIN,
+                Constants.AUDIO.VOLUME_RANGE_DB_MAX,
                 "%.1f dB"
             )
             if rv then
@@ -340,7 +352,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, newVol)
             end
             imgui.PopItemWidth(globals.ctx)
-
+            
             imgui.PopID(globals.ctx)
         end
     end
