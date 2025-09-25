@@ -45,20 +45,28 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         group.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
     end
     
-    local volumeDB = group.trackVolume
-    local rv, newVolumeDB = imgui.SliderDouble(
+    -- Convert current dB to normalized
+    local normalizedVolume = globals.Utils.dbToNormalizedRelative(group.trackVolume)
+    
+    local rv, newNormalizedVolume = imgui.SliderDouble(
         globals.ctx, 
         "##GroupTrackVolume_" .. groupId, 
-        volumeDB, 
-        Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
-        Constants.AUDIO.VOLUME_RANGE_DB_MAX, 
-        "%.1f dB"
+        normalizedVolume, 
+        0.0,  -- Min normalized
+        1.0,  -- Max normalized
+        ""    -- No format, we'll display custom text
     )
     if rv then 
+        local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         group.trackVolume = newVolumeDB
         -- Apply volume to track in real-time
         globals.Utils.setGroupTrackVolume(groupIndex, newVolumeDB)
     end
+    
+    -- Display actual dB value next to slider
+    imgui.SameLine(globals.ctx)
+    local displayText = group.trackVolume <= -144 and "-inf dB" or string.format("%.1f dB", group.trackVolume)
+    imgui.Text(globals.ctx, displayText)
     imgui.PopItemWidth(globals.ctx)
     
     -- Group preset controls

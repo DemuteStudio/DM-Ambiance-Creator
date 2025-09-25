@@ -216,20 +216,28 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         container.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
     end
     
-    local volumeDB = container.trackVolume
-    local rv, newVolumeDB = imgui.SliderDouble(
+    -- Convert current dB to normalized
+    local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.trackVolume)
+    
+    local rv, newNormalizedVolume = imgui.SliderDouble(
         globals.ctx, 
         "##TrackVolume_" .. containerId, 
-        volumeDB, 
-        Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
-        Constants.AUDIO.VOLUME_RANGE_DB_MAX, 
-        "%.1f dB"
+        normalizedVolume, 
+        0.0,  -- Min normalized
+        1.0,  -- Max normalized
+        ""    -- No format
     )
     if rv then 
+        local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         container.trackVolume = newVolumeDB
         -- Apply volume to track in real-time
         globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
     end
+    
+    -- Display actual dB value
+    imgui.SameLine(globals.ctx)
+    local displayText = container.trackVolume <= -144 and "-inf dB" or string.format("%.1f dB", container.trackVolume)
+    imgui.Text(globals.ctx, displayText)
     imgui.PopItemWidth(globals.ctx)
 
     -- Multi-Channel Configuration
@@ -336,22 +344,31 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.SameLine(globals.ctx)
             imgui.SetCursorPosX(globals.ctx, sliderPosX)
             
+            -- Convert current dB to normalized
+            local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.channelVolumes[i])
+            
             -- Volume control at fixed position
-            imgui.PushItemWidth(globals.ctx, width * 0.6)
-            local rv, newVol = imgui.SliderDouble(
+            imgui.PushItemWidth(globals.ctx, width * 0.5)
+            local rv, newNormalizedVolume = imgui.SliderDouble(
                 globals.ctx,
                 "##Vol_" .. i,
-                container.channelVolumes[i],
-                Constants.AUDIO.VOLUME_RANGE_DB_MIN,
-                Constants.AUDIO.VOLUME_RANGE_DB_MAX,
-                "%.1f dB"
+                normalizedVolume,
+                0.0,  -- Min normalized
+                1.0,  -- Max normalized
+                ""    -- No format
             )
             if rv then
-                container.channelVolumes[i] = newVol
+                local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
+                container.channelVolumes[i] = newVolumeDB
                 -- Apply volume to channel track in real-time
-                globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, newVol)
+                globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, newVolumeDB)
             end
             imgui.PopItemWidth(globals.ctx)
+            
+            -- Display actual dB value
+            imgui.SameLine(globals.ctx)
+            local displayText = container.channelVolumes[i] <= -144 and "-inf" or string.format("%.1f dB", container.channelVolumes[i])
+            imgui.Text(globals.ctx, displayText)
             
             imgui.PopID(globals.ctx)
         end

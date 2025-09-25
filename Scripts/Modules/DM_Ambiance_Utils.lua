@@ -770,6 +770,47 @@ function Utils.linearToDb(linearVolume)
     return 20 * (math.log(linearVolume) / math.log(10))
 end
 
+-- Convert normalized slider value (0-1) to dB with 0dB at center
+-- @param normalizedValue number: Value from 0.0 to 1.0
+-- @return number: Volume in dB
+function Utils.normalizedToDbRelative(normalizedValue)
+    if type(normalizedValue) ~= "number" or normalizedValue < 0 or normalizedValue > 1 then
+        error("Utils.normalizedToDbRelative: normalizedValue must be between 0 and 1")
+    end
+    
+    if normalizedValue < 0.5 then
+        -- Left half: -144dB to 0dB (exponential curve for better precision near 0dB)
+        local ratio = normalizedValue / 0.5
+        return Constants.AUDIO.VOLUME_RANGE_DB_MIN * (1 - ratio)
+    else
+        -- Right half: 0dB to +24dB (linear)
+        local ratio = (normalizedValue - 0.5) / 0.5
+        return Constants.AUDIO.VOLUME_RANGE_DB_MAX * ratio
+    end
+end
+
+-- Convert dB value to normalized slider position (0-1)
+-- @param volumeDB number: Volume in decibels
+-- @return number: Normalized value from 0.0 to 1.0
+function Utils.dbToNormalizedRelative(volumeDB)
+    if type(volumeDB) ~= "number" then
+        error("Utils.dbToNormalizedRelative: volumeDB must be a number")
+    end
+    
+    if volumeDB <= Constants.AUDIO.VOLUME_RANGE_DB_MIN then
+        return 0.0
+    elseif volumeDB <= 0 then
+        -- Map -144dB to 0dB → 0.0 to 0.5
+        -- Linear interpolation: (volumeDB - min) / (0 - min) * range
+        local ratio = (volumeDB - Constants.AUDIO.VOLUME_RANGE_DB_MIN) / (0 - Constants.AUDIO.VOLUME_RANGE_DB_MIN)
+        return ratio * 0.5
+    else
+        -- Map 0dB to +24dB → 0.5 to 1.0
+        local ratio = volumeDB / Constants.AUDIO.VOLUME_RANGE_DB_MAX
+        return 0.5 + (ratio * 0.5)
+    end
+end
+
 -- Set the volume of a container's track in Reaper
 -- @param groupIndex number: Index of the group containing the container
 -- @param containerIndex number: Index of the container within the group
