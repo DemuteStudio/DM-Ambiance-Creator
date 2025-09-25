@@ -1286,64 +1286,17 @@ end
 -- Centralized conflict detection and resolution
 -- Call this from any generation function
 function Generation.checkAndResolveConflicts()
-    -- Detect and resolve routing conflicts
-    local conflictInfo = globals.Utils.detectRoutingConflicts()
-
-    -- Silently return if no conflicts detected
-    if not conflictInfo then
-        return
+    -- Use the new ConflictResolver module for conflict detection
+    if not globals.ConflictResolver then
+        return  -- Module not initialized
     end
-
-    local suggestions = globals.Utils.suggestRoutingFix(conflictInfo)
-
-    if #suggestions > 0 then
-        -- Build comprehensive conflict message
-        local message = "Channel Routing Conflict Detected\n" ..
-                       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-        -- Show specific conflicts
-        message = message .. "The following routing conflicts were found:\n\n"
-
-        for _, suggestion in ipairs(suggestions) do
-            local conflictDetails = ""
-            -- Analyze which channels conflict and why
-            if suggestion.containerName:find("Quad") or suggestion.containerName:find("4%.0") then
-                conflictDetails = "  • Channel 3: LS (Left Surround) conflicts with C (Center) in 5.0/7.0\n" ..
-                                "  • Channel 4: RS (Right Surround) conflicts with LS in 5.0/7.0"
-            end
-
-            message = message .. string.format(
-                "%s - %s (Channels %s):\n%s\n\n",
-                suggestion.groupName,
-                suggestion.containerName,
-                table.concat(suggestion.originalRouting, ","),
-                conflictDetails
-            )
-        end
-
-        -- Show proposed solution
-        message = message .. "Proposed Solution:\n" ..
-                           "━━━━━━━━━━━━━━━━━━\n\n"
-
-        for _, suggestion in ipairs(suggestions) do
-            message = message .. string.format(
-                "• Reroute %s - %s\n" ..
-                "  From channels: %s\n" ..
-                "  To channels: %s\n" ..
-                "  (Preserves spatial positioning while avoiding conflicts)\n\n",
-                suggestion.groupName,
-                suggestion.containerName,
-                table.concat(suggestion.originalRouting, ","),
-                table.concat(suggestion.newRouting, ",")
-            )
-        end
-
-        message = message .. "Apply these routing changes?"
-
-        local response = reaper.MB(message, "Routing Conflict Detected", 4)
-        if response == 6 then  -- User clicked Yes
-            Generation.applyRoutingFixes(suggestions)
-        end
+    
+    -- Detect conflicts using the new module
+    local conflicts = globals.ConflictResolver.detectConflicts()
+    
+    -- If conflicts found, show the ImGui modal
+    if conflicts then
+        globals.ConflictResolver.showResolutionModal(conflicts)
     end
 end
 
