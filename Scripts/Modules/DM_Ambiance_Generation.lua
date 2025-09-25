@@ -1287,67 +1287,64 @@ end
 -- Call this from any generation function
 function Generation.checkAndResolveConflicts()
     -- Detect and resolve routing conflicts
-    reaper.ShowConsoleMsg("\n=== CALLING CONFLICT DETECTION ===\n")
-
-    -- Temporary debug message box
-    reaper.MB("Starting conflict detection...", "DEBUG - Conflict Detection", 0)
-
     local conflictInfo = globals.Utils.detectRoutingConflicts()
-    reaper.ShowConsoleMsg("conflictInfo returned: " .. tostring(conflictInfo) .. "\n")
 
-    -- Show result in message box
-    if conflictInfo then
-        reaper.ShowConsoleMsg("ConflictInfo has " .. #conflictInfo.conflicts .. " conflicts\n")
-        reaper.ShowConsoleMsg("ConflictInfo has " .. #conflictInfo.containers .. " containers\n")
-
-        reaper.MB(string.format("Conflicts found:\n- %d conflicts\n- %d containers analyzed",
-            #conflictInfo.conflicts, #conflictInfo.containers), "DEBUG - Conflicts Found", 0)
-
-        local suggestions = globals.Utils.suggestRoutingFix(conflictInfo)
-        reaper.ShowConsoleMsg("Number of suggestions: " .. #suggestions .. "\n")
-
-        if #suggestions > 0 then
-            reaper.ShowConsoleMsg("Building conflict message dialog...\n")
-            local message = "Routing conflicts detected!\n\n"
-
-            -- Build detailed conflict message
-            for _, suggestion in ipairs(suggestions) do
-                message = message .. string.format(
-                    "• %s - %s: Channels %s conflict with 5.0/7.0\n",
-                    suggestion.groupName,
-                    suggestion.containerName,
-                    table.concat(suggestion.originalRouting, ",")
-                )
-            end
-
-            message = message .. "\nSuggested fix:\n"
-            for _, suggestion in ipairs(suggestions) do
-                message = message .. string.format(
-                    "• Reroute %s - %s to channels %s\n",
-                    suggestion.groupName,
-                    suggestion.containerName,
-                    table.concat(suggestion.newRouting, ",")
-                )
-            end
-
-            message = message .. "\nApply these routing changes?"
-
-            reaper.ShowConsoleMsg("Showing message box...\n")
-            local response = reaper.MB(message, "Routing Conflict Detected", 4)
-            reaper.ShowConsoleMsg("User response: " .. response .. "\n")
-            if response == 6 then  -- User clicked Yes
-                reaper.ShowConsoleMsg("Applying routing fixes...\n")
-                Generation.applyRoutingFixes(suggestions)
-            end
-        else
-            reaper.ShowConsoleMsg("No suggestions generated despite conflicts\n")
-            reaper.MB("Conflicts found but no suggestions generated", "DEBUG - No Suggestions", 0)
-        end
-    else
-        reaper.ShowConsoleMsg("No conflicts detected\n")
-        reaper.MB("No conflicts detected - all routing is compatible", "DEBUG - No Conflicts", 0)
+    -- Silently return if no conflicts detected
+    if not conflictInfo then
+        return
     end
-    reaper.ShowConsoleMsg("=== END CONFLICT DETECTION ===\n\n")
+
+    local suggestions = globals.Utils.suggestRoutingFix(conflictInfo)
+
+    if #suggestions > 0 then
+        -- Build comprehensive conflict message
+        local message = "Channel Routing Conflict Detected\n" ..
+                       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        -- Show specific conflicts
+        message = message .. "The following routing conflicts were found:\n\n"
+
+        for _, suggestion in ipairs(suggestions) do
+            local conflictDetails = ""
+            -- Analyze which channels conflict and why
+            if suggestion.containerName:find("Quad") or suggestion.containerName:find("4%.0") then
+                conflictDetails = "  • Channel 3: LS (Left Surround) conflicts with C (Center) in 5.0/7.0\n" ..
+                                "  • Channel 4: RS (Right Surround) conflicts with LS in 5.0/7.0"
+            end
+
+            message = message .. string.format(
+                "%s - %s (Channels %s):\n%s\n\n",
+                suggestion.groupName,
+                suggestion.containerName,
+                table.concat(suggestion.originalRouting, ","),
+                conflictDetails
+            )
+        end
+
+        -- Show proposed solution
+        message = message .. "Proposed Solution:\n" ..
+                           "━━━━━━━━━━━━━━━━━━\n\n"
+
+        for _, suggestion in ipairs(suggestions) do
+            message = message .. string.format(
+                "• Reroute %s - %s\n" ..
+                "  From channels: %s\n" ..
+                "  To channels: %s\n" ..
+                "  (Preserves spatial positioning while avoiding conflicts)\n\n",
+                suggestion.groupName,
+                suggestion.containerName,
+                table.concat(suggestion.originalRouting, ","),
+                table.concat(suggestion.newRouting, ",")
+            )
+        end
+
+        message = message .. "Apply these routing changes?"
+
+        local response = reaper.MB(message, "Routing Conflict Detected", 4)
+        if response == 6 then  -- User clicked Yes
+            Generation.applyRoutingFixes(suggestions)
+        end
+    end
 end
 
 return Generation
