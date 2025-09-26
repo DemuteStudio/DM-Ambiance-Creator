@@ -6,6 +6,7 @@
 local UI_Container = {}
 local globals = {}
 local Constants = require("DM_Ambiance_Constants")
+local imgui = nil  -- Will be initialized from globals
 
 -- Initialize the module with global variables from the main script
 function UI_Container.initModule(g)
@@ -13,6 +14,7 @@ function UI_Container.initModule(g)
         error("UI_Container.initModule: globals parameter is required")
     end
     globals = g
+    imgui = globals.imgui  -- Get imgui reference from globals
     
     -- Initialize container expanded states if not already set
     if not globals.containerExpandedStates then
@@ -144,20 +146,48 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         if #items > 0 then
             for _, item in ipairs(items) do
                 table.insert(container.items, item)
+                -- Generate peaks for the imported item if needed
+                if item.filePath and item.filePath ~= "" then
+                    local peaksFile = item.filePath .. ".reapeaks"
+                    local exists = io.open(peaksFile, "rb")
+                    if exists then
+                        exists:close()
+                    else
+                        -- Generate peaks in background
+                        globals.Waveform.generateReapeaksFile(item.filePath)
+                    end
+                end
             end
+            reaper.ShowConsoleMsg(string.format("[UI] Imported %d items\n", #items))
         else
             reaper.MB("No item selected!", "Error", 0)
         end
     end
+    
+    -- Button to generate peaks for all items in container
+    imgui.SameLine(globals.ctx)
+    if imgui.Button(globals.ctx, "Build All Peaks##" .. containerId) then
+        local generated = globals.Waveform.generatePeaksForContainer(container)
+        reaper.ShowConsoleMsg(string.format("[UI] Generated peaks for %d files\n", generated))
+    end
 
     -- Display imported items with persistent state
     if #container.items > 0 then
-        -- Create unique key for this container's expanded state
+        -- Create unique key for this container's expanded state and selection
         local expandedStateKey = groupIndex .. "_" .. containerIndex .. "_items"
+        local selectionKey = groupIndex .. "_" .. containerIndex
         
         -- Initialize expanded state if not set (default to collapsed)
         if globals.containerExpandedStates[expandedStateKey] == nil then
             globals.containerExpandedStates[expandedStateKey] = false
+        end
+        
+        -- Initialize selected item index if not set
+        if not globals.selectedItemIndex then
+            globals.selectedItemIndex = {}
+        end
+        if globals.selectedItemIndex[selectionKey] == nil then
+            globals.selectedItemIndex[selectionKey] = -1
         end
         
         -- Use PushID to create stable context
@@ -182,13 +212,32 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         if isExpanded then
             local itemToDelete = nil
             
-            -- List all imported items with a button to remove each one
-            for l, item in ipairs(container.items) do
-                imgui.Text(globals.ctx, l .. ". " .. item.name)
-                imgui.SameLine(globals.ctx)
-                if imgui.Button(globals.ctx, "X##item" .. l) then
-                    itemToDelete = l
+            -- Create a child window for the item list to make it scrollable
+            if imgui.BeginChild(globals.ctx, "ItemsList" .. containerId, width * 0.95, 100) then
+                -- List all imported items as selectable items
+                for l, item in ipairs(container.items) do
+                    local isSelected = (globals.selectedItemIndex[selectionKey] == l)
+                    
+                    -- Make item selectable
+                    if imgui.Selectable(globals.ctx, l .. ". " .. item.name .. "##item" .. l, isSelected) then
+                        globals.selectedItemIndex[selectionKey] = l
+                        -- Debug: clear cache when selecting new item
+                        if globals.Waveform and item.filePath then
+                            reaper.ShowConsoleMsg(string.format("[UI] Selected item with path: %s\n", item.filePath))
+                            globals.Waveform.clearFileCache(item.filePath)
+                        end
+                    end
+                    
+                    -- Delete button on same line
+                    imgui.SameLine(globals.ctx, width * 0.85)
+                    imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF)
+                    if imgui.SmallButton(globals.ctx, "X##delete" .. l) then
+                        itemToDelete = l
+                    end
+                    imgui.PopStyleColor(globals.ctx, 1)
                 end
+                
+                imgui.EndChild(globals.ctx)
             end
             
             -- Remove the item if the delete button was pressed
@@ -196,12 +245,195 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 table.remove(container.items, itemToDelete)
                 -- Keep the header expanded after deletion
                 globals.containerExpandedStates[expandedStateKey] = true
+                -- Reset selection if deleted item was selected
+                if globals.selectedItemIndex[selectionKey] == itemToDelete then
+                    globals.selectedItemIndex[selectionKey] = -1
+                elseif globals.selectedItemIndex[selectionKey] > itemToDelete then
+                    globals.selectedItemIndex[selectionKey] = globals.selectedItemIndex[selectionKey] - 1
+                end
             end
         end
         
         imgui.PopID(globals.ctx)
     end
-
+    
+    -- Waveform Viewer Section (for selected imported items)
+    local selectionKey = groupIndex .. "_" .. containerIndex
+    if globals.selectedItemIndex and globals.selectedItemIndex[selectionKey] and 
+       globals.selectedItemIndex[selectionKey] > 0 and 
+       globals.selectedItemIndex[selectionKey] <= #container.items then
+        
+        local selectedItem = container.items[globals.selectedItemIndex[selectionKey]]
+        
+        imgui.Separator(globals.ctx)
+        imgui.Text(globals.ctx, "Waveform Viewer")
+        imgui.Separator(globals.ctx)
+        
+        -- Display selected item info
+        imgui.Text(globals.ctx, "Selected: " .. selectedItem.name)
+        
+        -- Debug buttons to clear cache and regenerate peaks
+        imgui.SameLine(globals.ctx)
+        if imgui.SmallButton(globals.ctx, "Clear Cache") then
+            globals.Waveform.clearFileCache(selectedItem.filePath)
+        end
+        imgui.SameLine(globals.ctx)
+        if imgui.SmallButton(globals.ctx, "Rebuild Peaks") then
+            if globals.Waveform.regeneratePeaksFile(selectedItem.filePath) then
+                globals.Waveform.clearFileCache(selectedItem.filePath)
+                reaper.ShowConsoleMsg("[UI] Peaks rebuilt successfully\n")
+            else
+                reaper.ShowConsoleMsg("[UI] Failed to rebuild peaks\n")
+            end
+        end
+        
+        -- Check if file path exists and is valid
+        local filePathValid = selectedItem.filePath and selectedItem.filePath ~= ""
+        local fileExists = false
+        
+        if filePathValid then
+            local file = io.open(selectedItem.filePath, "rb")  -- Use binary mode for better compatibility
+            if file then
+                fileExists = true
+                file:close()
+                reaper.ShowConsoleMsg(string.format("[UI] File exists: %s\n", selectedItem.filePath))
+            else
+                -- Try alternative method for network drives on Windows
+                local source = reaper.PCM_Source_CreateFromFile(selectedItem.filePath)
+                if source then
+                    fileExists = true
+                    reaper.PCM_Source_Destroy(source)
+                    reaper.ShowConsoleMsg(string.format("[UI] File exists (via PCM_Source): %s\n", selectedItem.filePath))
+                else
+                    reaper.ShowConsoleMsg(string.format("[UI] File NOT found: %s\n", selectedItem.filePath))
+                end
+            end
+        end
+        
+        if filePathValid then
+            if fileExists then
+                imgui.Text(globals.ctx, string.format("Duration: %.2f s", selectedItem.length))
+                imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x00FF00FF)
+                imgui.Text(globals.ctx, "File: Available")
+                imgui.PopStyleColor(globals.ctx, 1)
+            else
+                imgui.Text(globals.ctx, string.format("Duration: %.2f s", selectedItem.length))
+                imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFF0000FF)
+                imgui.Text(globals.ctx, "File: Not found")
+                imgui.PopStyleColor(globals.ctx, 1)
+                imgui.TextWrapped(globals.ctx, "Path: " .. selectedItem.filePath)
+            end
+        else
+            imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFFFF00FF)
+            imgui.Text(globals.ctx, "File: No path specified")
+            imgui.PopStyleColor(globals.ctx, 1)
+        end
+        
+        -- Draw waveform if the Waveform module is available
+        if globals.Waveform then
+            reaper.ShowConsoleMsg(string.format("[UI] Drawing waveform - fileExists: %s, path: %s\n", 
+                tostring(fileExists), selectedItem.filePath or "nil"))
+            local waveformData = nil
+            if fileExists then
+                waveformData = globals.Waveform.drawWaveform(selectedItem.filePath, width * 0.95, 100)
+            else
+                -- Draw empty waveform box for missing files
+                local draw_list = imgui.GetWindowDrawList(globals.ctx)
+                local pos_x, pos_y = imgui.GetCursorScreenPos(globals.ctx)
+                local waveformWidth = width * 0.95
+                local waveformHeight = 100
+                
+                -- Draw background
+                imgui.DrawList_AddRectFilled(draw_list,
+                    pos_x, pos_y,
+                    pos_x + waveformWidth, pos_y + waveformHeight,
+                    0x1A1A1AFF
+                )
+                
+                -- Draw border
+                imgui.DrawList_AddRect(draw_list,
+                    pos_x, pos_y,
+                    pos_x + waveformWidth, pos_y + waveformHeight,
+                    0x606060FF,
+                    0, 0, 1
+                )
+                
+                -- Draw "No waveform" text in center
+                local text = fileExists and "Loading..." or "File not found"
+                local text_size_x, text_size_y = imgui.CalcTextSize(globals.ctx, text)
+                imgui.DrawList_AddText(draw_list,
+                    pos_x + (waveformWidth - text_size_x) / 2,
+                    pos_y + (waveformHeight - text_size_y) / 2,
+                    0x808080FF,
+                    text
+                )
+                
+                imgui.Dummy(globals.ctx, waveformWidth, waveformHeight)
+            end
+            
+            -- Audio playback controls
+            imgui.Separator(globals.ctx)
+            
+            -- Play/Stop buttons
+            if globals.audioPreview and globals.audioPreview.isPlaying and 
+               globals.audioPreview.currentFile == selectedItem.filePath then
+                -- Stop button
+                if imgui.Button(globals.ctx, "Stop##" .. containerId, 80, 0) then
+                    globals.Waveform.stopPlayback()
+                end
+                
+                -- Show playback position
+                if waveformData then
+                    imgui.SameLine(globals.ctx)
+                    local position = globals.audioPreview.position or 0
+                    imgui.Text(globals.ctx, string.format("Position: %.2f / %.2f s", position, waveformData.length))
+                end
+            else
+                -- Play button (disabled if file doesn't exist)
+                if not fileExists then
+                    imgui.PushStyleVar(globals.ctx, imgui.StyleVar_Alpha, 0.5)
+                    imgui.Button(globals.ctx, "Play##" .. containerId, 80, 0)
+                    imgui.PopStyleVar(globals.ctx, 1)
+                    imgui.SameLine(globals.ctx)
+                    imgui.Text(globals.ctx, "(File not available)")
+                else
+                    if imgui.Button(globals.ctx, "Play##" .. containerId, 80, 0) then
+                        globals.Waveform.startPlayback(
+                            selectedItem.filePath,
+                            selectedItem.startOffset or 0,
+                            selectedItem.length
+                        )
+                    end
+                end
+            end
+            
+            -- Volume control for preview
+            imgui.Text(globals.ctx, "Preview Volume:")
+            imgui.PushItemWidth(globals.ctx, width * 0.6)
+            
+            if not globals.audioPreview then
+                globals.audioPreview = { volume = 0.7 }
+            end
+            
+            local rv, newVolume = imgui.SliderDouble(
+                globals.ctx,
+                "##PreviewVolume_" .. containerId,
+                globals.audioPreview.volume,
+                0.0,
+                1.0,
+                "%.2f"
+            )
+            if rv then
+                globals.audioPreview.volume = newVolume
+                if globals.Waveform and globals.Waveform.setPreviewVolume then
+                    globals.Waveform.setPreviewVolume(newVolume)
+                end
+            end
+            imgui.PopItemWidth(globals.ctx)
+        else
+            imgui.Text(globals.ctx, "Waveform viewer not available")
+        end
+    end
     -- Container track volume slider
     imgui.Separator(globals.ctx)
     imgui.Text(globals.ctx, "Track Volume")

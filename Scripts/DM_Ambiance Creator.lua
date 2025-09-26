@@ -36,6 +36,7 @@ local Generation = dofile(script_path .. "Modules/DM_Ambiance_Generation.lua")
 local UI = dofile(script_path .. "Modules/DM_Ambiance_UI.lua")
 local Settings = dofile(script_path .. "Modules/DM_AmbianceCreator_Settings.lua")
 local ConflictResolver = dofile(script_path .. "Modules/DM_Ambiance_ConflictResolver.lua")
+local Waveform = dofile(script_path .. "Modules/DM_Ambiance_Waveform.lua")
 
 -- Global state shared across modules and UI
 local globals = {
@@ -83,6 +84,11 @@ local function loop()
     if globals.showConflictModal then
         ConflictResolver.renderModal()
     end
+    
+    -- Update waveform playback position if playing
+    if globals.Waveform and globals.Waveform.updatePlaybackPosition then
+        globals.Waveform.updatePlaybackPosition()
+    end
 
     -- Render the main window; returns 'open' (true if window is open)
     local open = UI.ShowMainWindow(true)
@@ -92,6 +98,11 @@ local function loop()
     -- Continue the loop if the window is still open
     if open then
         reaper.defer(loop)
+    else
+        -- Cleanup waveform resources on exit
+        if globals.Waveform and globals.Waveform.cleanup then
+            globals.Waveform.cleanup()
+        end
     end
 end
 
@@ -108,6 +119,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     _G.UI = UI
     _G.Settings = Settings
     _G.ConflictResolver = ConflictResolver
+    _G.Waveform = Waveform
     _G.imgui = imgui
 
     -- Seed the random number generator for consistent randomization
@@ -128,6 +140,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.UI = UI
     globals.Settings = Settings
     globals.ConflictResolver = ConflictResolver
+    globals.Waveform = Waveform
 
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
@@ -138,6 +151,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     UI.initModule(globals)
     Settings.initModule(globals)
     ConflictResolver.initModule(globals)
+    Waveform.initModule(globals)
     
     -- Initialize backward compatibility for container volumes
     Utils.initializeContainerVolumes()

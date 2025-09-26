@@ -21,11 +21,28 @@ function Items.getSelectedItems()
     
     if take then
       local source = reaper.GetMediaItemTake_Source(take)
-      local filename = reaper.GetMediaSourceFileName(source, "")
+      local filename = ""
+      
+      if source then
+        -- Get the filename - GetMediaSourceFileName returns the filename directly
+        filename = reaper.GetMediaSourceFileName(source, "")
+        if not filename then
+          filename = ""
+        end
+        reaper.ShowConsoleMsg(string.format("[Items] Retrieved filename: %s\n", filename or "nil"))
+      end
+      
+      -- Also try to get the name from the take if the source filename is empty
+      local takeName = reaper.GetTakeName(take)
+      if takeName == "" and filename ~= "" then
+        -- Extract just the filename from the path for the name
+        takeName = filename:match("([^/\\]+)$") or filename
+      end
       
       local itemData = {
-        name = reaper.GetTakeName(take),
+        name = takeName,
         filePath = filename,
+        source = source,  -- Store the source reference as well
         startOffset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS"),
         length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
         originalPitch = reaper.GetMediaItemTakeInfo_Value(take, "D_PITCH"),
