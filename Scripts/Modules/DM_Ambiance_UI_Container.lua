@@ -158,7 +158,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     end
                 end
             end
-            reaper.ShowConsoleMsg(string.format("[UI] Imported %d items\n", #items))
+            -- reaper.ShowConsoleMsg(string.format("[UI] Imported %d items\n", #items))
         else
             reaper.MB("No item selected!", "Error", 0)
         end
@@ -168,7 +168,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     imgui.SameLine(globals.ctx)
     if imgui.Button(globals.ctx, "Build All Peaks##" .. containerId) then
         local generated = globals.Waveform.generatePeaksForContainer(container)
-        reaper.ShowConsoleMsg(string.format("[UI] Generated peaks for %d files\n", generated))
+        -- reaper.ShowConsoleMsg(string.format("[UI] Generated peaks for %d files\n", generated))
     end
 
     -- Display imported items with persistent state
@@ -223,7 +223,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                         globals.selectedItemIndex[selectionKey] = l
                         -- Debug: clear cache when selecting new item
                         if globals.Waveform and item.filePath then
-                            reaper.ShowConsoleMsg(string.format("[UI] Selected item with path: %s\n", item.filePath))
+                            -- reaper.ShowConsoleMsg(string.format("[UI] Selected item with path: %s\n", item.filePath))
                             globals.Waveform.clearFileCache(item.filePath)
                         end
                     end
@@ -281,9 +281,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         if imgui.SmallButton(globals.ctx, "Rebuild Peaks") then
             if globals.Waveform.regeneratePeaksFile(selectedItem.filePath) then
                 globals.Waveform.clearFileCache(selectedItem.filePath)
-                reaper.ShowConsoleMsg("[UI] Peaks rebuilt successfully\n")
+                -- reaper.ShowConsoleMsg("[UI] Peaks rebuilt successfully\n")
             else
-                reaper.ShowConsoleMsg("[UI] Failed to rebuild peaks\n")
+                -- reaper.ShowConsoleMsg("[UI] Failed to rebuild peaks\n")
             end
         end
         
@@ -296,16 +296,16 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             if file then
                 fileExists = true
                 file:close()
-                reaper.ShowConsoleMsg(string.format("[UI] File exists: %s\n", selectedItem.filePath))
+                -- reaper.ShowConsoleMsg(string.format("[UI] File exists: %s\n", selectedItem.filePath))
             else
                 -- Try alternative method for network drives on Windows
                 local source = reaper.PCM_Source_CreateFromFile(selectedItem.filePath)
                 if source then
                     fileExists = true
                     reaper.PCM_Source_Destroy(source)
-                    reaper.ShowConsoleMsg(string.format("[UI] File exists (via PCM_Source): %s\n", selectedItem.filePath))
+                    -- reaper.ShowConsoleMsg(string.format("[UI] File exists (via PCM_Source): %s\n", selectedItem.filePath))
                 else
-                    reaper.ShowConsoleMsg(string.format("[UI] File NOT found: %s\n", selectedItem.filePath))
+                    -- reaper.ShowConsoleMsg(string.format("[UI] File NOT found: %s\n", selectedItem.filePath))
                 end
             end
         end
@@ -331,8 +331,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         
         -- Draw waveform if the Waveform module is available
         if globals.Waveform then
-            reaper.ShowConsoleMsg(string.format("[UI] Drawing waveform - fileExists: %s, path: %s\n", 
-                tostring(fileExists), selectedItem.filePath or "nil"))
+            -- reaper.ShowConsoleMsg(string.format("[UI] Drawing waveform - fileExists: %s, path: %s\n", 
+                -- tostring(fileExists), selectedItem.filePath or "nil"))
             local waveformData = nil
             if fileExists then
                 waveformData = globals.Waveform.drawWaveform(selectedItem.filePath, width * 0.95, 100)

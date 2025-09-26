@@ -63,24 +63,36 @@ function Waveform.getWaveformData(filePath, width)
 
     local cacheKey = filePath .. "_" .. width
 
-    -- Check cache first
+    -- Check cache first - but verify peaks exist too
     if globals.waveformCache[cacheKey] and not globals.waveformCache[cacheKey].isPlaceholder then
-        return globals.waveformCache[cacheKey]
+        -- Also verify the peaks data is not empty
+        local peaks = globals.waveformCache[cacheKey].peaks
+        if peaks and peaks.max and #peaks.max > 0 then
+            local hasData = false
+            for i = 1, math.min(10, #peaks.max) do
+                if math.abs(peaks.max[i] or 0) > 0.001 then
+                    hasData = true
+                    break
+                end
+            end
+            if hasData then
+                return globals.waveformCache[cacheKey]
+            end
+        end
+        -- Cache exists but is empty, clear it
+        globals.waveformCache[cacheKey] = nil
     end
 
     -- Check if file exists
     local file = io.open(filePath, "r")
     if not file then
-        reaper.ShowConsoleMsg("[Waveform] File not found: " .. filePath .. "\n")
         return Waveform.createPlaceholderWaveform(width)
     end
     file:close()
-    reaper.ShowConsoleMsg("[Waveform] File exists, proceeding...\n")
 
     -- Create PCM source
     local source = reaper.PCM_Source_CreateFromFile(filePath)
     if not source then
-        reaper.ShowConsoleMsg("[Waveform] Failed to create PCM source\n")
         return Waveform.createPlaceholderWaveform(width)
     end
 
@@ -88,17 +100,27 @@ function Waveform.getWaveformData(filePath, width)
     local samplerate = reaper.GetMediaSourceSampleRate(source) or 44100
     local length = reaper.GetMediaSourceLength(source, false) or 1
     local numChannels = reaper.GetMediaSourceNumChannels(source) or 1
-    reaper.ShowConsoleMsg(string.format("[Waveform] Source info - rate: %.0f, length: %.2f, channels: %d\n",
-        samplerate, length, numChannels))
 
     -- Ensure .reapeaks file exists
     local peaksFilePath = filePath .. ".reapeaks"
     local peaksFileExists = io.open(peaksFilePath, "rb")
+    local needsRebuild = false
+
     if not peaksFileExists then
+        needsRebuild = true
+    else
+        -- Check if file is too small (likely corrupted)
+        local fileSize = peaksFileExists:seek("end")
+        peaksFileExists:close()
+        if fileSize < 100 then  -- .reapeaks files should be bigger than 100 bytes
+            os.remove(peaksFilePath)
+            needsRebuild = true
+        end
+    end
+
+    if needsRebuild then
         -- Build peaks file
         reaper.PCM_Source_BuildPeaks(source, 0)  -- mode 0 = build now
-    else
-        peaksFileExists:close()
     end
 
     -- Create peaks array
@@ -150,98 +172,109 @@ function Waveform.getWaveformData(filePath, width)
         -- wait
     end
 
-    -- Get peaks
-    local buf = reaper.new_array(width * 2)
+    -- For mono files, force single channel read to avoid duplication issues
+    local n_channels = 1  -- FORCE MONO READ
+
+    -- Request exactly width samples for display
+    local samplesNeeded = width
+    local bufsize = samplesNeeded * 2  -- 2 values (max/min) per sample for mono
+    local buf = reaper.new_array(bufsize)
     buf.clear()
 
-    local peakrate = (samplerate * length) / width
-    reaper.ShowConsoleMsg(string.format("[Waveform] Getting peaks - rate: %.2f, width: %d\n", peakrate, width))
+    -- Calculate samples per peak
+    local totalSamples = samplerate * length
+    local peakrate = totalSamples / samplesNeeded
 
     local retval = reaper.GetMediaItemTake_Peaks(
         tempTake,
-        peakrate,
-        0,
-        1,  -- mono for simplicity
-        width,
-        0,
+        peakrate,        -- samples per peak
+        0,               -- start time
+        1,               -- FORCE MONO (1 channel)
+        samplesNeeded,   -- number of samples we want
+        0,               -- want_extra_type (0 = min/max peaks)
         buf
     )
 
-    -- Extract peaks
-    local spl_cnt = retval % 1048576
-    reaper.ShowConsoleMsg(string.format("[Waveform] GetMediaItemTake_Peaks returned: %d, samples: %d\n", retval, spl_cnt))
+    -- Extract the actual number of samples returned
+    local spl_cnt = retval % 1048576  -- Lower 20 bits
 
     if spl_cnt > 0 then
+        -- Convert buffer to table
         local peaks_table = buf.table()
+
         if peaks_table and #peaks_table > 0 then
-            reaper.ShowConsoleMsg(string.format("[Waveform] Got %d peak values\n", #peaks_table))
+            local actualSamples = math.min(spl_cnt, samplesNeeded)
 
-            -- Check first few values
-            local hasNonZero = false
-            for i = 1, math.min(10, #peaks_table) do
-                if math.abs(peaks_table[i]) > 0.0001 then
-                    hasNonZero = true
-                    break
-                end
-            end
-            reaper.ShowConsoleMsg(string.format("[Waveform] Has non-zero peaks: %s\n", tostring(hasNonZero)))
-
-            for i = 1, math.min(width, spl_cnt) do
+            -- Read mono data: [max1, min1, max2, min2, ...]
+            for i = 1, actualSamples do
                 local idx = (i - 1) * 2 + 1
-                if idx + 1 <= #peaks_table then
-                    peaks.max[i] = peaks_table[idx] or 0
-                    peaks.min[i] = peaks_table[idx + 1] or 0
+                if idx <= #peaks_table and (idx + 1) <= #peaks_table then
+                    peaks.max[i] = peaks_table[idx] or 0      -- max value
+                    peaks.min[i] = peaks_table[idx + 1] or 0  -- min value
                     peaks.rms[i] = (math.abs(peaks.max[i]) + math.abs(peaks.min[i])) / 2 * 0.7
                 else
-                    peaks.max[i] = 0
-                    peaks.min[i] = 0
-                    peaks.rms[i] = 0
+                    break  -- Stop if we run out of data
                 end
             end
 
-            -- Normalize if peaks are too small
+            -- Normalize if needed
             local maxPeak = 0
-            for i = 1, math.min(width, spl_cnt) do
-                maxPeak = math.max(maxPeak, math.abs(peaks.max[i]), math.abs(peaks.min[i]))
+            for i = 1, actualSamples do
+                if peaks.max[i] then
+                    maxPeak = math.max(maxPeak, math.abs(peaks.max[i]), math.abs(peaks.min[i] or 0))
+                end
             end
 
             if maxPeak > 0 and maxPeak < 0.1 then
                 local normFactor = 0.8 / maxPeak
-                reaper.ShowConsoleMsg(string.format("[Waveform] Normalizing peaks by factor: %.2f\n", normFactor))
-                for i = 1, math.min(width, spl_cnt) do
-                    peaks.max[i] = peaks.max[i] * normFactor
-                    peaks.min[i] = peaks.min[i] * normFactor
-                    peaks.rms[i] = peaks.rms[i] * normFactor
+                for i = 1, actualSamples do
+                    if peaks.max[i] then
+                        peaks.max[i] = peaks.max[i] * normFactor
+                        peaks.min[i] = (peaks.min[i] or 0) * normFactor
+                        peaks.rms[i] = (peaks.rms[i] or 0) * normFactor
+                    end
                 end
             end
         else
-            reaper.ShowConsoleMsg("[Waveform] No peaks table or empty\n")
+            -- No data in buffer
+            for i = 1, width do
+                peaks.max[i] = 0
+                peaks.min[i] = 0
+                peaks.rms[i] = 0
+            end
         end
     else
-        reaper.ShowConsoleMsg("[Waveform] No samples returned from GetMediaItemTake_Peaks\n")
+        -- No data returned, fill with silence
+        for i = 1, width do
+            peaks.max[i] = 0
+            peaks.min[i] = 0
+            peaks.rms[i] = 0
+        end
     end
 
     -- Clean up
     reaper.DeleteTrackMediaItem(tempTrack, tempItem)
 
-    -- Check if we got any valid data
-    local hasData = false
+    -- Check if we got valid data
+    local hasValidData = false
     for i = 1, #peaks.max do
-        if peaks.max[i] and math.abs(peaks.max[i]) > 0.0001 then
-            hasData = true
+        if peaks.max[i] and math.abs(peaks.max[i]) > 0.001 then
+            hasValidData = true
             break
         end
     end
 
-    -- If no data, create a simple test waveform
-    if not hasData then
-        reaper.ShowConsoleMsg("[Waveform] No valid peak data, creating test waveform\n")
-        for i = 1, width do
-            local t = (i / width) * math.pi * 4
-            peaks.max[i] = math.sin(t) * 0.5
-            peaks.min[i] = -math.sin(t) * 0.5
-            peaks.rms[i] = math.abs(math.sin(t)) * 0.35
-        end
+    -- If no valid data, try to rebuild peaks
+    if not hasValidData then
+        -- Delete existing .reapeaks file which might be corrupted
+        local peaksFilePath = filePath .. ".reapeaks"
+        os.remove(peaksFilePath)
+
+        -- Clear cache
+        globals.waveformCache[cacheKey] = nil
+
+        -- Return placeholder for now - the next call will rebuild
+        return Waveform.createPlaceholderWaveform(width)
     end
 
     -- Create waveform data
@@ -253,7 +286,7 @@ function Waveform.getWaveformData(filePath, width)
         isPlaceholder = false
     }
 
-    -- Cache it
+    -- Cache it only if we have valid data
     globals.waveformCache[cacheKey] = waveformData
 
     return waveformData
@@ -303,16 +336,30 @@ function Waveform.drawWaveform(filePath, width, height)
     -- Draw waveform peaks
     if peaks and peaks.max and #peaks.max > 0 then
         local numSamples = #peaks.max
+
+        -- Check actual sample count (non-zero data)
+        local actualDataCount = 0
+        for i = 1, #peaks.max do
+            if peaks.max[i] and math.abs(peaks.max[i]) > 0.001 then
+                actualDataCount = actualDataCount + 1
+            else
+                break  -- Stop counting when we hit zeros
+            end
+        end
+
+        -- Use full width and stretch the waveform to fit
         for pixel = 1, width do
-            local sampleIndex = math.floor(((pixel - 1) / width) * numSamples) + 1
-            sampleIndex = math.max(1, math.min(sampleIndex, numSamples))
+            -- Map pixel to actual data range
+            local sampleProgress = (pixel - 1) / (width - 1)
+            local sampleIndex = math.floor(sampleProgress * (actualDataCount - 1)) + 1
+            sampleIndex = math.max(1, math.min(sampleIndex, actualDataCount))
 
             local x = pos_x + pixel - 1
             local minVal = peaks.min[sampleIndex] or 0
             local maxVal = peaks.max[sampleIndex] or 0
             local rmsVal = peaks.rms[sampleIndex] or 0
 
-            -- Draw peak line (max is positive, min is negative typically)
+            -- Draw peak line
             local topY = centerY - (maxVal * height / 2)
             local bottomY = centerY - (minVal * height / 2)
 
@@ -324,7 +371,7 @@ function Waveform.drawWaveform(filePath, width, height)
             )
 
             -- Draw RMS (darker green)
-            if rmsVal > 0 then
+            if math.abs(rmsVal) > 0.01 then
                 imgui.DrawList_AddLine(draw_list,
                     x, centerY - (rmsVal * height / 2),
                     x, centerY + (rmsVal * height / 2),
