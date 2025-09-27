@@ -849,35 +849,35 @@ function Waveform.drawWaveform(filePath, width, height, options)
             local areaEndX = pos_x + (area.endPos / waveformData.length) * width
             local areaWidth = areaEndX - areaStartX
 
-            -- Draw semi-transparent area with gradient effect
+            -- Draw quasi-transparent area with very subtle gradient effect
             imgui.DrawList_AddRectFilled(draw_list,
                 areaStartX, pos_y,
                 areaEndX, pos_y + height,
-                0x3080FFFF  -- Semi-transparent blue
+                0x15856D50  -- Quasi-transparent blue (5% opacity)
             )
 
-            -- Draw subtle gradient overlay (darker at edges)
+            -- Draw very subtle gradient overlay (barely visible darker at edges)
             imgui.DrawList_AddRectFilled(draw_list,
                 areaStartX, pos_y,
                 areaStartX + 3, pos_y + height,
-                0x2080FFFF  -- Slightly darker blue
+                0x15856D50  -- Very slightly darker blue
             )
             imgui.DrawList_AddRectFilled(draw_list,
                 areaEndX - 3, pos_y,
                 areaEndX, pos_y + height,
-                0x2080FFFF  -- Slightly darker blue
+                0x15856D50  -- Very slightly darker blue
             )
 
-            -- Draw area borders
+            -- Draw area borders (more subtle)
             imgui.DrawList_AddLine(draw_list,
                 areaStartX, pos_y,
                 areaStartX, pos_y + height,
-                0xA0FFFFFF, 2  -- White border left
+                0x40FFFFFF, 1  -- Subtle white border left
             )
             imgui.DrawList_AddLine(draw_list,
                 areaEndX, pos_y,
                 areaEndX, pos_y + height,
-                0xA0FFFFFF, 2  -- White border right
+                0x40FFFFFF, 1  -- Subtle white border right
             )
 
             -- Draw area name label if there's enough space
@@ -898,36 +898,48 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 imgui.DrawList_AddText(draw_list, textX, textY, 0xFFFFFFFF, areaName)
             end
 
-            -- Draw resize handles (small rectangles at edges)
-            local handleWidth = 6
+            -- Draw resize handles (subtle, only visible on hover)
+            local handleWidth = 4
             local handleHeight = 20
-            local handleColor = 0xFFFFFFFF
+            local handleColor = 0x40FFFFFF  -- Very subtle semi-transparent white
+
+            -- Check if mouse is near handles for highlighting
+            local mouse_x, mouse_y = imgui.GetMousePos(ctx)
+            local relative_x = mouse_x - pos_x
+            local leftHandleHover = math.abs(relative_x - (areaStartX - pos_x)) < 5
+            local rightHandleHover = math.abs(relative_x - (areaEndX - pos_x)) < 5
 
             -- Left handle
+            local leftHandleColor = leftHandleHover and 0xA0FFFFFF or handleColor
             imgui.DrawList_AddRectFilled(draw_list,
                 areaStartX - handleWidth/2, pos_y + height/2 - handleHeight/2,
                 areaStartX + handleWidth/2, pos_y + height/2 + handleHeight/2,
-                handleColor
+                leftHandleColor
             )
-            -- Add grip lines on handle
-            imgui.DrawList_AddLine(draw_list,
-                areaStartX, pos_y + height/2 - 5,
-                areaStartX, pos_y + height/2 + 5,
-                0x80000000, 1
-            )
+            -- Add subtle grip lines on handle when hovering
+            if leftHandleHover then
+                imgui.DrawList_AddLine(draw_list,
+                    areaStartX, pos_y + height/2 - 5,
+                    areaStartX, pos_y + height/2 + 5,
+                    0x60000000, 1
+                )
+            end
 
             -- Right handle
+            local rightHandleColor = rightHandleHover and 0xA0FFFFFF or handleColor
             imgui.DrawList_AddRectFilled(draw_list,
                 areaEndX - handleWidth/2, pos_y + height/2 - handleHeight/2,
                 areaEndX + handleWidth/2, pos_y + height/2 + handleHeight/2,
-                handleColor
+                rightHandleColor
             )
-            -- Add grip lines on handle
-            imgui.DrawList_AddLine(draw_list,
-                areaEndX, pos_y + height/2 - 5,
-                areaEndX, pos_y + height/2 + 5,
-                0x80000000, 1
-            )
+            -- Add subtle grip lines on handle when hovering
+            if rightHandleHover then
+                imgui.DrawList_AddLine(draw_list,
+                    areaEndX, pos_y + height/2 - 5,
+                    areaEndX, pos_y + height/2 + 5,
+                    0x60000000, 1
+                )
+            end
         end
     end
 
@@ -939,14 +951,14 @@ function Waveform.drawWaveform(filePath, width, height, options)
         imgui.DrawList_AddRectFilled(draw_list,
             dragStartX, pos_y,
             dragEndX, pos_y + height,
-            0x2080FF80  -- Semi-transparent green for new area
+            0x0C80FF80  -- Quasi-transparent green for new area (5% opacity)
         )
 
         imgui.DrawList_AddRect(draw_list,
             dragStartX, pos_y,
             dragEndX, pos_y + height,
-            0x80FF80FF, -- Green border
-            0, 0, 2
+            0x40FF80FF, -- Subtle green border
+            0, 0, 1
         )
     end
 

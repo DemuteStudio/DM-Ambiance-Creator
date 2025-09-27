@@ -367,7 +367,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             if fileExists then
                 imgui.Text(globals.ctx, string.format("Duration: %.2f s", selectedItem.length))
                 imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x00FF00FF)
-                imgui.Text(globals.ctx, "File: Available")
+                -- imgui.Text(globals.ctx, "File: Available")
                 imgui.PopStyleColor(globals.ctx, 1)
             else
                 imgui.Text(globals.ctx, string.format("Duration: %.2f s", selectedItem.length))
