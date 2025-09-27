@@ -592,27 +592,9 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
     -- Draw each channel
     local peaks = waveformData.peaks
-    local channelColors = {
-        0x00FF00FF,  -- Green for channel 1 (or mono)
-        0x00FFFFFF,  -- Cyan for channel 2
-        0xFF8800FF,  -- Orange for channel 3
-        0xFF00FFFF,  -- Magenta for channel 4
-        0xFFFF00FF,  -- Yellow for channel 5
-        0x8888FFFF,  -- Light blue for channel 6
-        0xFF8888FF,  -- Light red for channel 7
-        0xFFFFFFFF,  -- White for channel 8
-    }
 
-    local rmsColors = {
-        0x008800FF,  -- Dark green for channel 1 RMS
-        0x008888FF,  -- Dark cyan for channel 2 RMS
-        0x884400FF,  -- Dark orange for channel 3 RMS
-        0x880088FF,  -- Dark magenta for channel 4 RMS
-        0x888800FF,  -- Dark yellow for channel 5 RMS
-        0x444488FF,  -- Dark light blue for channel 6 RMS
-        0x884444FF,  -- Dark light red for channel 7 RMS
-        0x888888FF,  -- Gray for channel 8 RMS
-    }
+    -- Single color for all waveform elements
+    local waveformColor = 0x00D9FFFF  -- Bright cyan for both peaks and RMS
 
     for ch = 1, displayChannels do
         local channelY = pos_y + (ch - 1) * channelHeight
@@ -686,7 +668,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 imgui.DrawList_AddLine(draw_list,
                     x, topY,
                     x, bottomY,
-                    channelColors[ch] or channelColors[1],
+                    waveformColor,
                     1
                 )
 
@@ -700,7 +682,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
                         imgui.DrawList_AddLine(draw_list,
                             x, centerY - (rmsVal * channelDrawHeight / 2),
                             x, centerY + (rmsVal * channelDrawHeight / 2),
-                            rmsColors[ch] or rmsColors[1],
+                            waveformColor,
                             1
                         )
                     end
@@ -710,7 +692,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
                         imgui.DrawList_AddLine(draw_list,
                             x, centerY - (rmsVal * channelDrawHeight / 2),
                             x, centerY + (rmsVal * channelDrawHeight / 2),
-                            rmsColors[ch] or rmsColors[1],
+                            waveformColor,
                             1
                         )
                     end
