@@ -661,40 +661,45 @@ function Waveform.drawWaveform(filePath, width, height, options)
                     minVal = 0
                 end
 
-                -- Draw vertical line from min to max
-                local topY = centerY - (maxVal * channelDrawHeight / 2)
-                local bottomY = centerY - (minVal * channelDrawHeight / 2)
+                -- Draw vertical line from min to max (only if showPeaks is enabled)
+                local verticalZoom = options.verticalZoom or globals.waveformVerticalZoom or 1.0
+                local topY = centerY - (maxVal * channelDrawHeight / 2 * verticalZoom)
+                local bottomY = centerY - (minVal * channelDrawHeight / 2 * verticalZoom)
 
-                imgui.DrawList_AddLine(draw_list,
-                    x, topY,
-                    x, bottomY,
-                    waveformColor,
-                    1
-                )
+                if options.showPeaks ~= false then
+                    imgui.DrawList_AddLine(draw_list,
+                        x, topY,
+                        x, bottomY,
+                        waveformColor,
+                        1
+                    )
+                end
 
-                -- Draw RMS with interpolation
-                if sampleIndex < numSamples then
-                    local rms1 = channelPeaks.rms[sampleIndex] or 0
-                    local rms2 = channelPeaks.rms[math.min(sampleIndex + 1, numSamples)] or 0
-                    local rmsVal = rms1 + (rms2 - rms1) * fraction
+                -- Draw RMS with interpolation (only if showRMS is enabled)
+                if options.showRMS ~= false then
+                    if sampleIndex < numSamples then
+                        local rms1 = channelPeaks.rms[sampleIndex] or 0
+                        local rms2 = channelPeaks.rms[math.min(sampleIndex + 1, numSamples)] or 0
+                        local rmsVal = rms1 + (rms2 - rms1) * fraction
 
-                    if math.abs(rmsVal) > 0.01 then
-                        imgui.DrawList_AddLine(draw_list,
-                            x, centerY - (rmsVal * channelDrawHeight / 2),
-                            x, centerY + (rmsVal * channelDrawHeight / 2),
-                            waveformColor,
-                            1
-                        )
-                    end
-                elseif sampleIndex == numSamples then
-                    local rmsVal = channelPeaks.rms[numSamples] or 0
-                    if math.abs(rmsVal) > 0.01 then
-                        imgui.DrawList_AddLine(draw_list,
-                            x, centerY - (rmsVal * channelDrawHeight / 2),
-                            x, centerY + (rmsVal * channelDrawHeight / 2),
-                            waveformColor,
-                            1
-                        )
+                        if math.abs(rmsVal) > 0.01 then
+                            imgui.DrawList_AddLine(draw_list,
+                                x, centerY - (rmsVal * channelDrawHeight / 2 * verticalZoom),
+                                x, centerY + (rmsVal * channelDrawHeight / 2 * verticalZoom),
+                                waveformColor,
+                                1
+                            )
+                        end
+                    elseif sampleIndex == numSamples then
+                        local rmsVal = channelPeaks.rms[numSamples] or 0
+                        if math.abs(rmsVal) > 0.01 then
+                            imgui.DrawList_AddLine(draw_list,
+                                x, centerY - (rmsVal * channelDrawHeight / 2 * verticalZoom),
+                                x, centerY + (rmsVal * channelDrawHeight / 2 * verticalZoom),
+                                waveformColor,
+                                1
+                            )
+                        end
                     end
                 end
             end
@@ -743,6 +748,18 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
     -- Reserve space
     imgui.Dummy(ctx, width, height)
+
+    -- Check for vertical zoom with Ctrl+MouseWheel
+    if imgui.IsItemHovered(ctx) then
+        local wheel = imgui.GetMouseWheel(ctx)
+        local ctrlPressed = (imgui.GetKeyMods(ctx) & imgui.Mod_Ctrl) ~= 0
+        if ctrlPressed and wheel ~= 0 then
+            options.verticalZoom = options.verticalZoom or globals.waveformVerticalZoom or 1.0
+            options.verticalZoom = math.max(0.1, math.min(5.0, options.verticalZoom + wheel * 0.1))
+            -- Store zoom level in globals for persistence
+            globals.waveformVerticalZoom = options.verticalZoom
+        end
+    end
 
     return waveformData
 end
@@ -870,6 +887,7 @@ function Waveform.startPlayback(filePath, startOffset, length)
         globals.audioPreview.startTime = reaper.time_precise()
         globals.audioPreview.position = startOffset or 0
         globals.audioPreview.startOffset = startOffset or 0
+        globals.audioPreview.playbackLength = length or nil
 
         return true
     end
@@ -893,7 +911,7 @@ function Waveform.stopPlayback()
 
         globals.audioPreview.isPlaying = false
         globals.audioPreview.currentFile = nil
-        globals.audioPreview.position = 0
+        globals.audioPreview.position = globals.audioPreview.startOffset or 0  -- Reset to start instead of 0
     end
 end
 
@@ -903,10 +921,26 @@ function Waveform.updatePlaybackPosition()
         local pos = reaper.CF_Preview_GetValue(globals.audioPreview.cfPreview, 'D_POSITION')
         if pos and type(pos) == "number" then
             globals.audioPreview.position = pos
+
+            -- Check if we've reached the end of the edited portion
+            if globals.audioPreview.playbackLength then
+                local endPosition = (globals.audioPreview.startOffset or 0) + globals.audioPreview.playbackLength
+                if pos >= endPosition then
+                    -- Stop and reset to start
+                    Waveform.stopPlayback()
+                    return
+                end
+            end
         else
             local currentTime = reaper.time_precise()
             local elapsed = currentTime - globals.audioPreview.startTime
             globals.audioPreview.position = (globals.audioPreview.startOffset or 0) + elapsed
+
+            -- Check elapsed time
+            if globals.audioPreview.playbackLength and elapsed >= globals.audioPreview.playbackLength then
+                Waveform.stopPlayback()
+                return
+            end
         end
 
         local isPlaying = reaper.CF_Preview_GetValue(globals.audioPreview.cfPreview, 'B_PLAY')

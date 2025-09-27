@@ -267,23 +267,35 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         
         imgui.Separator(globals.ctx)
         imgui.Text(globals.ctx, "Waveform Viewer")
+
+        -- Add display options on the same line
+        imgui.SameLine(globals.ctx)
+        imgui.SetCursorPosX(globals.ctx, width * 0.4)
+        local _, showPeaks = imgui.Checkbox(globals.ctx, "Peaks##waveform",
+            globals.waveformShowPeaks ~= false)
+        globals.waveformShowPeaks = showPeaks
+
+        imgui.SameLine(globals.ctx)
+        local _, showRMS = imgui.Checkbox(globals.ctx, "RMS##waveform",
+            globals.waveformShowRMS ~= false)
+        globals.waveformShowRMS = showRMS
+
         imgui.Separator(globals.ctx)
-        
-        -- Display selected item info
+
+        -- Display selected item info and controls on one line
         imgui.Text(globals.ctx, "Selected: " .. selectedItem.name)
-        
-        -- Debug buttons to clear cache and regenerate peaks
+
+        -- Clear Cache button
         imgui.SameLine(globals.ctx)
         if imgui.SmallButton(globals.ctx, "Clear Cache") then
             globals.Waveform.clearFileCache(selectedItem.filePath)
         end
+
+        -- Rebuild Peaks button
         imgui.SameLine(globals.ctx)
         if imgui.SmallButton(globals.ctx, "Rebuild Peaks") then
             if globals.Waveform.regeneratePeaksFile(selectedItem.filePath) then
                 globals.Waveform.clearFileCache(selectedItem.filePath)
-                -- reaper.ShowConsoleMsg("[UI] Peaks rebuilt successfully\n")
-            else
-                -- reaper.ShowConsoleMsg("[UI] Failed to rebuild peaks\n")
             end
         end
         
@@ -340,7 +352,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     useLogScale = false,   -- Disable logarithmic scaling for more accurate representation
                     amplifyQuiet = 3.0,    -- Amplification factor for quiet sounds
                     startOffset = selectedItem.startOffset or 0,  -- Start position in the file (D_STARTOFFS)
-                    displayLength = selectedItem.length           -- Length to display (D_LENGTH - edited duration)
+                    displayLength = selectedItem.length,          -- Length to display (D_LENGTH - edited duration)
+                    verticalZoom = globals.waveformVerticalZoom or 1.0,  -- Vertical zoom factor
+                    showPeaks = globals.waveformShowPeaks,        -- Show/hide peaks
+                    showRMS = globals.waveformShowRMS             -- Show/hide RMS
                 }
 
                 -- Debug: Show what portion we're displaying (commented for production)
