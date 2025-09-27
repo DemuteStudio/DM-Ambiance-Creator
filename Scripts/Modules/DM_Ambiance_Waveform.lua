@@ -319,8 +319,43 @@ function Waveform.getWaveformData(filePath, width, options)
                 end
             end
 
-            -- No padding needed - we're now using interpolation to stretch/compress
-            -- The drawing code will handle mapping fewer samples to more pixels
+            -- Interpolate/stretch to display width if needed
+            if actualSamples ~= width and actualSamples > 0 then
+                for ch = 1, n_channels do
+                    local interpolated = {min = {}, max = {}, rms = {}}
+
+                    for pixelIdx = 1, width do
+                        local samplePos
+                        if width > 1 then
+                            samplePos = ((pixelIdx - 1) / (width - 1)) * (actualSamples - 1) + 1
+                        else
+                            samplePos = 1
+                        end
+                        local sampleIdx = math.floor(samplePos)
+                        local fraction = samplePos - sampleIdx
+
+                        if sampleIdx < actualSamples then
+                            local maxVal1 = peaks.channels[ch].max[sampleIdx] or 0
+                            local maxVal2 = peaks.channels[ch].max[math.min(sampleIdx + 1, actualSamples)] or 0
+                            local minVal1 = peaks.channels[ch].min[sampleIdx] or 0
+                            local minVal2 = peaks.channels[ch].min[math.min(sampleIdx + 1, actualSamples)] or 0
+                            local rmsVal1 = peaks.channels[ch].rms[sampleIdx] or 0
+                            local rmsVal2 = peaks.channels[ch].rms[math.min(sampleIdx + 1, actualSamples)] or 0
+
+                            -- Linear interpolation
+                            interpolated.max[pixelIdx] = maxVal1 + (maxVal2 - maxVal1) * fraction
+                            interpolated.min[pixelIdx] = minVal1 + (minVal2 - minVal1) * fraction
+                            interpolated.rms[pixelIdx] = rmsVal1 + (rmsVal2 - rmsVal1) * fraction
+                        else
+                            interpolated.max[pixelIdx] = peaks.channels[ch].max[actualSamples] or 0
+                            interpolated.min[pixelIdx] = peaks.channels[ch].min[actualSamples] or 0
+                            interpolated.rms[pixelIdx] = peaks.channels[ch].rms[actualSamples] or 0
+                        end
+                    end
+
+                    peaks.channels[ch] = interpolated
+                end
+            end
 
             -- Keep backward compatibility: store first channel in root peaks object
             if n_channels > 0 and peaks.channels[1] then
@@ -446,7 +481,12 @@ function Waveform.getWaveformData(filePath, width, options)
                             local interpolated = {min = {}, max = {}, rms = {}}
 
                             for pixelIdx = 1, width do
-                                local samplePos = ((pixelIdx - 1) / (width - 1)) * (samplesToRead - 1) + 1
+                                local samplePos
+                                if width > 1 then
+                                    samplePos = ((pixelIdx - 1) / (width - 1)) * (samplesToRead - 1) + 1
+                                else
+                                    samplePos = 1
+                                end
                                 local sampleIdx = math.floor(samplePos)
                                 local fraction = samplePos - sampleIdx
 
@@ -590,6 +630,9 @@ function Waveform.drawWaveform(filePath, width, height, options)
         0x1A1A1AFF
     )
 
+    -- Push clipping rectangle to prevent waveform from drawing outside bounds when zoomed
+    imgui.DrawList_PushClipRect(draw_list, pos_x, pos_y, pos_x + width, pos_y + height, true)
+
     -- Draw each channel
     local peaks = waveformData.peaks
 
@@ -619,47 +662,16 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
             -- Draw waveform peaks for this channel
         if channelPeaks and channelPeaks.max and #channelPeaks.max > 0 then
-            local numSamples = #channelPeaks.max
             local channelDrawHeight = channelHeight - channelSpacing
 
-            -- Draw using polyline for smoother waveform
-            local polyline_max = {}
-            local polyline_min = {}
-            local point_count = 0
-
+            -- Draw waveform
             for pixel = 1, width do
                 local x = pos_x + pixel - 1
 
-                -- Map pixel position to sample position with stretching/compression
-                local samplePos
-                if width > 1 then
-                    samplePos = ((pixel - 1) / (width - 1)) * (numSamples - 1) + 1
-                else
-                    samplePos = 1  -- Single pixel case
-                end
-                local sampleIndex = math.floor(samplePos)
-                local fraction = samplePos - sampleIndex
-
-                local maxVal = 0
-                local minVal = 0
-
-                if sampleIndex < numSamples then
-                    -- Linear interpolation for smooth stretching
-                    local max1 = channelPeaks.max[sampleIndex] or 0
-                    local max2 = channelPeaks.max[math.min(sampleIndex + 1, numSamples)] or 0
-                    local min1 = channelPeaks.min[sampleIndex] or 0
-                    local min2 = channelPeaks.min[math.min(sampleIndex + 1, numSamples)] or 0
-
-                    maxVal = max1 + (max2 - max1) * fraction
-                    minVal = min1 + (min2 - min1) * fraction
-                elseif sampleIndex == numSamples then
-                    maxVal = channelPeaks.max[numSamples] or 0
-                    minVal = channelPeaks.min[numSamples] or 0
-                else
-                    -- Beyond available data
-                    maxVal = 0
-                    minVal = 0
-                end
+                -- Direct 1:1 mapping since data is already interpolated to width
+                local sampleIndex = pixel
+                local maxVal = channelPeaks.max[sampleIndex] or 0
+                local minVal = channelPeaks.min[sampleIndex] or 0
 
                 -- Draw vertical line from min to max (only if showPeaks is enabled)
                 local verticalZoom = options.verticalZoom or globals.waveformVerticalZoom or 1.0
@@ -675,31 +687,16 @@ function Waveform.drawWaveform(filePath, width, height, options)
                     )
                 end
 
-                -- Draw RMS with interpolation (only if showRMS is enabled)
+                -- Draw RMS (only if showRMS is enabled)
                 if options.showRMS ~= false then
-                    if sampleIndex < numSamples then
-                        local rms1 = channelPeaks.rms[sampleIndex] or 0
-                        local rms2 = channelPeaks.rms[math.min(sampleIndex + 1, numSamples)] or 0
-                        local rmsVal = rms1 + (rms2 - rms1) * fraction
-
-                        if math.abs(rmsVal) > 0.01 then
-                            imgui.DrawList_AddLine(draw_list,
-                                x, centerY - (rmsVal * channelDrawHeight / 2 * verticalZoom),
-                                x, centerY + (rmsVal * channelDrawHeight / 2 * verticalZoom),
-                                waveformColor,
-                                1
-                            )
-                        end
-                    elseif sampleIndex == numSamples then
-                        local rmsVal = channelPeaks.rms[numSamples] or 0
-                        if math.abs(rmsVal) > 0.01 then
-                            imgui.DrawList_AddLine(draw_list,
-                                x, centerY - (rmsVal * channelDrawHeight / 2 * verticalZoom),
-                                x, centerY + (rmsVal * channelDrawHeight / 2 * verticalZoom),
-                                waveformColor,
-                                1
-                            )
-                        end
+                    local rmsVal = channelPeaks.rms[sampleIndex] or 0
+                    if math.abs(rmsVal) > 0.01 then
+                        imgui.DrawList_AddLine(draw_list,
+                            x, centerY - (rmsVal * channelDrawHeight / 2 * verticalZoom),
+                            x, centerY + (rmsVal * channelDrawHeight / 2 * verticalZoom),
+                            waveformColor,
+                            1
+                        )
                     end
                 end
             end
@@ -737,6 +734,9 @@ function Waveform.drawWaveform(filePath, width, height, options)
             end
         end
     end
+
+    -- Pop clipping rectangle
+    imgui.DrawList_PopClipRect(draw_list)
 
     -- Draw border
     imgui.DrawList_AddRect(draw_list,
