@@ -29,7 +29,7 @@ function Items.getSelectedItems()
         if not filename then
           filename = ""
         end
-        reaper.ShowConsoleMsg(string.format("[Items] Retrieved filename: %s\n", filename or "nil"))
+        -- reaper.ShowConsoleMsg(string.format("[Items] Retrieved filename: %s\n", filename or "nil"))
       end
       
       -- Also try to get the name from the take if the source filename is empty

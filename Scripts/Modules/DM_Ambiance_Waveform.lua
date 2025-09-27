@@ -6,6 +6,25 @@
 local Waveform = {}
 local globals = {}
 
+-- Helper function for soft clipping (replaces math.tanh which may not be available)
+local function softClip(value, limit)
+    limit = limit or 1.0
+    if value > limit then
+        return limit
+    elseif value < -limit then
+        return -limit
+    else
+        -- Smooth transition near limits
+        local absVal = math.abs(value)
+        if absVal > limit * 0.9 then
+            local x = (absVal - limit * 0.9) / (limit * 0.1)
+            local factor = 1 - (x * x * 0.1)  -- Quadratic smoothing
+            return (value / absVal) * (limit * 0.9 + (limit * 0.1) * factor)
+        end
+        return value
+    end
+end
+
 -- Initialize the module with global variables from the main script
 function Waveform.initModule(g)
     if not g then
@@ -52,7 +71,7 @@ function Waveform.createPlaceholderWaveform(width)
 end
 
 -- Get waveform data with automatic .reapeaks generation if needed
-function Waveform.getWaveformData(filePath, width)
+function Waveform.getWaveformData(filePath, width, options)
     -- Validate inputs
     if not filePath or filePath == "" then
         return Waveform.createPlaceholderWaveform(width)
@@ -60,6 +79,10 @@ function Waveform.getWaveformData(filePath, width)
 
     width = math.floor(tonumber(width) or 400)
     if width <= 0 then width = 400 end
+
+    options = options or {}
+    local useLogScale = options.useLogScale ~= false  -- Use logarithmic scaling for quiet sounds (default true)
+    local amplifyQuiet = options.amplifyQuiet or 3.0  -- Amplification factor for quiet sounds
 
     local cacheKey = filePath .. "_" .. width
 
@@ -98,8 +121,12 @@ function Waveform.getWaveformData(filePath, width)
 
     -- Get source info
     local samplerate = reaper.GetMediaSourceSampleRate(source) or 44100
-    local length = reaper.GetMediaSourceLength(source, false) or 1
+    local totalLength = reaper.GetMediaSourceLength(source, false) or 1
     local numChannels = reaper.GetMediaSourceNumChannels(source) or 1
+
+    -- Use startOffset and displayLength from options if provided
+    local startOffset = options.startOffset or 0
+    local length = options.displayLength or (totalLength - startOffset)
 
     -- Ensure .reapeaks file exists
     local peaksFilePath = filePath .. ".reapeaks"
@@ -172,24 +199,29 @@ function Waveform.getWaveformData(filePath, width)
         -- wait
     end
 
-    -- For mono files, force single channel read to avoid duplication issues
-    local n_channels = 1  -- FORCE MONO READ
+    -- Read actual channel count instead of forcing mono
+    local n_channels = numChannels  -- Use actual channel count
 
-    -- Request exactly width samples for display
+    -- Calculate optimal sample count for smooth waveform
+    -- Request exactly the display width in samples for 1:1 mapping
     local samplesNeeded = width
-    local bufsize = samplesNeeded * 2  -- 2 values (max/min) per sample for mono
+
+    -- Ensure we have a reasonable number of samples
+    samplesNeeded = math.max(100, math.min(samplesNeeded, 2000))
+
+    local bufsize = samplesNeeded * 2 * n_channels  -- 2 values (max/min) per sample per channel
     local buf = reaper.new_array(bufsize)
     buf.clear()
 
-    -- Calculate samples per peak
+    -- Calculate samples per peak - lower value = more detail
     local totalSamples = samplerate * length
-    local peakrate = totalSamples / samplesNeeded
+    local peakrate = math.max(1, totalSamples / samplesNeeded)
 
     local retval = reaper.GetMediaItemTake_Peaks(
         tempTake,
         peakrate,        -- samples per peak
-        0,               -- start time
-        1,               -- FORCE MONO (1 channel)
+        startOffset,     -- start time (use the offset from options)
+        n_channels,      -- Use actual channel count
         samplesNeeded,   -- number of samples we want
         0,               -- want_extra_type (0 = min/max peaks)
         buf
@@ -198,6 +230,22 @@ function Waveform.getWaveformData(filePath, width)
     -- Extract the actual number of samples returned
     local spl_cnt = retval % 1048576  -- Lower 20 bits
 
+    -- Debug output (commented for production)
+    -- reaper.ShowConsoleMsg(string.format("[Waveform] File: %s\n", filePath or "nil"))
+    -- reaper.ShowConsoleMsg(string.format("  Length: %.2fs, Samplerate: %d, Channels: %d\n", length, samplerate, n_channels))
+    -- reaper.ShowConsoleMsg(string.format("  Width: %d, Requested: %d, Returned: %d, Peakrate: %.2f\n",
+    --     width, samplesNeeded, spl_cnt, peakrate))
+
+    -- Initialize channel-specific peak arrays
+    peaks.channels = {}
+    for ch = 1, n_channels do
+        peaks.channels[ch] = {
+            min = {},
+            max = {},
+            rms = {}
+        }
+    end
+
     if spl_cnt > 0 then
         -- Convert buffer to table
         local peaks_table = buf.table()
@@ -205,46 +253,226 @@ function Waveform.getWaveformData(filePath, width)
         if peaks_table and #peaks_table > 0 then
             local actualSamples = math.min(spl_cnt, samplesNeeded)
 
-            -- Read mono data: [max1, min1, max2, min2, ...]
-            for i = 1, actualSamples do
-                local idx = (i - 1) * 2 + 1
-                if idx <= #peaks_table and (idx + 1) <= #peaks_table then
-                    peaks.max[i] = peaks_table[idx] or 0      -- max value
-                    peaks.min[i] = peaks_table[idx + 1] or 0  -- min value
-                    peaks.rms[i] = (math.abs(peaks.max[i]) + math.abs(peaks.min[i])) / 2 * 0.7
-                else
-                    break  -- Stop if we run out of data
-                end
-            end
+            -- reaper.ShowConsoleMsg(string.format("  Buffer size: %d, Using samples: %d\n",
+            --     #peaks_table, actualSamples))
 
-            -- Normalize if needed
-            local maxPeak = 0
-            for i = 1, actualSamples do
-                if peaks.max[i] then
-                    maxPeak = math.max(maxPeak, math.abs(peaks.max[i]), math.abs(peaks.min[i] or 0))
-                end
-            end
+            -- IMPORTANT: Data is organized in BLOCKS, not interleaved per sample!
+            -- First block: ALL maximums (interleaved by channel)
+            -- Second block: ALL minimums (interleaved by channel)
 
-            if maxPeak > 0 and maxPeak < 0.1 then
-                local normFactor = 0.8 / maxPeak
-                for i = 1, actualSamples do
-                    if peaks.max[i] then
-                        peaks.max[i] = peaks.max[i] * normFactor
-                        peaks.min[i] = (peaks.min[i] or 0) * normFactor
-                        peaks.rms[i] = (peaks.rms[i] or 0) * normFactor
+            local max_block_start = 1  -- Lua arrays start at 1
+            local min_block_start = (actualSamples * n_channels) + 1
+
+            for i = 1, actualSamples do
+                for ch = 1, n_channels do
+                    -- Maximum values are in the first block
+                    local max_idx = max_block_start + ((i - 1) * n_channels) + (ch - 1)
+                    -- Minimum values are in the second block
+                    local min_idx = min_block_start + ((i - 1) * n_channels) + (ch - 1)
+
+                    if max_idx <= #peaks_table and min_idx <= #peaks_table then
+                        local maxVal = peaks_table[max_idx] or 0
+                        local minVal = peaks_table[min_idx] or 0
+
+                        peaks.channels[ch].max[i] = maxVal
+                        peaks.channels[ch].min[i] = minVal
+                        peaks.channels[ch].rms[i] = (math.abs(maxVal) + math.abs(minVal)) / 2 * 0.7
+
+                        -- Debug first and last samples (commented for production)
+                        -- if i <= 3 or i >= actualSamples - 2 then
+                        --     reaper.ShowConsoleMsg(string.format("  Sample %d, Ch %d: max=%.4f, min=%.4f\n",
+                        --         i, ch, maxVal, minVal))
+                        -- end
+                    else
+                        -- Fill with zeros if we run out of data
+                        peaks.channels[ch].max[i] = 0
+                        peaks.channels[ch].min[i] = 0
+                        peaks.channels[ch].rms[i] = 0
                     end
                 end
             end
+
+            -- No interpolation needed - we have exactly width samples
+
+            -- Keep backward compatibility: store first channel in root peaks object
+            if n_channels > 0 and peaks.channels[1] then
+                peaks.max = peaks.channels[1].max
+                peaks.min = peaks.channels[1].min
+                peaks.rms = peaks.channels[1].rms
+            end
+
+            -- Apply adaptive normalization per channel
+            for ch = 1, n_channels do
+                local maxPeak = 0
+                local validSamples = 0
+
+                -- Find the maximum peak value in this channel
+                for i = 1, width do
+                    if peaks.channels[ch] and peaks.channels[ch].max and peaks.channels[ch].max[i] then
+                        local absMax = math.abs(peaks.channels[ch].max[i])
+                        local absMin = math.abs(peaks.channels[ch].min[i] or 0)
+                        maxPeak = math.max(maxPeak, absMax, absMin)
+                        if absMax > 0.001 or absMin > 0.001 then
+                            validSamples = validSamples + 1
+                        end
+                    end
+                end
+
+                -- Only normalize if we have valid data
+                if maxPeak > 0.001 and validSamples > 10 then
+                    local normFactor = 1.0
+
+                    if maxPeak < 0.05 then
+                        -- Very quiet sound - amplify significantly
+                        normFactor = 0.4 / maxPeak
+                    elseif maxPeak < 0.1 then
+                        -- Quiet sound - moderate amplification
+                        normFactor = 0.5 / maxPeak
+                    elseif maxPeak < 0.3 then
+                        -- Moderate level - slight boost
+                        normFactor = 0.6 / maxPeak
+                    elseif maxPeak < 0.7 then
+                        -- Good level - minor adjustment
+                        normFactor = 0.8 / maxPeak
+                    else
+                        -- Already loud - no amplification
+                        normFactor = 1.0
+                    end
+
+                    -- Apply amplification factor from options
+                    if amplifyQuiet and amplifyQuiet > 1.0 and maxPeak < 0.3 then
+                        normFactor = normFactor * (1.0 + (amplifyQuiet - 1.0) * (0.3 - maxPeak) / 0.3)
+                    end
+
+                    -- Apply logarithmic scaling if enabled and needed
+                    if useLogScale and normFactor > 1.5 then
+                        normFactor = 1.0 + math.sqrt(normFactor - 1.0)
+                    end
+
+                    -- Limit maximum amplification
+                    normFactor = math.min(normFactor, 8.0)
+
+                    -- Apply normalization to all samples
+                    for i = 1, width do
+                        if peaks.channels[ch].max[i] then
+                            local maxVal = peaks.channels[ch].max[i] * normFactor
+                            local minVal = peaks.channels[ch].min[i] * normFactor
+                            local rmsVal = peaks.channels[ch].rms[i] * normFactor
+
+                            -- Apply soft clipping to prevent overflow
+                            peaks.channels[ch].max[i] = softClip(maxVal, 0.95)
+                            peaks.channels[ch].min[i] = softClip(minVal, 0.95)
+                            peaks.channels[ch].rms[i] = softClip(rmsVal, 0.95)
+                        end
+                    end
+                end
+            end
+
+            -- Update backward compatibility peaks
+            if n_channels > 0 and peaks.channels[1] then
+                peaks.max = peaks.channels[1].max
+                peaks.min = peaks.channels[1].min
+                peaks.rms = peaks.channels[1].rms
+            end
         else
-            -- No data in buffer
+            -- No data in buffer - try single channel fallback
+            -- Request mono peaks as fallback
+            buf.clear()
+            local retval_mono = reaper.GetMediaItemTake_Peaks(
+                tempTake,
+                peakrate,
+                startOffset,     -- Use the same startOffset
+                1,               -- Force mono
+                samplesNeeded,
+                0,
+                buf
+            )
+
+            local spl_cnt_mono = retval_mono % 1048576
+            if spl_cnt_mono > 0 then
+                local peaks_table = buf.table()
+                if peaks_table and #peaks_table > 0 then
+                    -- For mono: first half is max values, second half is min values
+                    local max_offset = 1  -- Lua arrays start at 1
+                    local min_offset = spl_cnt_mono + 1
+
+                    -- Read mono data and duplicate to all channels
+                    local samplesToRead = math.min(spl_cnt_mono, samplesNeeded)
+                    for i = 1, samplesToRead do
+                        local maxVal = peaks_table[max_offset + (i - 1)] or 0
+                        local minVal = peaks_table[min_offset + (i - 1)] or 0
+                        local rmsVal = (math.abs(maxVal) + math.abs(minVal)) / 2 * 0.7
+
+                        -- Apply to all channels
+                        for ch = 1, n_channels do
+                            peaks.channels[ch].max[i] = maxVal
+                            peaks.channels[ch].min[i] = minVal
+                            peaks.channels[ch].rms[i] = rmsVal
+                        end
+                    end
+
+                    -- Interpolate to display width if needed
+                    if samplesToRead ~= width then
+                        for ch = 1, n_channels do
+                            local interpolated = {min = {}, max = {}, rms = {}}
+
+                            for pixelIdx = 1, width do
+                                local samplePos = ((pixelIdx - 1) / (width - 1)) * (samplesToRead - 1) + 1
+                                local sampleIdx = math.floor(samplePos)
+                                local fraction = samplePos - sampleIdx
+
+                                if sampleIdx < samplesToRead then
+                                    local maxVal1 = peaks.channels[ch].max[sampleIdx] or 0
+                                    local maxVal2 = peaks.channels[ch].max[math.min(sampleIdx + 1, samplesToRead)] or 0
+                                    local minVal1 = peaks.channels[ch].min[sampleIdx] or 0
+                                    local minVal2 = peaks.channels[ch].min[math.min(sampleIdx + 1, samplesToRead)] or 0
+                                    local rmsVal1 = peaks.channels[ch].rms[sampleIdx] or 0
+                                    local rmsVal2 = peaks.channels[ch].rms[math.min(sampleIdx + 1, samplesToRead)] or 0
+
+                                    -- Linear interpolation
+                                    interpolated.max[pixelIdx] = maxVal1 + (maxVal2 - maxVal1) * fraction
+                                    interpolated.min[pixelIdx] = minVal1 + (minVal2 - minVal1) * fraction
+                                    interpolated.rms[pixelIdx] = rmsVal1 + (rmsVal2 - rmsVal1) * fraction
+                                else
+                                    interpolated.max[pixelIdx] = peaks.channels[ch].max[samplesToRead] or 0
+                                    interpolated.min[pixelIdx] = peaks.channels[ch].min[samplesToRead] or 0
+                                    interpolated.rms[pixelIdx] = peaks.channels[ch].rms[samplesToRead] or 0
+                                end
+                            end
+
+                            peaks.channels[ch] = interpolated
+                        end
+                    end
+                end
+            else
+                -- Complete failure - fill with zeros
+                for ch = 1, n_channels do
+                    for i = 1, width do
+                        peaks.channels[ch] = peaks.channels[ch] or {min = {}, max = {}, rms = {}}
+                        peaks.channels[ch].max[i] = 0
+                        peaks.channels[ch].min[i] = 0
+                        peaks.channels[ch].rms[i] = 0
+                    end
+                end
+            end
+
+            -- Set backward compatibility
             for i = 1, width do
-                peaks.max[i] = 0
-                peaks.min[i] = 0
-                peaks.rms[i] = 0
+                peaks.max[i] = peaks.channels[1] and peaks.channels[1].max[i] or 0
+                peaks.min[i] = peaks.channels[1] and peaks.channels[1].min[i] or 0
+                peaks.rms[i] = peaks.channels[1] and peaks.channels[1].rms[i] or 0
             end
         end
     else
         -- No data returned, fill with silence
+        for ch = 1, n_channels do
+            peaks.channels[ch] = {min = {}, max = {}, rms = {}}
+            for i = 1, width do
+                peaks.channels[ch].max[i] = 0
+                peaks.channels[ch].min[i] = 0
+                peaks.channels[ch].rms[i] = 0
+            end
+        end
         for i = 1, width do
             peaks.max[i] = 0
             peaks.min[i] = 0
@@ -255,17 +483,21 @@ function Waveform.getWaveformData(filePath, width)
     -- Clean up
     reaper.DeleteTrackMediaItem(tempTrack, tempItem)
 
-    -- Check if we got valid data
+    -- Check if we got ANY data (even silence is valid)
     local hasValidData = false
-    for i = 1, #peaks.max do
-        if peaks.max[i] and math.abs(peaks.max[i]) > 0.001 then
-            hasValidData = true
-            break
+    if n_channels > 0 and peaks.channels then
+        for ch = 1, n_channels do
+            if peaks.channels[ch] and peaks.channels[ch].max and #peaks.channels[ch].max > 0 then
+                hasValidData = true
+                break
+            end
         end
     end
 
-    -- If no valid data, try to rebuild peaks
+    -- If no data at all, try to rebuild peaks
     if not hasValidData then
+        -- reaper.ShowConsoleMsg("[Waveform] ERROR: No peak data received, rebuilding peaks...\n")
+
         -- Delete existing .reapeaks file which might be corrupted
         local peaksFilePath = filePath .. ".reapeaks"
         os.remove(peaksFilePath)
@@ -283,6 +515,7 @@ function Waveform.getWaveformData(filePath, width)
         length = length,
         numChannels = numChannels,
         samplerate = samplerate,
+        startOffset = startOffset,
         isPlaceholder = false
     }
 
@@ -293,7 +526,7 @@ function Waveform.getWaveformData(filePath, width)
 end
 
 -- Draw waveform using ImGui DrawList
-function Waveform.drawWaveform(filePath, width, height)
+function Waveform.drawWaveform(filePath, width, height, options)
     local ctx = globals.ctx
     local imgui = globals.imgui
 
@@ -303,8 +536,10 @@ function Waveform.drawWaveform(filePath, width, height)
     if width <= 0 then width = 400 end
     if height <= 0 then height = 100 end
 
-    -- Get waveform data
-    local waveformData = Waveform.getWaveformData(filePath, width)
+    options = options or {}
+
+    -- Get waveform data with options
+    local waveformData = Waveform.getWaveformData(filePath, width, options)
     if not waveformData then
         imgui.Text(ctx, "Unable to load waveform")
         return nil
@@ -314,6 +549,12 @@ function Waveform.drawWaveform(filePath, width, height)
     local draw_list = imgui.GetWindowDrawList(ctx)
     local pos_x, pos_y = imgui.GetCursorScreenPos(ctx)
 
+    -- Calculate channel layout
+    local numChannels = waveformData.numChannels or 1
+    local displayChannels = math.min(numChannels, 8)  -- Limit to 8 channels for display
+    local channelHeight = height / displayChannels
+    local channelSpacing = 2  -- Pixels between channels
+
     -- Draw background
     imgui.DrawList_AddRectFilled(draw_list,
         pos_x, pos_y,
@@ -321,78 +562,140 @@ function Waveform.drawWaveform(filePath, width, height)
         0x1A1A1AFF
     )
 
-    -- Draw waveform
-    local centerY = pos_y + height / 2
+    -- Draw each channel
     local peaks = waveformData.peaks
+    local channelColors = {
+        0x00FF00FF,  -- Green for channel 1 (or mono)
+        0x00FFFFFF,  -- Cyan for channel 2
+        0xFF8800FF,  -- Orange for channel 3
+        0xFF00FFFF,  -- Magenta for channel 4
+        0xFFFF00FF,  -- Yellow for channel 5
+        0x8888FFFF,  -- Light blue for channel 6
+        0xFF8888FF,  -- Light red for channel 7
+        0xFFFFFFFF,  -- White for channel 8
+    }
 
-    -- Draw zero line
-    imgui.DrawList_AddLine(draw_list,
-        pos_x, centerY,
-        pos_x + width, centerY,
-        0x404040FF,
-        1
-    )
+    local rmsColors = {
+        0x008800FF,  -- Dark green for channel 1 RMS
+        0x008888FF,  -- Dark cyan for channel 2 RMS
+        0x884400FF,  -- Dark orange for channel 3 RMS
+        0x880088FF,  -- Dark magenta for channel 4 RMS
+        0x888800FF,  -- Dark yellow for channel 5 RMS
+        0x444488FF,  -- Dark light blue for channel 6 RMS
+        0x884444FF,  -- Dark light red for channel 7 RMS
+        0x888888FF,  -- Gray for channel 8 RMS
+    }
 
-    -- Draw waveform peaks
-    if peaks and peaks.max and #peaks.max > 0 then
-        local numSamples = #peaks.max
+    for ch = 1, displayChannels do
+        local channelY = pos_y + (ch - 1) * channelHeight
+        local centerY = channelY + channelHeight / 2 - channelSpacing / 2
 
-        -- Check actual sample count (non-zero data)
-        local actualDataCount = 0
-        for i = 1, #peaks.max do
-            if peaks.max[i] and math.abs(peaks.max[i]) > 0.001 then
-                actualDataCount = actualDataCount + 1
-            else
-                break  -- Stop counting when we hit zeros
+        -- Draw zero line for this channel
+        imgui.DrawList_AddLine(draw_list,
+            pos_x, centerY,
+            pos_x + width, centerY,
+            0x404040FF,
+            1
+        )
+
+        -- Get channel data
+        local channelPeaks = nil
+        if peaks.channels and peaks.channels[ch] then
+            channelPeaks = peaks.channels[ch]
+        elseif ch == 1 then
+            -- Fallback for backward compatibility
+            channelPeaks = peaks
+        end
+
+            -- Draw waveform peaks for this channel
+        if channelPeaks and channelPeaks.max and #channelPeaks.max > 0 then
+            local numSamples = #channelPeaks.max
+            local channelDrawHeight = channelHeight - channelSpacing
+
+            -- Draw using polyline for smoother waveform
+            local polyline_max = {}
+            local polyline_min = {}
+            local point_count = 0
+
+            for pixel = 1, width do
+                local x = pos_x + pixel - 1
+
+                -- Map pixel to sample index with interpolation
+                local samplePos = ((pixel - 1) / (width - 1)) * (numSamples - 1) + 1
+                local sampleIndex = math.floor(samplePos)
+                local fraction = samplePos - sampleIndex
+
+                local maxVal = 0
+                local minVal = 0
+
+                if sampleIndex < numSamples then
+                    local max1 = channelPeaks.max[sampleIndex] or 0
+                    local max2 = channelPeaks.max[math.min(sampleIndex + 1, numSamples)] or 0
+                    local min1 = channelPeaks.min[sampleIndex] or 0
+                    local min2 = channelPeaks.min[math.min(sampleIndex + 1, numSamples)] or 0
+
+                    -- Linear interpolation for smooth transitions
+                    maxVal = max1 + (max2 - max1) * fraction
+                    minVal = min1 + (min2 - min1) * fraction
+                else
+                    maxVal = channelPeaks.max[numSamples] or 0
+                    minVal = channelPeaks.min[numSamples] or 0
+                end
+
+                -- Draw vertical line from min to max
+                local topY = centerY - (maxVal * channelDrawHeight / 2)
+                local bottomY = centerY - (minVal * channelDrawHeight / 2)
+
+                imgui.DrawList_AddLine(draw_list,
+                    x, topY,
+                    x, bottomY,
+                    channelColors[ch] or channelColors[1],
+                    1
+                )
+
+                -- Draw RMS if significant
+                local rmsVal = channelPeaks.rms[sampleIndex] or 0
+                if math.abs(rmsVal) > 0.01 then
+                    imgui.DrawList_AddLine(draw_list,
+                        x, centerY - (rmsVal * channelDrawHeight / 2),
+                        x, centerY + (rmsVal * channelDrawHeight / 2),
+                        rmsColors[ch] or rmsColors[1],
+                        1
+                    )
+                end
             end
         end
 
-        -- Use full width and stretch the waveform to fit
-        for pixel = 1, width do
-            -- Map pixel to actual data range
-            local sampleProgress = (pixel - 1) / (width - 1)
-            local sampleIndex = math.floor(sampleProgress * (actualDataCount - 1)) + 1
-            sampleIndex = math.max(1, math.min(sampleIndex, actualDataCount))
-
-            local x = pos_x + pixel - 1
-            local minVal = peaks.min[sampleIndex] or 0
-            local maxVal = peaks.max[sampleIndex] or 0
-            local rmsVal = peaks.rms[sampleIndex] or 0
-
-            -- Draw peak line
-            local topY = centerY - (maxVal * height / 2)
-            local bottomY = centerY - (minVal * height / 2)
-
+        -- Draw separator between channels
+        if ch < displayChannels then
+            local separatorY = channelY + channelHeight - 1
             imgui.DrawList_AddLine(draw_list,
-                x, topY,
-                x, bottomY,
-                0x00FF00FF,
+                pos_x, separatorY,
+                pos_x + width, separatorY,
+                0x303030FF,
                 1
             )
-
-            -- Draw RMS (darker green)
-            if math.abs(rmsVal) > 0.01 then
-                imgui.DrawList_AddLine(draw_list,
-                    x, centerY - (rmsVal * height / 2),
-                    x, centerY + (rmsVal * height / 2),
-                    0x008800FF,
-                    1
-                )
-            end
         end
     end
 
     -- Draw playback position if playing
     if globals.audioPreview.isPlaying and globals.audioPreview.currentFile == filePath then
         local position = globals.audioPreview.position
+        local startOffset = waveformData.startOffset or 0
         if position and type(position) == "number" and waveformData.length and waveformData.length > 0 then
-            local playPos = (position / waveformData.length) * width
-            imgui.DrawList_AddLine(draw_list,
-                pos_x + playPos, pos_y,
-                pos_x + playPos, pos_y + height,
-                0xFFFFFFFF,
-                2
-            )
+            -- Calculate relative position within the displayed portion
+            local relativePos = position - startOffset
+            local playPos = (relativePos / waveformData.length) * width
+
+            -- Only draw if within visible range
+            if playPos >= 0 and playPos <= width then
+                imgui.DrawList_AddLine(draw_list,
+                    pos_x + playPos, pos_y,
+                    pos_x + playPos, pos_y + height,
+                    0xFFFFFFFF,
+                    2
+                )
+            end
         end
     end
 

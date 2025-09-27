@@ -335,13 +335,20 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 -- tostring(fileExists), selectedItem.filePath or "nil"))
             local waveformData = nil
             if fileExists then
-                waveformData = globals.Waveform.drawWaveform(selectedItem.filePath, width * 0.95, 100)
+                -- Enhanced waveform options
+                local waveformOptions = {
+                    useLogScale = false,   -- Disable logarithmic scaling for more accurate representation
+                    amplifyQuiet = 3.0,    -- Amplification factor for quiet sounds
+                    startOffset = selectedItem.startOffset or 0,  -- Start position in the file
+                    displayLength = selectedItem.length           -- Length to display
+                }
+                waveformData = globals.Waveform.drawWaveform(selectedItem.filePath, math.floor(width * 0.95), 120, waveformOptions)
             else
                 -- Draw empty waveform box for missing files
                 local draw_list = imgui.GetWindowDrawList(globals.ctx)
                 local pos_x, pos_y = imgui.GetCursorScreenPos(globals.ctx)
                 local waveformWidth = width * 0.95
-                local waveformHeight = 100
+                local waveformHeight = 120
                 
                 -- Draw background
                 imgui.DrawList_AddRectFilled(draw_list,
