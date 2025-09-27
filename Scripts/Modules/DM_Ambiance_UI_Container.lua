@@ -400,12 +400,17 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             
             -- Audio playback controls
             imgui.Separator(globals.ctx)
-            
+
+            -- Add hint about spacebar
+            imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x808080FF)
+            imgui.Text(globals.ctx, "Tip: Press [Space] to play/pause")
+            imgui.PopStyleColor(globals.ctx, 1)
+
             -- Play/Stop buttons
             if globals.audioPreview and globals.audioPreview.isPlaying and 
                globals.audioPreview.currentFile == selectedItem.filePath then
                 -- Stop button
-                if imgui.Button(globals.ctx, "Stop##" .. containerId, 80, 0) then
+                if imgui.Button(globals.ctx, "■ Stop##" .. containerId, 80, 0) then
                     globals.Waveform.stopPlayback()
                 end
                 
@@ -424,7 +429,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     imgui.SameLine(globals.ctx)
                     imgui.Text(globals.ctx, "(File not available)")
                 else
-                    if imgui.Button(globals.ctx, "Play##" .. containerId, 80, 0) then
+                    if imgui.Button(globals.ctx, "▶ Play##" .. containerId, 80, 0) then
                         globals.Waveform.startPlayback(
                             selectedItem.filePath,
                             selectedItem.startOffset or 0,
@@ -457,6 +462,28 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 end
             end
             imgui.PopItemWidth(globals.ctx)
+
+            -- Handle spacebar for play/pause
+            -- Note: Key_Space constant is 32 (ASCII code for space)
+            local spaceKey = globals.imgui.Key_Space or 32
+            if fileExists and globals.imgui.IsKeyPressed(globals.ctx, spaceKey) then
+                -- Check if this window has focus (use RootAndChildWindows flag if available)
+                local focusFlag = globals.imgui.FocusedFlags_RootAndChildWindows or 3
+                if globals.imgui.IsWindowFocused(globals.ctx, focusFlag) then
+                    if globals.audioPreview and globals.audioPreview.isPlaying and
+                       globals.audioPreview.currentFile == selectedItem.filePath then
+                        -- Currently playing this file - stop it
+                        globals.Waveform.stopPlayback()
+                    else
+                        -- Not playing - start playback
+                        globals.Waveform.startPlayback(
+                            selectedItem.filePath,
+                            selectedItem.startOffset or 0,
+                            selectedItem.length
+                        )
+                    end
+                end
+            end
         else
             imgui.Text(globals.ctx, "Waveform viewer not available")
         end
