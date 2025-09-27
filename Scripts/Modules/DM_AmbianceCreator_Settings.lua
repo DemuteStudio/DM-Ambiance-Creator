@@ -19,9 +19,10 @@ local originalSettings = {}
 local defaultSettings = {
     mediaItemDirectory = "", -- Path to the media directory
     autoImportMedia = true, -- Automatically copy media files
-    buttonColor = 0x5D5D5DFF, -- Default blue color for buttons
+    buttonColor = 0x15856DFF, -- Default blue color for buttons
     backgroundColor = 0x2E2E2EFF, -- Dark gray background
     textColor = 0xD5D5D5FF, -- White text
+    waveformColor = 0x00CCA0FF, -- Default blue color
     uiRounding = 2.0, -- Default rounding for UI elements
     itemSpacing = 8, -- Default item spacing
     crossfadeMargin = 0.2, -- Default crossfade margin in seconds
@@ -499,6 +500,7 @@ function Settings.showAppearanceSettings()
     Settings.colorPicker("Button Color", "buttonColor")
     Settings.colorPicker("Background Color", "backgroundColor")
     Settings.colorPicker("Text Color", "textColor")
+    Settings.colorPicker("Waveform Color", "waveformColor")
     imgui.Separator(ctx)
 end
 

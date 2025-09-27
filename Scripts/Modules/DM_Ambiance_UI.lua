@@ -80,6 +80,7 @@ function UI.PushStyle()
     local buttonColor = settings.getSetting("buttonColor")
     local backgroundColor = settings.getSetting("backgroundColor")
     local textColor = settings.getSetting("textColor")
+    local waveformColor = settings.getSetting("waveformColor")
     
     -- Apply button colors
     imgui.PushStyleColor(ctx, imgui.Col_Button, buttonColor)

@@ -81,10 +81,21 @@ function Waveform.getWaveformData(filePath, width, options)
     if width <= 0 then width = 400 end
 
     options = options or {}
+
+    -- REDIRECT TO NEW FUNCTION FOR EDITED ITEMS
+    if options.startOffset and options.displayLength then
+        return Waveform.getWaveformDataForEditedItem(filePath, width, options)
+    end
+
     local useLogScale = options.useLogScale ~= false  -- Use logarithmic scaling for quiet sounds (default true)
     local amplifyQuiet = options.amplifyQuiet or 3.0  -- Amplification factor for quiet sounds
 
-    local cacheKey = filePath .. "_" .. width
+    -- Include startOffset and displayLength in cache key to handle edited portions correctly
+    local cacheKey = string.format("%s_%d_%.3f_%.3f",
+        filePath,
+        width,
+        options.startOffset or 0,
+        options.displayLength or -1)
 
     -- Check cache first - but verify peaks exist too
     if globals.waveformCache[cacheKey] and not globals.waveformCache[cacheKey].isPlaceholder then
@@ -120,16 +131,24 @@ function Waveform.getWaveformData(filePath, width, options)
     end
 
     -- Get source info
-    local samplerate = reaper.GetMediaSourceSampleRate(source) or 44100
+    local samplerate = math.floor(reaper.GetMediaSourceSampleRate(source) or 44100)
     local totalLength = reaper.GetMediaSourceLength(source, false) or 1
-    local numChannels = reaper.GetMediaSourceNumChannels(source) or 1
+    local numChannels = math.floor(reaper.GetMediaSourceNumChannels(source) or 1)
 
-    -- Use startOffset and displayLength from options if provided
+    -- Use startOffset and displayLength from options for the EDITED portion
     local startOffset = options.startOffset or 0
     local length = options.displayLength or (totalLength - startOffset)
 
     -- Ensure we don't exceed file boundaries
     length = math.min(length, totalLength - startOffset)
+
+    -- Debug: Confirm we're using the right portion (commented for production)
+    -- reaper.ShowConsoleMsg(string.format("\n[Waveform] Processing edited item:\n"))
+    -- reaper.ShowConsoleMsg(string.format("  File: %s\n", filePath))
+    -- reaper.ShowConsoleMsg(string.format("  Total file length: %.3fs\n", totalLength))
+    -- reaper.ShowConsoleMsg(string.format("  Item start offset: %.3fs\n", startOffset))
+    -- reaper.ShowConsoleMsg(string.format("  Item length: %.3fs\n", length))
+    -- reaper.ShowConsoleMsg(string.format("  Item end position: %.3fs\n", startOffset + length))
 
     -- Validate offset doesn't exceed file length
     if startOffset >= totalLength then
@@ -184,9 +203,9 @@ function Waveform.getWaveformData(filePath, width, options)
         return Waveform.createPlaceholderWaveform(width)
     end
 
-    -- Set the item to match the edited portion
+    -- Set the item to match the EDITED portion
     reaper.SetMediaItemInfo_Value(tempItem, "D_POSITION", 0)
-    reaper.SetMediaItemInfo_Value(tempItem, "D_LENGTH", totalLength)  -- Use full length to ensure peaks are available
+    reaper.SetMediaItemInfo_Value(tempItem, "D_LENGTH", length)  -- Use edited length
 
     local tempTake = reaper.AddTakeToMediaItem(tempItem)
     if not tempTake then
@@ -198,10 +217,15 @@ function Waveform.getWaveformData(filePath, width, options)
     -- Set source (REAPER takes ownership after this)
     reaper.SetMediaItemTake_Source(tempTake, source)
 
-    -- Build peaks
+    -- CRITICAL: Set the take's offset to match where the edited portion starts in the source
+    reaper.SetMediaItemTakeInfo_Value(tempTake, "D_STARTOFFS", startOffset)
+
+    -- Apply changes to item
+    reaper.UpdateItemInProject(tempItem)
+
+    -- Build peaks for the edited portion
     reaper.SetMediaItemSelected(tempItem, true)
     reaper.Main_OnCommand(40047, 0) -- Build peaks for selected items
-    reaper.UpdateItemInProject(tempItem)
 
     -- Small delay to let peaks build
     local startTime = reaper.time_precise()
@@ -213,41 +237,49 @@ function Waveform.getWaveformData(filePath, width, options)
     local n_channels = numChannels  -- Use actual channel count
 
     -- Calculate how many samples we actually need for the edited portion
-    local totalEditedSamples = samplerate * length  -- Total samples in edited portion
+    local totalEditedSamples = math.floor(samplerate * length)  -- Total samples in edited portion
 
-    -- Calculate optimal number of samples to request
-    -- For short clips, request fewer samples and stretch them
-    -- For long clips, request more samples and compress them
-    local samplesNeeded
-
-    if totalEditedSamples < width * 100 then
-        -- Short clip: request fewer samples (minimum 50 for quality)
-        samplesNeeded = math.max(50, math.min(width / 4, totalEditedSamples / 100))
-    else
-        -- Normal/long clip: request proportional to width
-        samplesNeeded = width
-    end
+    -- Request exactly the width number of samples for 1:1 mapping
+    local samplesNeeded = math.floor(width)
 
     -- Ensure reasonable bounds
     samplesNeeded = math.floor(math.max(50, math.min(samplesNeeded, 2000)))
 
-    local bufsize = samplesNeeded * 2 * n_channels  -- 2 values (max/min) per sample per channel
+    -- Calculate the number of samples we can actually get from the edited portion
+    local samplesToRequest = samplesNeeded
+
+    -- Calculate peakrate based on what we need
+    local peakrate = math.max(1, totalEditedSamples / samplesToRequest)
+
+    -- If we're asking for more samples than available in the edited portion, adjust
+    if peakrate < 1 then
+        samplesToRequest = totalEditedSamples
+        peakrate = 1
+    end
+
+    -- Calculate the EXACT maximum samples for the edited portion
+    local maxSamplesForEditedPortion = math.floor(length * samplerate / peakrate)
+
+    -- Calculate the exact number of samples that represent our edited portion
+    local exactSamplesForEditedLength = math.floor(length * samplerate / peakrate)
+
+    -- Make sure we never request more than what's available in the edited portion
+    samplesToRequest = math.min(samplesToRequest, maxSamplesForEditedPortion)
+
+    -- Create a slightly larger buffer to accommodate any rounding
+    local bufsize = (samplesToRequest + 10) * 2 * n_channels  -- 2 values (max/min) per sample per channel
     local buf = reaper.new_array(bufsize)
     buf.clear()
 
-    -- Calculate samples per peak based on EDITED portion only
-    local peakrate = math.max(1, totalEditedSamples / samplesNeeded)
-
     -- Debug to verify we're getting the right portion (commented for production)
-    -- reaper.ShowConsoleMsg(string.format("  Edited duration: %.3fs, Total samples: %d, Samples needed: %d, Peakrate: %.2f\n",
-    --     length, totalEditedSamples, samplesNeeded, peakrate))
+    -- reaper.ShowConsoleMsg(string.format("  Getting peaks: rate=%.2f, requesting %d samples\n", peakrate, samplesToRequest))
 
     local retval = reaper.GetMediaItemTake_Peaks(
         tempTake,
         peakrate,        -- samples per peak
-        startOffset,     -- start time (use the offset from options)
+        0,               -- start time (0 because take already has offset)
         n_channels,      -- Use actual channel count
-        samplesNeeded,   -- number of samples we want
+        samplesToRequest,   -- number of samples we want (limited by edited duration)
         0,               -- want_extra_type (0 = min/max peaks)
         buf
     )
@@ -255,11 +287,26 @@ function Waveform.getWaveformData(filePath, width, options)
     -- Extract the actual number of samples returned
     local spl_cnt = retval % 1048576  -- Lower 20 bits
 
-    -- Debug output (commented for production)
-    -- reaper.ShowConsoleMsg(string.format("[Waveform] File: %s\n", filePath or "nil"))
-    -- reaper.ShowConsoleMsg(string.format("  Length: %.2fs, Samplerate: %d, Channels: %d\n", length, samplerate, n_channels))
-    -- reaper.ShowConsoleMsg(string.format("  Width: %d, Requested: %d, Returned: %d, Peakrate: %.2f\n",
-    --     width, samplesNeeded, spl_cnt, peakrate))
+    -- Debug: Check how many samples we got (commented for production)
+    -- reaper.ShowConsoleMsg(string.format("  Samples returned: %d\n", spl_cnt))
+
+    -- CRITICAL: Strictly limit samples to the edited portion
+    -- Never process more samples than what represents the edited length
+    if spl_cnt > maxSamplesForEditedPortion then
+        -- reaper.ShowConsoleMsg(string.format("  WARNING: Got %d samples but edited portion should only have %d\n",
+        --     spl_cnt, maxSamplesForEditedPortion))
+        spl_cnt = maxSamplesForEditedPortion
+    end
+
+    -- Also limit to what we requested
+    if spl_cnt > samplesToRequest then
+        spl_cnt = samplesToRequest
+    end
+
+    -- IMPORTANT: Ensure we stop exactly at the edited portion end
+    if spl_cnt > exactSamplesForEditedLength then
+        spl_cnt = exactSamplesForEditedLength
+    end
 
     -- Initialize channel-specific peak arrays
     peaks.channels = {}
@@ -276,7 +323,10 @@ function Waveform.getWaveformData(filePath, width, options)
         local peaks_table = buf.table()
 
         if peaks_table and #peaks_table > 0 then
-            local actualSamples = math.min(spl_cnt, samplesNeeded)
+            -- Limit to the samples that represent the edited portion
+            -- CRUCIAL: Use the exact number of samples we got, capped at the edited portion length
+            local actualSamples = math.min(spl_cnt, exactSamplesForEditedLength or maxSamplesForEditedPortion)
+            -- reaper.ShowConsoleMsg(string.format("  Using %d samples for display\n", actualSamples))
 
             -- Debug output for edited portion (commented for production)
             -- reaper.ShowConsoleMsg(string.format("  Buffer size: %d, Using samples: %d\n",
@@ -288,9 +338,11 @@ function Waveform.getWaveformData(filePath, width, options)
             -- Second block: ALL minimums (interleaved by channel)
 
             local max_block_start = 1  -- Lua arrays start at 1
-            local min_block_start = (actualSamples * n_channels) + 1
+            local min_block_start = (spl_cnt * n_channels) + 1  -- Use spl_cnt for actual buffer structure
 
-            for i = 1, actualSamples do
+            -- CRITICAL: Never read more samples than what represents the edited portion
+            local samplesToRead = math.min(actualSamples, spl_cnt)
+            for i = 1, samplesToRead do
                 for ch = 1, n_channels do
                     -- Maximum values are in the first block
                     local max_idx = max_block_start + ((i - 1) * n_channels) + (ch - 1)
@@ -305,10 +357,10 @@ function Waveform.getWaveformData(filePath, width, options)
                         peaks.channels[ch].min[i] = minVal
                         peaks.channels[ch].rms[i] = (math.abs(maxVal) + math.abs(minVal)) / 2 * 0.7
 
-                        -- Debug first and last samples (commented for production)
-                        -- if i <= 3 or i >= actualSamples - 2 then
-                        --     reaper.ShowConsoleMsg(string.format("  Sample %d, Ch %d: max=%.4f, min=%.4f\n",
-                        --         i, ch, maxVal, minVal))
+                        -- Debug first samples to verify we have the right data (commented for production)
+                        -- if i <= 5 and ch == 1 then
+                        --     reaper.ShowConsoleMsg(string.format("  Peak[%d]: max=%.4f, min=%.4f\n",
+                        --         i, maxVal, minVal))
                         -- end
                     else
                         -- Fill with zeros if we run out of data
@@ -320,36 +372,51 @@ function Waveform.getWaveformData(filePath, width, options)
             end
 
             -- Interpolate/stretch to display width if needed
-            if actualSamples ~= width and actualSamples > 0 then
+            if samplesToRead ~= width then
+                -- reaper.ShowConsoleMsg(string.format("  Interpolating from %d samples to %d pixels\n", samplesToRead, width))
                 for ch = 1, n_channels do
                     local interpolated = {min = {}, max = {}, rms = {}}
 
                     for pixelIdx = 1, width do
-                        local samplePos
-                        if width > 1 then
-                            samplePos = ((pixelIdx - 1) / (width - 1)) * (actualSamples - 1) + 1
-                        else
-                            samplePos = 1
-                        end
-                        local sampleIdx = math.floor(samplePos)
-                        local fraction = samplePos - sampleIdx
+                        if samplesToRead > 0 then
+                            -- Map pixel to sample position proportionally - stretch the available data
+                            local samplePos
+                            if width > 1 and samplesToRead > 1 then
+                                samplePos = ((pixelIdx - 1) / (width - 1)) * (samplesToRead - 1) + 1
+                            else
+                                samplePos = 1
+                            end
+                            local sampleIdx = math.floor(samplePos)
+                            local fraction = samplePos - sampleIdx
 
-                        if sampleIdx < actualSamples then
-                            local maxVal1 = peaks.channels[ch].max[sampleIdx] or 0
-                            local maxVal2 = peaks.channels[ch].max[math.min(sampleIdx + 1, actualSamples)] or 0
-                            local minVal1 = peaks.channels[ch].min[sampleIdx] or 0
-                            local minVal2 = peaks.channels[ch].min[math.min(sampleIdx + 1, actualSamples)] or 0
-                            local rmsVal1 = peaks.channels[ch].rms[sampleIdx] or 0
-                            local rmsVal2 = peaks.channels[ch].rms[math.min(sampleIdx + 1, actualSamples)] or 0
+                            if sampleIdx < samplesToRead then
+                                local maxVal1 = peaks.channels[ch].max[sampleIdx] or 0
+                                local maxVal2 = peaks.channels[ch].max[math.min(sampleIdx + 1, samplesToRead)] or 0
+                                local minVal1 = peaks.channels[ch].min[sampleIdx] or 0
+                                local minVal2 = peaks.channels[ch].min[math.min(sampleIdx + 1, samplesToRead)] or 0
+                                local rmsVal1 = peaks.channels[ch].rms[sampleIdx] or 0
+                                local rmsVal2 = peaks.channels[ch].rms[math.min(sampleIdx + 1, samplesToRead)] or 0
 
-                            -- Linear interpolation
-                            interpolated.max[pixelIdx] = maxVal1 + (maxVal2 - maxVal1) * fraction
-                            interpolated.min[pixelIdx] = minVal1 + (minVal2 - minVal1) * fraction
-                            interpolated.rms[pixelIdx] = rmsVal1 + (rmsVal2 - rmsVal1) * fraction
+                                -- Linear interpolation
+                                interpolated.max[pixelIdx] = maxVal1 + (maxVal2 - maxVal1) * fraction
+                                interpolated.min[pixelIdx] = minVal1 + (minVal2 - minVal1) * fraction
+                                interpolated.rms[pixelIdx] = rmsVal1 + (rmsVal2 - rmsVal1) * fraction
+                            elseif sampleIdx == samplesToRead then
+                                -- Last sample - use it as is
+                                interpolated.max[pixelIdx] = peaks.channels[ch].max[samplesToRead] or 0
+                                interpolated.min[pixelIdx] = peaks.channels[ch].min[samplesToRead] or 0
+                                interpolated.rms[pixelIdx] = peaks.channels[ch].rms[samplesToRead] or 0
+                            else
+                                -- This shouldn't happen with correct stretching, but keep last valid sample
+                                interpolated.max[pixelIdx] = peaks.channels[ch].max[samplesToRead] or 0
+                                interpolated.min[pixelIdx] = peaks.channels[ch].min[samplesToRead] or 0
+                                interpolated.rms[pixelIdx] = peaks.channels[ch].rms[samplesToRead] or 0
+                            end
                         else
-                            interpolated.max[pixelIdx] = peaks.channels[ch].max[actualSamples] or 0
-                            interpolated.min[pixelIdx] = peaks.channels[ch].min[actualSamples] or 0
-                            interpolated.rms[pixelIdx] = peaks.channels[ch].rms[actualSamples] or 0
+                            -- No data at all - fill with silence
+                            interpolated.max[pixelIdx] = 0
+                            interpolated.min[pixelIdx] = 0
+                            interpolated.rms[pixelIdx] = 0
                         end
                     end
 
@@ -442,17 +509,34 @@ function Waveform.getWaveformData(filePath, width, options)
             -- No data in buffer - try single channel fallback
             -- Request mono peaks as fallback
             buf.clear()
+            -- Resize buffer for mono (1 channel, 2 values per sample)
+            local bufsize_mono = samplesToRequest * 2  -- 2 values (max/min) per sample for mono
+            buf.resize(bufsize_mono)
+
             local retval_mono = reaper.GetMediaItemTake_Peaks(
                 tempTake,
                 peakrate,
-                startOffset,     -- Use the same startOffset
+                0,               -- start time (0 because take already has offset)
                 1,               -- Force mono
-                samplesNeeded,
+                samplesToRequest,   -- Use limited samples
                 0,
                 buf
             )
 
             local spl_cnt_mono = retval_mono % 1048576
+
+            -- Apply same strict limits as for multi-channel
+            if spl_cnt_mono > maxSamplesForEditedPortion then
+                spl_cnt_mono = maxSamplesForEditedPortion
+            end
+            if spl_cnt_mono > samplesToRequest then
+                spl_cnt_mono = samplesToRequest
+            end
+            -- IMPORTANT: Ensure we stop exactly at the edited portion end
+            if spl_cnt_mono > exactSamplesForEditedLength then
+                spl_cnt_mono = exactSamplesForEditedLength
+            end
+
             if spl_cnt_mono > 0 then
                 local peaks_table = buf.table()
                 if peaks_table and #peaks_table > 0 then
@@ -461,8 +545,8 @@ function Waveform.getWaveformData(filePath, width, options)
                     local min_offset = spl_cnt_mono + 1
 
                     -- Read mono data and duplicate to all channels
-                    local samplesToRead = math.min(spl_cnt_mono, samplesNeeded)
-                    for i = 1, samplesToRead do
+                    local samplesToReadMono = math.min(spl_cnt_mono, exactSamplesForEditedLength)
+                    for i = 1, samplesToReadMono do
                         local maxVal = peaks_table[max_offset + (i - 1)] or 0
                         local minVal = peaks_table[min_offset + (i - 1)] or 0
                         local rmsVal = (math.abs(maxVal) + math.abs(minVal)) / 2 * 0.7
@@ -476,36 +560,42 @@ function Waveform.getWaveformData(filePath, width, options)
                     end
 
                     -- Interpolate to display width if needed
-                    if samplesToRead ~= width then
+                    if samplesToReadMono ~= width then
                         for ch = 1, n_channels do
                             local interpolated = {min = {}, max = {}, rms = {}}
 
                             for pixelIdx = 1, width do
                                 local samplePos
-                                if width > 1 then
-                                    samplePos = ((pixelIdx - 1) / (width - 1)) * (samplesToRead - 1) + 1
+                                if width > 1 and samplesToReadMono > 1 then
+                                    samplePos = ((pixelIdx - 1) / (width - 1)) * (samplesToReadMono - 1) + 1
                                 else
                                     samplePos = 1
                                 end
                                 local sampleIdx = math.floor(samplePos)
                                 local fraction = samplePos - sampleIdx
 
-                                if sampleIdx < samplesToRead then
+                                if sampleIdx < samplesToReadMono then
                                     local maxVal1 = peaks.channels[ch].max[sampleIdx] or 0
-                                    local maxVal2 = peaks.channels[ch].max[math.min(sampleIdx + 1, samplesToRead)] or 0
+                                    local maxVal2 = peaks.channels[ch].max[math.min(sampleIdx + 1, samplesToReadMono)] or 0
                                     local minVal1 = peaks.channels[ch].min[sampleIdx] or 0
-                                    local minVal2 = peaks.channels[ch].min[math.min(sampleIdx + 1, samplesToRead)] or 0
+                                    local minVal2 = peaks.channels[ch].min[math.min(sampleIdx + 1, samplesToReadMono)] or 0
                                     local rmsVal1 = peaks.channels[ch].rms[sampleIdx] or 0
-                                    local rmsVal2 = peaks.channels[ch].rms[math.min(sampleIdx + 1, samplesToRead)] or 0
+                                    local rmsVal2 = peaks.channels[ch].rms[math.min(sampleIdx + 1, samplesToReadMono)] or 0
 
                                     -- Linear interpolation
                                     interpolated.max[pixelIdx] = maxVal1 + (maxVal2 - maxVal1) * fraction
                                     interpolated.min[pixelIdx] = minVal1 + (minVal2 - minVal1) * fraction
                                     interpolated.rms[pixelIdx] = rmsVal1 + (rmsVal2 - rmsVal1) * fraction
+                                elseif sampleIdx == samplesToReadMono then
+                                    -- Last sample - use it as is
+                                    interpolated.max[pixelIdx] = peaks.channels[ch].max[samplesToReadMono] or 0
+                                    interpolated.min[pixelIdx] = peaks.channels[ch].min[samplesToReadMono] or 0
+                                    interpolated.rms[pixelIdx] = peaks.channels[ch].rms[samplesToReadMono] or 0
                                 else
-                                    interpolated.max[pixelIdx] = peaks.channels[ch].max[samplesToRead] or 0
-                                    interpolated.min[pixelIdx] = peaks.channels[ch].min[samplesToRead] or 0
-                                    interpolated.rms[pixelIdx] = peaks.channels[ch].rms[samplesToRead] or 0
+                                    -- This shouldn't happen with correct stretching, but keep last valid sample
+                                    interpolated.max[pixelIdx] = peaks.channels[ch].max[samplesToReadMono] or 0
+                                    interpolated.min[pixelIdx] = peaks.channels[ch].min[samplesToReadMono] or 0
+                                    interpolated.rms[pixelIdx] = peaks.channels[ch].rms[samplesToReadMono] or 0
                                 end
                             end
 
@@ -524,12 +614,11 @@ function Waveform.getWaveformData(filePath, width, options)
                 end
             end
 
-            -- Set backward compatibility
-            local numSamplesUsed = math.min(spl_cnt_mono, samplesNeeded)
-            for i = 1, numSamplesUsed do
-                peaks.max[i] = peaks.channels[1] and peaks.channels[1].max[i] or 0
-                peaks.min[i] = peaks.channels[1] and peaks.channels[1].min[i] or 0
-                peaks.rms[i] = peaks.channels[1] and peaks.channels[1].rms[i] or 0
+            -- Set backward compatibility - use the interpolated data to fill width
+            if peaks.channels and peaks.channels[1] then
+                peaks.max = peaks.channels[1].max
+                peaks.min = peaks.channels[1].min
+                peaks.rms = peaks.channels[1].rms
             end
         end
     else
@@ -637,7 +726,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
     local peaks = waveformData.peaks
 
     -- Single color for all waveform elements
-    local waveformColor = 0x00D9FFFF  -- Bright cyan for both peaks and RMS
+    local waveformColor = globals.Settings.getSetting("waveformColor") -- Bright cyan for both peaks and RMS
 
     for ch = 1, displayChannels do
         local channelY = pos_y + (ch - 1) * channelHeight
@@ -764,13 +853,296 @@ function Waveform.drawWaveform(filePath, width, height, options)
     return waveformData
 end
 
--- Clear cache for a specific file
+-- New dedicated function for edited items - reads audio samples directly for precise control
+function Waveform.getWaveformDataForEditedItem(filePath, width, options)
+    -- 1. VALIDATION
+    if not filePath or filePath == "" then
+        return Waveform.createPlaceholderWaveform(width)
+    end
+
+    width = math.floor(width or 400)
+    if width <= 0 then width = 400 end
+
+    local startOffset = options.startOffset or 0
+    local displayLength = options.displayLength or 1
+
+    -- Check cache first
+    local cacheKey = string.format("%s_EDITED_%d_%.3f_%.3f",
+        filePath, width, startOffset, displayLength)
+
+    if globals.waveformCache[cacheKey] and not globals.waveformCache[cacheKey].isPlaceholder then
+        return globals.waveformCache[cacheKey]
+    end
+
+    -- Check file exists
+    local file = io.open(filePath, "r")
+    if not file then
+        return Waveform.createPlaceholderWaveform(width)
+    end
+    file:close()
+
+    -- 2. CREATE SOURCE
+    local source = reaper.PCM_Source_CreateFromFile(filePath)
+    if not source then
+        return Waveform.createPlaceholderWaveform(width)
+    end
+
+    local samplerate = reaper.GetMediaSourceSampleRate(source)
+    local numChannels = math.floor(reaper.GetMediaSourceNumChannels(source) or 1)
+    local totalLength = reaper.GetMediaSourceLength(source, false)
+
+    -- Verify bounds
+    if startOffset >= totalLength then
+        reaper.PCM_Source_Destroy(source)
+        return Waveform.createPlaceholderWaveform(width)
+    end
+
+    displayLength = math.min(displayLength, totalLength - startOffset)
+
+    -- 3. CREATE TEMPORARY ITEM FOR ACCESSOR
+    local tempTrack = reaper.GetTrack(0, 0)
+    if not tempTrack then
+        reaper.InsertTrackAtIndex(0, false)
+        tempTrack = reaper.GetTrack(0, 0)
+    end
+
+    if not tempTrack then
+        reaper.PCM_Source_Destroy(source)
+        return Waveform.createPlaceholderWaveform(width)
+    end
+
+    local tempItem = reaper.AddMediaItemToTrack(tempTrack)
+    if not tempItem then
+        reaper.PCM_Source_Destroy(source)
+        return Waveform.createPlaceholderWaveform(width)
+    end
+
+    reaper.SetMediaItemInfo_Value(tempItem, "D_POSITION", 0)
+    reaper.SetMediaItemInfo_Value(tempItem, "D_LENGTH", displayLength)
+
+    local tempTake = reaper.AddTakeToMediaItem(tempItem)
+    if not tempTake then
+        reaper.DeleteTrackMediaItem(tempTrack, tempItem)
+        reaper.PCM_Source_Destroy(source)
+        return Waveform.createPlaceholderWaveform(width)
+    end
+
+    -- Set source (REAPER takes ownership)
+    reaper.SetMediaItemTake_Source(tempTake, source)
+
+    -- CRUCIAL: Set the offset to read from the correct position
+    reaper.SetMediaItemTakeInfo_Value(tempTake, "D_STARTOFFS", startOffset)
+    reaper.UpdateItemInProject(tempItem)
+
+    -- 4. CREATE AUDIO ACCESSOR
+    local accessor = reaper.CreateTakeAudioAccessor(tempTake)
+    if not accessor then
+        reaper.DeleteTrackMediaItem(tempTrack, tempItem)
+        return Waveform.createPlaceholderWaveform(width)
+    end
+
+    -- 5. CALCULATE SAMPLES TO READ
+    local totalSamples = math.floor(displayLength * samplerate)
+    local samplesPerPixel = math.max(1, math.floor(totalSamples / width))
+
+    -- If we have fewer samples than pixels, we'll stretch the data
+    if totalSamples < width then
+        samplesPerPixel = 1
+    end
+
+    -- 6. INITIALIZE PEAKS STRUCTURE
+    local peaks = {
+        min = {},
+        max = {},
+        rms = {},
+        channels = {}
+    }
+
+    -- Initialize channels
+    for ch = 1, numChannels do
+        peaks.channels[ch] = {min = {}, max = {}, rms = {}}
+    end
+
+    -- 7. READ SAMPLES BLOCK BY BLOCK
+    local bufferSize = samplesPerPixel * numChannels
+    local audioBuffer = reaper.new_array(bufferSize * 2) -- Extra space for safety
+
+    -- Process exactly 'width' pixels
+    for pixelIdx = 1, width do
+        -- Calculate position for this pixel
+        local startSample = (pixelIdx - 1) * samplesPerPixel
+
+        if startSample >= totalSamples then
+            -- Beyond the edited portion - fill with silence
+            for ch = 1, numChannels do
+                peaks.channels[ch].min[pixelIdx] = 0
+                peaks.channels[ch].max[pixelIdx] = 0
+                peaks.channels[ch].rms[pixelIdx] = 0
+            end
+        else
+            -- Number of samples to read for this block
+            local samplesToRead = math.min(samplesPerPixel, totalSamples - startSample)
+
+            -- Clear buffer before reading
+            audioBuffer.clear()
+
+            -- READ AUDIO SAMPLES DIRECTLY
+            -- Note: GetAudioAccessorSamples expects time in seconds
+            local startTime = startSample / samplerate
+            local ret = reaper.GetAudioAccessorSamples(
+                accessor,
+                samplerate,
+                numChannels,
+                startTime,
+                samplesToRead,
+                audioBuffer
+            )
+
+            -- Convert buffer to table
+            local samples = audioBuffer.table(1, samplesToRead * numChannels)
+
+            -- Calculate min/max/rms for each channel
+            for ch = 1, numChannels do
+                local minVal = 0
+                local maxVal = 0
+                local sumSquares = 0
+                local count = 0
+
+                -- Process samples for this channel
+                for s = 0, samplesToRead - 1 do
+                    -- Audio data is interleaved: ch1, ch2, ch1, ch2, ...
+                    local idx = s * numChannels + ch
+                    local value = samples[idx] or 0
+
+                    minVal = math.min(minVal, value)
+                    maxVal = math.max(maxVal, value)
+                    sumSquares = sumSquares + (value * value)
+                    count = count + 1
+                end
+
+                -- Store peaks for this pixel
+                peaks.channels[ch].min[pixelIdx] = minVal
+                peaks.channels[ch].max[pixelIdx] = maxVal
+
+                -- Calculate RMS (Root Mean Square)
+                if count > 0 then
+                    peaks.channels[ch].rms[pixelIdx] = math.sqrt(sumSquares / count) * 0.7
+                else
+                    peaks.channels[ch].rms[pixelIdx] = 0
+                end
+            end
+        end
+    end
+
+    -- 8. HANDLE STRETCHING IF NEEDED
+    -- If we have fewer samples than width, stretch the data
+    if totalSamples < width and totalSamples > 0 then
+        local actualPixels = math.ceil(totalSamples / samplesPerPixel)
+
+        if actualPixels < width then
+            -- We need to interpolate/stretch
+            for ch = 1, numChannels do
+                local stretchedChannel = {min = {}, max = {}, rms = {}}
+
+                for pixelIdx = 1, width do
+                    -- Map this pixel to the source data
+                    local sourcePos = ((pixelIdx - 1) / (width - 1)) * (actualPixels - 1) + 1
+                    local sourceIdx = math.floor(sourcePos)
+                    local fraction = sourcePos - sourceIdx
+
+                    if sourceIdx < actualPixels then
+                        local idx1 = sourceIdx
+                        local idx2 = math.min(sourceIdx + 1, actualPixels)
+
+                        -- Linear interpolation
+                        stretchedChannel.min[pixelIdx] =
+                            peaks.channels[ch].min[idx1] * (1 - fraction) +
+                            peaks.channels[ch].min[idx2] * fraction
+                        stretchedChannel.max[pixelIdx] =
+                            peaks.channels[ch].max[idx1] * (1 - fraction) +
+                            peaks.channels[ch].max[idx2] * fraction
+                        stretchedChannel.rms[pixelIdx] =
+                            peaks.channels[ch].rms[idx1] * (1 - fraction) +
+                            peaks.channels[ch].rms[idx2] * fraction
+                    else
+                        -- Use last value
+                        stretchedChannel.min[pixelIdx] = peaks.channels[ch].min[actualPixels] or 0
+                        stretchedChannel.max[pixelIdx] = peaks.channels[ch].max[actualPixels] or 0
+                        stretchedChannel.rms[pixelIdx] = peaks.channels[ch].rms[actualPixels] or 0
+                    end
+                end
+
+                peaks.channels[ch] = stretchedChannel
+            end
+        end
+    end
+
+    -- 9. APPLY NORMALIZATION (optional)
+    if options.amplifyQuiet then
+        for ch = 1, numChannels do
+            local maxPeak = 0
+
+            -- Find max peak
+            for i = 1, width do
+                maxPeak = math.max(maxPeak,
+                    math.abs(peaks.channels[ch].max[i] or 0),
+                    math.abs(peaks.channels[ch].min[i] or 0))
+            end
+
+            -- Apply amplification if needed
+            if maxPeak > 0.001 and maxPeak < 0.5 then
+                local factor = math.min(0.7 / maxPeak, options.amplifyQuiet or 3.0)
+
+                for i = 1, width do
+                    peaks.channels[ch].min[i] = peaks.channels[ch].min[i] * factor
+                    peaks.channels[ch].max[i] = peaks.channels[ch].max[i] * factor
+                    peaks.channels[ch].rms[i] = peaks.channels[ch].rms[i] * factor
+                end
+            end
+        end
+    end
+
+    -- 10. BACKWARD COMPATIBILITY
+    if numChannels > 0 then
+        peaks.min = peaks.channels[1].min
+        peaks.max = peaks.channels[1].max
+        peaks.rms = peaks.channels[1].rms
+    end
+
+    -- 11. CLEANUP
+    reaper.DestroyAudioAccessor(accessor)
+    reaper.DeleteTrackMediaItem(tempTrack, tempItem)
+
+    -- 12. PREPARE RETURN DATA
+    local waveformData = {
+        peaks = peaks,
+        length = displayLength,
+        numChannels = numChannels,
+        samplerate = samplerate,
+        startOffset = startOffset,
+        isPlaceholder = false
+    }
+
+    -- Store in cache
+    globals.waveformCache[cacheKey] = waveformData
+
+    return waveformData
+end
+
+-- Clear cache for a specific file (all variations with different offsets/lengths)
 function Waveform.clearFileCache(filePath)
     if filePath and filePath ~= "" then
+        local toRemove = {}
         for key, _ in pairs(globals.waveformCache) do
-            if key:sub(1, #filePath) == filePath then
-                globals.waveformCache[key] = nil
+            -- Check if the key contains the filepath
+            -- This clears both regular and EDITED cache entries
+            if string.find(key, filePath, 1, true) then
+                table.insert(toRemove, key)
             end
+        end
+        -- Remove all matching entries
+        for _, key in ipairs(toRemove) do
+            globals.waveformCache[key] = nil
         end
     end
 end
