@@ -220,11 +220,44 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     
                     -- Make item selectable
                     if imgui.Selectable(globals.ctx, l .. ". " .. item.name .. "##item" .. l, isSelected) then
+                        -- Store the previously selected item
+                        local previouslySelectedIndex = globals.selectedItemIndex[selectionKey]
+
                         globals.selectedItemIndex[selectionKey] = l
                         -- Debug: clear cache when selecting new item
                         if globals.Waveform and item.filePath then
                             -- reaper.ShowConsoleMsg(string.format("[UI] Selected item with path: %s\n", item.filePath))
                             globals.Waveform.clearFileCache(item.filePath)
+                        end
+
+                        -- Auto-play if enabled and we actually changed selection
+                        if globals.waveformAutoPlayOnSelect and previouslySelectedIndex ~= l then
+                            -- Stop any current playback first
+                            if globals.Waveform then
+                                globals.Waveform.stopPlayback()
+                            end
+
+                            -- Clear any saved position marker when auto-playing
+                            if globals.audioPreview then
+                                globals.audioPreview.clickedPosition = nil
+                                globals.audioPreview.playbackStartPosition = nil
+                                globals.audioPreview.currentFile = item.filePath
+                            end
+
+                            -- Start playback from the beginning
+                            if globals.Waveform and item.filePath then
+                                -- Check if file exists before trying to play
+                                local file = io.open(item.filePath, "r")
+                                if file then
+                                    file:close()
+                                    globals.Waveform.startPlayback(
+                                        item.filePath,
+                                        item.startOffset or 0,
+                                        item.length,
+                                        0  -- Start from beginning (not nil, explicitly 0)
+                                    )
+                                end
+                            end
                         end
                     end
                     
@@ -279,6 +312,14 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         local _, showRMS = imgui.Checkbox(globals.ctx, "RMS##waveform",
             globals.waveformShowRMS ~= false)
         globals.waveformShowRMS = showRMS
+
+        imgui.SameLine(globals.ctx)
+        local _, autoPlay = imgui.Checkbox(globals.ctx, "Auto-play##waveform",
+            globals.waveformAutoPlayOnSelect ~= false)
+        globals.waveformAutoPlayOnSelect = autoPlay
+        if imgui.IsItemHovered(globals.ctx) then
+            imgui.SetTooltip(globals.ctx, "When enabled: Play on selection & click\nWhen disabled: Click only sets position marker")
+        end
 
         imgui.Separator(globals.ctx)
 
@@ -371,17 +412,31 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                         end
 
                         -- Update currentFile to this file when setting a marker
-                        if globals.audioPreview then
-                            globals.audioPreview.currentFile = selectedItem.filePath
+                        if not globals.audioPreview then
+                            globals.audioPreview = {}
                         end
+                        globals.audioPreview.currentFile = selectedItem.filePath
 
-                        -- Start playback from the clicked position
-                        globals.Waveform.startPlayback(
-                            selectedItem.filePath,
-                            selectedItem.startOffset or 0,
-                            selectedItem.length,
-                            clickPosition  -- Position relative to the edited item
-                        )
+                        -- Store the clicked position as the marker
+                        globals.audioPreview.clickedPosition = clickPosition
+
+                        -- Only start playback if auto-play is enabled
+                        if globals.waveformAutoPlayOnSelect then
+                            -- Start playback from the clicked position
+                            globals.Waveform.startPlayback(
+                                selectedItem.filePath,
+                                selectedItem.startOffset or 0,
+                                selectedItem.length,
+                                clickPosition  -- Position relative to the edited item
+                            )
+                        else
+                            -- Just set the marker without playing
+                            -- Stop any current playback if playing
+                            if globals.audioPreview.isPlaying then
+                                globals.Waveform.stopPlayback()
+                            end
+                            -- The marker is already set above, nothing more to do
+                        end
                     end
                 }
 
@@ -430,7 +485,11 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
             -- Add hint about spacebar and clicking
             imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x808080FF)
-            imgui.Text(globals.ctx, "Tip: [Space] play/pause • Click to set position • Double-click to reset")
+            if globals.waveformAutoPlayOnSelect then
+                imgui.Text(globals.ctx, "Tip: [Space] play/pause • Click to set position & play • Double-click to reset")
+            else
+                imgui.Text(globals.ctx, "Tip: [Space] play/pause • Click to set position • Double-click to reset")
+            end
             imgui.PopStyleColor(globals.ctx, 1)
 
             -- Play/Stop buttons
