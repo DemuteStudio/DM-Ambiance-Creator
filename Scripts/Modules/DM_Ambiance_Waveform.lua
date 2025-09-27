@@ -803,13 +803,16 @@ function Waveform.drawWaveform(filePath, width, height, options)
         end
     end
 
-    -- Draw playback position if playing
+    -- Draw playback position if playing (the moving white bar)
     if globals.audioPreview.isPlaying and globals.audioPreview.currentFile == filePath then
         local position = globals.audioPreview.position
         local startOffset = waveformData.startOffset or 0
+
         if position and type(position) == "number" and waveformData.length and waveformData.length > 0 then
-            -- Calculate relative position within the displayed portion
+            -- Calculate the relative position in the edited item
             local relativePos = position - startOffset
+
+            -- Draw the playback position (white bar)
             local playPos = (relativePos / waveformData.length) * width
 
             -- Only draw if within visible range
@@ -838,8 +841,9 @@ function Waveform.drawWaveform(filePath, width, height, options)
     -- Reserve space
     imgui.Dummy(ctx, width, height)
 
-    -- Check for vertical zoom with Ctrl+MouseWheel
+    -- Check for interactions
     if imgui.IsItemHovered(ctx) then
+        -- Check for vertical zoom with Ctrl+MouseWheel
         local wheel = imgui.GetMouseWheel(ctx)
         local ctrlPressed = (imgui.GetKeyMods(ctx) & imgui.Mod_Ctrl) ~= 0
         if ctrlPressed and wheel ~= 0 then
@@ -847,6 +851,46 @@ function Waveform.drawWaveform(filePath, width, height, options)
             options.verticalZoom = math.max(0.1, math.min(5.0, options.verticalZoom + wheel * 0.1))
             -- Store zoom level in globals for persistence
             globals.waveformVerticalZoom = options.verticalZoom
+        end
+
+        -- Check for click to set playback position
+        if imgui.IsMouseClicked(ctx, 0) then  -- Left mouse button
+            -- Get mouse position relative to waveform
+            local mouse_x, mouse_y = imgui.GetMousePos(ctx)
+            local relative_x = mouse_x - pos_x
+
+            -- Calculate position in the audio file
+            if relative_x >= 0 and relative_x <= width then
+                local clickRatio = relative_x / width
+                local clickPosition = clickRatio * waveformData.length
+
+                -- Store click information for starting playback
+                if options.onWaveformClick then
+                    options.onWaveformClick(clickPosition, waveformData)
+                end
+            end
+        end
+
+        -- Show cursor on hover
+        imgui.SetMouseCursor(ctx, imgui.MouseCursor_Hand)
+    end
+
+    -- Draw click position marker (where playback started) - this stays fixed
+    if globals.audioPreview.clickedPosition and globals.audioPreview.currentFile == filePath then
+        local clickPos = globals.audioPreview.clickedPosition
+        if clickPos and type(clickPos) == "number" and waveformData.length and waveformData.length > 0 then
+            -- Calculate position within the waveform
+            local markerPos = (clickPos / waveformData.length) * width
+
+            -- Draw marker line (this is the starting point)
+            if markerPos >= 0 and markerPos <= width then
+                imgui.DrawList_AddLine(draw_list,
+                    pos_x + markerPos, pos_y,
+                    pos_x + markerPos, pos_y + height,
+                    0xFF8888FF,  -- Light red color for click marker
+                    1
+                )
+            end
         end
     end
 
@@ -1219,7 +1263,11 @@ function Waveform.generatePeaksForContainer(container)
 end
 
 -- Simple audio playback (start)
-function Waveform.startPlayback(filePath, startOffset, length)
+-- @param filePath: path to audio file
+-- @param startOffset: offset in the original file where the edited item starts
+-- @param length: length of the edited item
+-- @param relativePosition: optional position relative to the edited item (0 to length)
+function Waveform.startPlayback(filePath, startOffset, length, relativePosition)
     if not filePath or filePath == "" then
         return false
     end
@@ -1248,8 +1296,18 @@ function Waveform.startPlayback(filePath, startOffset, length)
         globals.audioPreview.cfPreview = preview
         globals.audioPreview.cfSource = source
 
+        -- Calculate actual start position
+        local actualStartPos = startOffset or 0
+        if relativePosition and relativePosition > 0 then
+            actualStartPos = actualStartPos + relativePosition
+            -- Ensure we don't exceed the item bounds
+            if length and actualStartPos > (startOffset or 0) + length then
+                actualStartPos = (startOffset or 0) + length
+            end
+        end
+
         reaper.CF_Preview_SetValue(preview, 'D_VOLUME', globals.audioPreview.volume or 0.7)
-        reaper.CF_Preview_SetValue(preview, 'D_POSITION', startOffset or 0)
+        reaper.CF_Preview_SetValue(preview, 'D_POSITION', actualStartPos)
         reaper.CF_Preview_SetValue(preview, 'B_LOOP', 0)
 
         reaper.CF_Preview_Play(preview)
@@ -1257,9 +1315,11 @@ function Waveform.startPlayback(filePath, startOffset, length)
         globals.audioPreview.isPlaying = true
         globals.audioPreview.currentFile = filePath
         globals.audioPreview.startTime = reaper.time_precise()
-        globals.audioPreview.position = startOffset or 0
+        globals.audioPreview.position = actualStartPos  -- This is the absolute position in the file
         globals.audioPreview.startOffset = startOffset or 0
         globals.audioPreview.playbackLength = length or nil
+        globals.audioPreview.clickedPosition = relativePosition  -- Store for visual feedback (relative to item)
+        globals.audioPreview.playbackStartPosition = actualStartPos  -- Store where playback actually started (absolute)
 
         return true
     end
@@ -1284,6 +1344,8 @@ function Waveform.stopPlayback()
         globals.audioPreview.isPlaying = false
         globals.audioPreview.currentFile = nil
         globals.audioPreview.position = globals.audioPreview.startOffset or 0  -- Reset to start instead of 0
+        globals.audioPreview.clickedPosition = nil  -- Clear the click marker
+        globals.audioPreview.playbackStartPosition = nil  -- Clear the start position
     end
 end
 
@@ -1304,14 +1366,30 @@ function Waveform.updatePlaybackPosition()
                 end
             end
         else
+            -- Fallback: calculate position based on elapsed time
             local currentTime = reaper.time_precise()
             local elapsed = currentTime - globals.audioPreview.startTime
-            globals.audioPreview.position = (globals.audioPreview.startOffset or 0) + elapsed
+
+            -- Use playbackStartPosition if we started from a clicked position
+            -- This ensures the visual position starts at the clicked point
+            if globals.audioPreview.playbackStartPosition then
+                globals.audioPreview.position = globals.audioPreview.playbackStartPosition + elapsed
+            else
+                globals.audioPreview.position = (globals.audioPreview.startOffset or 0) + elapsed
+            end
 
             -- Check elapsed time
-            if globals.audioPreview.playbackLength and elapsed >= globals.audioPreview.playbackLength then
-                Waveform.stopPlayback()
-                return
+            if globals.audioPreview.playbackLength then
+                -- Calculate remaining time based on where we started
+                local effectiveLength = globals.audioPreview.playbackLength
+                if globals.audioPreview.clickedPosition then
+                    effectiveLength = globals.audioPreview.playbackLength - globals.audioPreview.clickedPosition
+                end
+
+                if elapsed >= effectiveLength then
+                    Waveform.stopPlayback()
+                    return
+                end
             end
         end
 

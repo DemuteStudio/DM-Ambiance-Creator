@@ -355,7 +355,17 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     displayLength = selectedItem.length,          -- Length to display (D_LENGTH - edited duration)
                     verticalZoom = globals.waveformVerticalZoom or 1.0,  -- Vertical zoom factor
                     showPeaks = globals.waveformShowPeaks,        -- Show/hide peaks
-                    showRMS = globals.waveformShowRMS             -- Show/hide RMS
+                    showRMS = globals.waveformShowRMS,            -- Show/hide RMS
+                    -- Callback when waveform is clicked
+                    onWaveformClick = function(clickPosition, waveformData)
+                        -- Start playback from the clicked position
+                        globals.Waveform.startPlayback(
+                            selectedItem.filePath,
+                            selectedItem.startOffset or 0,
+                            selectedItem.length,
+                            clickPosition  -- Position relative to the edited item
+                        )
+                    end
                 }
 
                 -- Debug: Show what portion we're displaying (commented for production)
@@ -401,9 +411,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             -- Audio playback controls
             imgui.Separator(globals.ctx)
 
-            -- Add hint about spacebar
+            -- Add hint about spacebar and clicking
             imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x808080FF)
-            imgui.Text(globals.ctx, "Tip: Press [Space] to play/pause")
+            imgui.Text(globals.ctx, "Tip: Press [Space] to play/pause • Click waveform to set position")
             imgui.PopStyleColor(globals.ctx, 1)
 
             -- Play/Stop buttons
