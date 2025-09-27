@@ -341,6 +341,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.PopStyleColor(globals.ctx, 1)
         end
         
+        -- Note: We don't clear the marker when switching files anymore
+        -- Each file keeps its own marker until explicitly cleared with double-click
+        -- The marker will only show on the file it belongs to (checked in drawWaveform)
+
         -- Draw waveform if the Waveform module is available
         if globals.Waveform then
             -- reaper.ShowConsoleMsg(string.format("[UI] Drawing waveform - fileExists: %s, path: %s\n", 
@@ -358,6 +362,19 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     showRMS = globals.waveformShowRMS,            -- Show/hide RMS
                     -- Callback when waveform is clicked
                     onWaveformClick = function(clickPosition, waveformData)
+                        -- If clicking on a different file, clear the old marker first
+                        if globals.audioPreview and globals.audioPreview.currentFile and
+                           globals.audioPreview.currentFile ~= selectedItem.filePath then
+                            -- Clear the marker from the previous file
+                            globals.audioPreview.clickedPosition = nil
+                            globals.audioPreview.playbackStartPosition = nil
+                        end
+
+                        -- Update currentFile to this file when setting a marker
+                        if globals.audioPreview then
+                            globals.audioPreview.currentFile = selectedItem.filePath
+                        end
+
                         -- Start playback from the clicked position
                         globals.Waveform.startPlayback(
                             selectedItem.filePath,
@@ -413,7 +430,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
             -- Add hint about spacebar and clicking
             imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x808080FF)
-            imgui.Text(globals.ctx, "Tip: Press [Space] to play/pause • Click waveform to set position")
+            imgui.Text(globals.ctx, "Tip: [Space] play/pause • Click to set position • Double-click to reset")
             imgui.PopStyleColor(globals.ctx, 1)
 
             -- Play/Stop buttons
@@ -440,10 +457,18 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     imgui.Text(globals.ctx, "(File not available)")
                 else
                     if imgui.Button(globals.ctx, "▶ Play##" .. containerId, 80, 0) then
+                        -- Use the saved clicked position if it exists, otherwise start from beginning
+                        local startPosition = nil
+                        if globals.audioPreview and globals.audioPreview.clickedPosition and
+                           globals.audioPreview.currentFile == selectedItem.filePath then
+                            startPosition = globals.audioPreview.clickedPosition
+                        end
+
                         globals.Waveform.startPlayback(
                             selectedItem.filePath,
                             selectedItem.startOffset or 0,
-                            selectedItem.length
+                            selectedItem.length,
+                            startPosition  -- Use saved position if available
                         )
                     end
                 end
@@ -486,10 +511,18 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                         globals.Waveform.stopPlayback()
                     else
                         -- Not playing - start playback
+                        -- Use the saved clicked position if it exists
+                        local startPosition = nil
+                        if globals.audioPreview and globals.audioPreview.clickedPosition and
+                           globals.audioPreview.currentFile == selectedItem.filePath then
+                            startPosition = globals.audioPreview.clickedPosition
+                        end
+
                         globals.Waveform.startPlayback(
                             selectedItem.filePath,
                             selectedItem.startOffset or 0,
-                            selectedItem.length
+                            selectedItem.length,
+                            startPosition  -- Use saved position if available
                         )
                     end
                 end

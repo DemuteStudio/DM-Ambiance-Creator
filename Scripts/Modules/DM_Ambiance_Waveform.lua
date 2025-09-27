@@ -853,8 +853,20 @@ function Waveform.drawWaveform(filePath, width, height, options)
             globals.waveformVerticalZoom = options.verticalZoom
         end
 
-        -- Check for click to set playback position
-        if imgui.IsMouseClicked(ctx, 0) then  -- Left mouse button
+        -- Check for double-click to reset position
+        if imgui.IsMouseDoubleClicked(ctx, 0) then  -- Double left click
+            -- Clear the saved position
+            if globals.audioPreview then
+                globals.audioPreview.clickedPosition = nil
+                globals.audioPreview.playbackStartPosition = nil
+                -- Don't clear currentFile here - it will be set when playing
+            end
+
+            -- Start playback from beginning if onWaveformClick is defined
+            if options.onWaveformClick then
+                options.onWaveformClick(0, waveformData)  -- Start from beginning
+            end
+        elseif imgui.IsMouseClicked(ctx, 0) then  -- Single left click
             -- Get mouse position relative to waveform
             local mouse_x, mouse_y = imgui.GetMousePos(ctx)
             local relative_x = mouse_x - pos_x
@@ -875,8 +887,10 @@ function Waveform.drawWaveform(filePath, width, height, options)
         imgui.SetMouseCursor(ctx, imgui.MouseCursor_Hand)
     end
 
-    -- Draw click position marker (where playback started) - this stays fixed
-    if globals.audioPreview.clickedPosition and globals.audioPreview.currentFile == filePath then
+    -- Draw click position marker (where playback will start) - this stays fixed even after stopping
+    -- Only show if this is the file that has the saved position
+    if globals.audioPreview and globals.audioPreview.clickedPosition and
+       globals.audioPreview.currentFile == filePath then
         local clickPos = globals.audioPreview.clickedPosition
         if clickPos and type(clickPos) == "number" and waveformData.length and waveformData.length > 0 then
             -- Calculate position within the waveform
@@ -884,11 +898,26 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
             -- Draw marker line (this is the starting point)
             if markerPos >= 0 and markerPos <= width then
+                -- Draw a slightly thicker line with a glow effect
+                -- First draw a wider semi-transparent line for glow
+                imgui.DrawList_AddLine(draw_list,
+                    pos_x + markerPos - 1, pos_y,
+                    pos_x + markerPos - 1, pos_y + height,
+                    0x44FF8888,  -- Semi-transparent red
+                    1
+                )
+                imgui.DrawList_AddLine(draw_list,
+                    pos_x + markerPos + 1, pos_y,
+                    pos_x + markerPos + 1, pos_y + height,
+                    0x44FF8888,  -- Semi-transparent red
+                    1
+                )
+                -- Then draw the main marker
                 imgui.DrawList_AddLine(draw_list,
                     pos_x + markerPos, pos_y,
                     pos_x + markerPos, pos_y + height,
                     0xFF8888FF,  -- Light red color for click marker
-                    1
+                    2  -- Make it slightly thicker
                 )
             end
         end
@@ -1342,9 +1371,11 @@ function Waveform.stopPlayback()
         end
 
         globals.audioPreview.isPlaying = false
-        globals.audioPreview.currentFile = nil
+        -- KEEP currentFile so the marker stays visible for the correct file
+        -- globals.audioPreview.currentFile = nil  -- DON'T clear this or the marker will disappear
         globals.audioPreview.position = globals.audioPreview.startOffset or 0  -- Reset to start instead of 0
-        globals.audioPreview.clickedPosition = nil  -- Clear the click marker
+        -- KEEP clickedPosition so the marker stays visible and we can resume from there
+        -- globals.audioPreview.clickedPosition = nil  -- DON'T clear the click marker
         globals.audioPreview.playbackStartPosition = nil  -- Clear the start position
     end
 end
@@ -1406,6 +1437,23 @@ function Waveform.setPreviewVolume(volume)
 
     if globals.audioPreview.cfPreview then
         reaper.CF_Preview_SetValue(globals.audioPreview.cfPreview, 'D_VOLUME', volume)
+    end
+end
+
+-- Clear saved playback position (marker)
+function Waveform.clearSavedPosition()
+    if globals.audioPreview then
+        globals.audioPreview.clickedPosition = nil
+        globals.audioPreview.playbackStartPosition = nil
+    end
+end
+
+-- Reset position for a specific file
+function Waveform.resetPositionForFile(filePath)
+    if globals.audioPreview and globals.audioPreview.currentFile == filePath then
+        globals.audioPreview.clickedPosition = nil
+        globals.audioPreview.playbackStartPosition = nil
+        globals.audioPreview.currentFile = nil
     end
 end
 
