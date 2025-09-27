@@ -392,6 +392,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 -- tostring(fileExists), selectedItem.filePath or "nil"))
             local waveformData = nil
             if fileExists then
+                -- Create unique itemKey for this item
+                local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
+
                 -- Enhanced waveform options
                 local waveformOptions = {
                     useLogScale = false,   -- Disable logarithmic scaling for more accurate representation
@@ -401,6 +404,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     verticalZoom = globals.waveformVerticalZoom or 1.0,  -- Vertical zoom factor
                     showPeaks = globals.waveformShowPeaks,        -- Show/hide peaks
                     showRMS = globals.waveformShowRMS,            -- Show/hide RMS
+                    itemKey = itemKey,    -- Pass the unique item key
                     -- Callback when waveform is clicked
                     onWaveformClick = function(clickPosition, waveformData)
                         -- If clicking on a different file, clear the old marker first

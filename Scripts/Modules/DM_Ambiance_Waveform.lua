@@ -43,15 +43,19 @@ function Waveform.initModule(g)
     }
 
     -- Initialize waveform areas/regions
-    globals.waveformAreas = {}       -- Store areas/regions: {[filePath] = {areas}}
+    globals.waveformAreas = {}       -- Store areas/regions: {[itemKey] = {areas}}
     globals.waveformAreaDrag = {     -- Track area creation/editing state
         isDragging = false,
         isResizing = false,
+        isMoving = false,             -- New: for moving areas
         startX = 0,
         endX = 0,
         resizeEdge = nil,            -- 'left' or 'right'
         resizeAreaIndex = nil,
-        currentFile = nil
+        movingAreaIndex = nil,        -- New: for moving areas
+        movingStartOffset = 0,        -- New: offset from click to area start
+        currentItemKey = nil,         -- Changed from currentFile to currentItemKey
+        interactingWithArea = false  -- New: flag to prevent audio playback
     }
 end
 
@@ -707,6 +711,9 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
     options = options or {}
 
+    -- Use itemKey for area storage instead of filePath
+    local itemKey = options.itemKey or filePath  -- Fallback to filePath if no itemKey provided
+
     -- Get waveform data with options
     local waveformData = Waveform.getWaveformData(filePath, width, options)
     if not waveformData then
@@ -843,8 +850,8 @@ function Waveform.drawWaveform(filePath, width, height, options)
     imgui.DrawList_PopClipRect(draw_list)
 
     -- Draw waveform areas/regions before the border
-    if globals.waveformAreas[filePath] then
-        for i, area in ipairs(globals.waveformAreas[filePath]) do
+    if globals.waveformAreas[itemKey] then
+        for i, area in ipairs(globals.waveformAreas[itemKey]) do
             local areaStartX = pos_x + (area.startPos / waveformData.length) * width
             local areaEndX = pos_x + (area.endPos / waveformData.length) * width
             local areaWidth = areaEndX - areaStartX
@@ -944,7 +951,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
     end
 
     -- Draw area being created
-    if globals.waveformAreaDrag.isDragging and globals.waveformAreaDrag.currentFile == filePath then
+    if globals.waveformAreaDrag.isDragging and globals.waveformAreaDrag.currentItemKey == itemKey then
         local dragStartX = math.min(globals.waveformAreaDrag.startX, globals.waveformAreaDrag.endX)
         local dragEndX = math.max(globals.waveformAreaDrag.startX, globals.waveformAreaDrag.endX)
 
@@ -973,11 +980,42 @@ function Waveform.drawWaveform(filePath, width, height, options)
     -- Reserve space
     imgui.Dummy(ctx, width, height)
 
+    -- Get mouse position for all interactions
+    local mouse_x, mouse_y = imgui.GetMousePos(ctx)
+    local relative_x = mouse_x - pos_x
+
     -- Check for interactions
     if imgui.IsItemHovered(ctx) then
+        -- First, check if hovering on any area or handle
+        local hoverOnHandle = false
+        local hoverOnArea = false
+
+        if globals.waveformAreas[itemKey] and not globals.waveformAreaDrag.isDragging then
+            for i, area in ipairs(globals.waveformAreas[itemKey]) do
+                local areaStartX = (area.startPos / waveformData.length) * width
+                local areaEndX = (area.endPos / waveformData.length) * width
+
+                -- Check if hovering on left edge
+                if math.abs(relative_x - areaStartX) < 5 then
+                    hoverOnHandle = true
+                    break
+                -- Check if hovering on right edge
+                elseif math.abs(relative_x - areaEndX) < 5 then
+                    hoverOnHandle = true
+                    break
+                -- Check if hovering inside area
+                elseif relative_x >= areaStartX and relative_x <= areaEndX then
+                    hoverOnArea = true
+                    break
+                end
+            end
+        end
+
         -- Check for vertical zoom with Ctrl+MouseWheel
         local wheel = imgui.GetMouseWheel(ctx)
         local ctrlPressed = (imgui.GetKeyMods(ctx) & imgui.Mod_Ctrl) ~= 0
+        local shiftPressed = (imgui.GetKeyMods(ctx) & imgui.Mod_Shift) ~= 0
+
         if ctrlPressed and wheel ~= 0 then
             options.verticalZoom = options.verticalZoom or globals.waveformVerticalZoom or 1.0
             options.verticalZoom = math.max(0.1, math.min(5.0, options.verticalZoom + wheel * 0.1))
@@ -986,18 +1024,26 @@ function Waveform.drawWaveform(filePath, width, height, options)
         end
 
         -- Check for Ctrl+Click to delete area
-        local ctrlPressed = (imgui.GetKeyMods(ctx) & imgui.Mod_Ctrl) ~= 0
         if ctrlPressed and imgui.IsMouseClicked(ctx, 0) and not globals.waveformAreaDrag.isResizing then
             -- Check if clicking on an area to delete it
             local clickPos = (relative_x / width) * waveformData.length
-            local clickedArea, clickedAreaIndex = Waveform.getAreaAtPosition(filePath, clickPos, waveformData.length)
+            local clickedArea, clickedAreaIndex = Waveform.getAreaAtPosition(itemKey, clickPos, waveformData.length)
 
             if clickedArea then
                 -- Delete the area with Ctrl+Click
-                Waveform.deleteArea(filePath, clickedAreaIndex)
+                Waveform.deleteArea(itemKey, clickedAreaIndex)
             end
-        -- Check for double-click to reset position
-        elseif imgui.IsMouseDoubleClicked(ctx, 0) then  -- Double left click
+        -- Check for Shift+Click to create new area
+        elseif shiftPressed and imgui.IsMouseClicked(ctx, 0) and not hoverOnHandle and not hoverOnArea and
+               not globals.waveformAreaDrag.isResizing and not globals.waveformAreaDrag.isMoving then
+            -- Start dragging to create new area with Shift+LeftClick
+            globals.waveformAreaDrag.isDragging = true
+            globals.waveformAreaDrag.startX = mouse_x
+            globals.waveformAreaDrag.endX = mouse_x
+            globals.waveformAreaDrag.currentItemKey = itemKey
+            globals.waveformAreaDrag.interactingWithArea = true
+        -- Check for double-click to reset position (only if not on area)
+        elseif imgui.IsMouseDoubleClicked(ctx, 0) and not hoverOnArea and not hoverOnHandle then  -- Double left click
             -- Clear the saved position
             if globals.audioPreview then
                 globals.audioPreview.clickedPosition = nil
@@ -1009,7 +1055,8 @@ function Waveform.drawWaveform(filePath, width, height, options)
             if options.onWaveformClick then
                 options.onWaveformClick(0, waveformData)  -- Start from beginning
             end
-        elseif imgui.IsMouseClicked(ctx, 0) and not ctrlPressed then  -- Single left click (without Ctrl)
+        elseif imgui.IsMouseClicked(ctx, 0) and not ctrlPressed and not shiftPressed and
+                not hoverOnArea and not hoverOnHandle and not globals.waveformAreaDrag.interactingWithArea then  -- Single left click (only on empty space)
             -- Get mouse position relative to waveform
             local mouse_x, mouse_y = imgui.GetMousePos(ctx)
             local relative_x = mouse_x - pos_x
@@ -1026,50 +1073,52 @@ function Waveform.drawWaveform(filePath, width, height, options)
             end
         end
 
-        -- Check for area resize hover
-        local mouse_x, mouse_y = imgui.GetMousePos(ctx)
-        local relative_x = mouse_x - pos_x
-        local hoverOnHandle = false
-
-        if globals.waveformAreas[filePath] and not globals.waveformAreaDrag.isDragging then
-            for i, area in ipairs(globals.waveformAreas[filePath]) do
+        -- Handle area interactions (resize/move)
+        if globals.waveformAreas[itemKey] and not globals.waveformAreaDrag.isDragging and
+           not shiftPressed and imgui.IsMouseClicked(ctx, 0) then
+            for i, area in ipairs(globals.waveformAreas[itemKey]) do
                 local areaStartX = (area.startPos / waveformData.length) * width
                 local areaEndX = (area.endPos / waveformData.length) * width
 
-                -- Check if hovering on left edge
+                -- Check if clicking on left edge to resize
                 if math.abs(relative_x - areaStartX) < 5 then
-                    imgui.SetMouseCursor(ctx, imgui.MouseCursor_ResizeEW)
-                    hoverOnHandle = true
-
-                    -- Check for left drag to resize
-                    if imgui.IsMouseClicked(ctx, 0) then
-                        globals.waveformAreaDrag.isResizing = true
-                        globals.waveformAreaDrag.resizeEdge = 'left'
-                        globals.waveformAreaDrag.resizeAreaIndex = i
-                        globals.waveformAreaDrag.currentFile = filePath
-                    end
+                    globals.waveformAreaDrag.isResizing = true
+                    globals.waveformAreaDrag.resizeEdge = 'left'
+                    globals.waveformAreaDrag.resizeAreaIndex = i
+                    globals.waveformAreaDrag.currentItemKey = itemKey
+                    globals.waveformAreaDrag.interactingWithArea = true
                     break
-                -- Check if hovering on right edge
+                -- Check if clicking on right edge to resize
                 elseif math.abs(relative_x - areaEndX) < 5 then
-                    imgui.SetMouseCursor(ctx, imgui.MouseCursor_ResizeEW)
-                    hoverOnHandle = true
-
-                    -- Check for left drag to resize
-                    if imgui.IsMouseClicked(ctx, 0) then
-                        globals.waveformAreaDrag.isResizing = true
-                        globals.waveformAreaDrag.resizeEdge = 'right'
-                        globals.waveformAreaDrag.resizeAreaIndex = i
-                        globals.waveformAreaDrag.currentFile = filePath
-                    end
+                    globals.waveformAreaDrag.isResizing = true
+                    globals.waveformAreaDrag.resizeEdge = 'right'
+                    globals.waveformAreaDrag.resizeAreaIndex = i
+                    globals.waveformAreaDrag.currentItemKey = itemKey
+                    globals.waveformAreaDrag.interactingWithArea = true
+                    break
+                -- Check if clicking inside area to move
+                elseif relative_x >= areaStartX and relative_x <= areaEndX then
+                    globals.waveformAreaDrag.isMoving = true
+                    globals.waveformAreaDrag.movingAreaIndex = i
+                    globals.waveformAreaDrag.movingStartOffset = relative_x - areaStartX
+                    globals.waveformAreaDrag.currentItemKey = itemKey
+                    globals.waveformAreaDrag.interactingWithArea = true
                     break
                 end
             end
         end
 
+        -- Set cursor based on hover state
+        if hoverOnHandle then
+            imgui.SetMouseCursor(ctx, imgui.MouseCursor_ResizeEW)
+        elseif hoverOnArea then
+            imgui.SetMouseCursor(ctx, imgui.MouseCursor_Hand)
+        end
+
         -- Handle area resizing
-        if globals.waveformAreaDrag.isResizing and globals.waveformAreaDrag.currentFile == filePath then
+        if globals.waveformAreaDrag.isResizing and globals.waveformAreaDrag.currentItemKey == itemKey then
             if imgui.IsMouseDragging(ctx, 0) then
-                local area = globals.waveformAreas[filePath][globals.waveformAreaDrag.resizeAreaIndex]
+                local area = globals.waveformAreas[itemKey][globals.waveformAreaDrag.resizeAreaIndex]
                 if area then
                     local newPos = math.max(0, math.min(1, relative_x / width)) * waveformData.length
 
@@ -1083,32 +1132,51 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 globals.waveformAreaDrag.isResizing = false
                 globals.waveformAreaDrag.resizeEdge = nil
                 globals.waveformAreaDrag.resizeAreaIndex = nil
+                globals.waveformAreaDrag.interactingWithArea = false
             end
         end
 
-        -- Check for right-click drag to create new area or show context menu
-        if imgui.IsMouseClicked(ctx, 2) and not globals.waveformAreaDrag.isResizing then  -- Right click
+        -- Handle area moving
+        if globals.waveformAreaDrag.isMoving and globals.waveformAreaDrag.currentItemKey == itemKey then
+            if imgui.IsMouseDragging(ctx, 0) then
+                local area = globals.waveformAreas[itemKey][globals.waveformAreaDrag.movingAreaIndex]
+                if area then
+                    local newStartX = relative_x - globals.waveformAreaDrag.movingStartOffset
+                    local newStartPos = (newStartX / width) * waveformData.length
+                    local areaLength = area.endPos - area.startPos
+
+                    -- Clamp the movement to keep area within bounds
+                    newStartPos = math.max(0, math.min(waveformData.length - areaLength, newStartPos))
+
+                    area.startPos = newStartPos
+                    area.endPos = newStartPos + areaLength
+                end
+            elseif imgui.IsMouseReleased(ctx, 0) then
+                globals.waveformAreaDrag.isMoving = false
+                globals.waveformAreaDrag.movingAreaIndex = nil
+                globals.waveformAreaDrag.movingStartOffset = 0
+                globals.waveformAreaDrag.interactingWithArea = false
+            end
+        end
+
+
+        -- Check for right-click for context menu on existing area
+        if imgui.IsMouseClicked(ctx, 2) and not globals.waveformAreaDrag.isDragging then  -- Right click
             -- Check if we're clicking on an existing area
             local clickPos = (relative_x / width) * waveformData.length
-            local clickedArea, clickedAreaIndex = Waveform.getAreaAtPosition(filePath, clickPos, waveformData.length)
+            local clickedArea, clickedAreaIndex = Waveform.getAreaAtPosition(itemKey, clickPos, waveformData.length)
 
             if clickedArea then
                 -- Open context menu for existing area
-                imgui.OpenPopup(ctx, string.format("##AreaContextMenu_%s_%d", filePath, clickedAreaIndex))
-                globals.contextMenuArea = {area = clickedArea, index = clickedAreaIndex, file = filePath}
-            else
-                -- Start dragging to create new area
-                globals.waveformAreaDrag.isDragging = true
-                globals.waveformAreaDrag.startX = mouse_x
-                globals.waveformAreaDrag.endX = mouse_x
-                globals.waveformAreaDrag.currentFile = filePath
+                imgui.OpenPopup(ctx, string.format("##AreaContextMenu_%s_%d", itemKey, clickedAreaIndex))
+                globals.contextMenuArea = {area = clickedArea, index = clickedAreaIndex, itemKey = itemKey}
             end
         end
 
-        if globals.waveformAreaDrag.isDragging and globals.waveformAreaDrag.currentFile == filePath then
-            if imgui.IsMouseDragging(ctx, 2) then  -- Right drag
+        if globals.waveformAreaDrag.isDragging and globals.waveformAreaDrag.currentItemKey == itemKey then
+            if imgui.IsMouseDragging(ctx, 0) then  -- Left drag
                 globals.waveformAreaDrag.endX = mouse_x
-            elseif imgui.IsMouseReleased(ctx, 2) then  -- Right release
+            elseif imgui.IsMouseReleased(ctx, 0) then  -- Left release
                 -- Create the new area
                 local startX = math.min(globals.waveformAreaDrag.startX, globals.waveformAreaDrag.endX) - pos_x
                 local endX = math.max(globals.waveformAreaDrag.startX, globals.waveformAreaDrag.endX) - pos_x
@@ -1119,14 +1187,14 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
                 -- Only create area if it has meaningful size
                 if math.abs(endPos - startPos) > 0.01 then
-                    if not globals.waveformAreas[filePath] then
-                        globals.waveformAreas[filePath] = {}
+                    if not globals.waveformAreas[itemKey] then
+                        globals.waveformAreas[itemKey] = {}
                     end
 
-                    table.insert(globals.waveformAreas[filePath], {
+                    table.insert(globals.waveformAreas[itemKey], {
                         startPos = startPos,
                         endPos = endPos,
-                        name = string.format("Area %d", #globals.waveformAreas[filePath] + 1)
+                        name = string.format("Area %d", #globals.waveformAreas[itemKey] + 1)
                     })
                 end
 
@@ -1134,31 +1202,41 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 globals.waveformAreaDrag.isDragging = false
                 globals.waveformAreaDrag.startX = 0
                 globals.waveformAreaDrag.endX = 0
-                globals.waveformAreaDrag.currentFile = nil
+                globals.waveformAreaDrag.currentItemKey = nil
+                globals.waveformAreaDrag.interactingWithArea = false
             end
         end
 
-        -- Show appropriate cursor
-        if not hoverOnHandle and not globals.waveformAreaDrag.isDragging and not globals.waveformAreaDrag.isResizing then
+        -- Show hand cursor for waveform interaction when not on areas
+        if not hoverOnHandle and not hoverOnArea and not globals.waveformAreaDrag.isDragging
+           and not globals.waveformAreaDrag.isResizing and not globals.waveformAreaDrag.isMoving then
             imgui.SetMouseCursor(ctx, imgui.MouseCursor_Hand)
         end
     else
         -- Reset drag state if mouse left the waveform area
-        if globals.waveformAreaDrag.isDragging and imgui.IsMouseReleased(ctx, 2) then
+        if globals.waveformAreaDrag.isDragging and imgui.IsMouseReleased(ctx, 0) then
             globals.waveformAreaDrag.isDragging = false
-            globals.waveformAreaDrag.currentFile = nil
+            globals.waveformAreaDrag.currentItemKey = nil
+            globals.waveformAreaDrag.interactingWithArea = false
         end
         if globals.waveformAreaDrag.isResizing and imgui.IsMouseReleased(ctx, 0) then
             globals.waveformAreaDrag.isResizing = false
             globals.waveformAreaDrag.resizeAreaIndex = nil
-            globals.waveformAreaDrag.currentFile = nil
+            globals.waveformAreaDrag.currentItemKey = nil
+            globals.waveformAreaDrag.interactingWithArea = false
+        end
+        if globals.waveformAreaDrag.isMoving and imgui.IsMouseReleased(ctx, 0) then
+            globals.waveformAreaDrag.isMoving = false
+            globals.waveformAreaDrag.movingAreaIndex = nil
+            globals.waveformAreaDrag.currentItemKey = nil
+            globals.waveformAreaDrag.interactingWithArea = false
         end
     end
 
     -- Handle area context menu
-    if globals.contextMenuArea and globals.contextMenuArea.file == filePath then
+    if globals.contextMenuArea and globals.contextMenuArea.itemKey == itemKey then
         local menuOpen = imgui.BeginPopup(ctx, string.format("##AreaContextMenu_%s_%d",
-                                          globals.contextMenuArea.file,
+                                          globals.contextMenuArea.itemKey,
                                           globals.contextMenuArea.index))
         if menuOpen then
             local area = globals.contextMenuArea.area
@@ -1176,7 +1254,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
             if imgui.Selectable(ctx, "Rename") then
                 -- Set up for rename (would need an input dialog)
                 globals.renameAreaDialog = {
-                    file = filePath,
+                    itemKey = itemKey,
                     index = areaIndex,
                     currentName = area.name or string.format("Area %d", areaIndex),
                     show = true
@@ -1197,13 +1275,13 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
             -- Delete area
             if imgui.Selectable(ctx, "Delete") then
-                Waveform.deleteArea(filePath, areaIndex)
+                Waveform.deleteArea(itemKey, areaIndex)
                 imgui.CloseCurrentPopup(ctx)
             end
 
             -- Clear all areas
             if imgui.Selectable(ctx, "Clear All Areas") then
-                Waveform.clearAreas(filePath)
+                Waveform.clearAreas(itemKey)
                 imgui.CloseCurrentPopup(ctx)
             end
 
@@ -1253,7 +1331,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
     end
 
     -- Handle rename dialog
-    if globals.renameAreaDialog and globals.renameAreaDialog.show and globals.renameAreaDialog.file == filePath then
+    if globals.renameAreaDialog and globals.renameAreaDialog.show and globals.renameAreaDialog.itemKey == itemKey then
         imgui.OpenPopup(ctx, "Rename Area")
 
         local flags = imgui.WindowFlags_AlwaysAutoResize | imgui.WindowFlags_NoSavedSettings
@@ -1276,7 +1354,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
             -- OK button
             if imgui.Button(ctx, "OK", 100, 0) or imgui.IsKeyPressed(ctx, imgui.Key_Enter) then
-                Waveform.renameArea(globals.renameAreaDialog.file,
+                Waveform.renameArea(globals.renameAreaDialog.itemKey,
                                    globals.renameAreaDialog.index,
                                    globals.renameAreaDialog.buffer)
                 globals.renameAreaDialog = nil
@@ -1836,46 +1914,46 @@ end
 
 -- Area management functions
 
--- Get all areas for a file
-function Waveform.getAreas(filePath)
-    if not filePath then return {} end
-    return globals.waveformAreas[filePath] or {}
+-- Get all areas for an item
+function Waveform.getAreas(itemKey)
+    if not itemKey then return {} end
+    return globals.waveformAreas[itemKey] or {}
 end
 
--- Clear all areas for a file
-function Waveform.clearAreas(filePath)
-    if filePath and globals.waveformAreas[filePath] then
-        globals.waveformAreas[filePath] = nil
+-- Clear all areas for an item
+function Waveform.clearAreas(itemKey)
+    if itemKey and globals.waveformAreas[itemKey] then
+        globals.waveformAreas[itemKey] = nil
     end
 end
 
 -- Delete a specific area
-function Waveform.deleteArea(filePath, areaIndex)
-    if filePath and globals.waveformAreas[filePath] and globals.waveformAreas[filePath][areaIndex] then
-        table.remove(globals.waveformAreas[filePath], areaIndex)
+function Waveform.deleteArea(itemKey, areaIndex)
+    if itemKey and globals.waveformAreas[itemKey] and globals.waveformAreas[itemKey][areaIndex] then
+        table.remove(globals.waveformAreas[itemKey], areaIndex)
 
         -- Clean up empty area lists
-        if #globals.waveformAreas[filePath] == 0 then
-            globals.waveformAreas[filePath] = nil
+        if #globals.waveformAreas[itemKey] == 0 then
+            globals.waveformAreas[itemKey] = nil
         end
     end
 end
 
 -- Rename an area
-function Waveform.renameArea(filePath, areaIndex, newName)
-    if filePath and globals.waveformAreas[filePath] and globals.waveformAreas[filePath][areaIndex] then
-        globals.waveformAreas[filePath][areaIndex].name = newName
+function Waveform.renameArea(itemKey, areaIndex, newName)
+    if itemKey and globals.waveformAreas[itemKey] and globals.waveformAreas[itemKey][areaIndex] then
+        globals.waveformAreas[itemKey][areaIndex].name = newName
     end
 end
 
 -- Export areas to a table (for saving)
-function Waveform.exportAreas(filePath)
-    if not filePath or not globals.waveformAreas[filePath] then
+function Waveform.exportAreas(itemKey)
+    if not itemKey or not globals.waveformAreas[itemKey] then
         return nil
     end
 
     local export = {}
-    for i, area in ipairs(globals.waveformAreas[filePath]) do
+    for i, area in ipairs(globals.waveformAreas[itemKey]) do
         table.insert(export, {
             startPos = area.startPos,
             endPos = area.endPos,
@@ -1887,13 +1965,13 @@ function Waveform.exportAreas(filePath)
 end
 
 -- Import areas from a table (for loading)
-function Waveform.importAreas(filePath, areas)
-    if not filePath or not areas then return false end
+function Waveform.importAreas(itemKey, areas)
+    if not itemKey or not areas then return false end
 
-    globals.waveformAreas[filePath] = {}
+    globals.waveformAreas[itemKey] = {}
 
     for i, area in ipairs(areas) do
-        table.insert(globals.waveformAreas[filePath], {
+        table.insert(globals.waveformAreas[itemKey], {
             startPos = area.startPos,
             endPos = area.endPos,
             name = area.name or string.format("Area %d", i)
@@ -1904,12 +1982,12 @@ function Waveform.importAreas(filePath, areas)
 end
 
 -- Get area at position (for click detection)
-function Waveform.getAreaAtPosition(filePath, position, length)
-    if not filePath or not globals.waveformAreas[filePath] then
+function Waveform.getAreaAtPosition(itemKey, position, length)
+    if not itemKey or not globals.waveformAreas[itemKey] then
         return nil
     end
 
-    for i, area in ipairs(globals.waveformAreas[filePath]) do
+    for i, area in ipairs(globals.waveformAreas[itemKey]) do
         if position >= area.startPos and position <= area.endPos then
             return area, i
         end
