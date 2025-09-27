@@ -128,6 +128,15 @@ function Waveform.getWaveformData(filePath, width, options)
     local startOffset = options.startOffset or 0
     local length = options.displayLength or (totalLength - startOffset)
 
+    -- Ensure we don't exceed file boundaries
+    length = math.min(length, totalLength - startOffset)
+
+    -- Validate offset doesn't exceed file length
+    if startOffset >= totalLength then
+        startOffset = 0
+        length = math.min(length, totalLength)
+    end
+
     -- Ensure .reapeaks file exists
     local peaksFilePath = filePath .. ".reapeaks"
     local peaksFileExists = io.open(peaksFilePath, "rb")
@@ -175,8 +184,9 @@ function Waveform.getWaveformData(filePath, width, options)
         return Waveform.createPlaceholderWaveform(width)
     end
 
+    -- Set the item to match the edited portion
     reaper.SetMediaItemInfo_Value(tempItem, "D_POSITION", 0)
-    reaper.SetMediaItemInfo_Value(tempItem, "D_LENGTH", length)
+    reaper.SetMediaItemInfo_Value(tempItem, "D_LENGTH", totalLength)  -- Use full length to ensure peaks are available
 
     local tempTake = reaper.AddTakeToMediaItem(tempItem)
     if not tempTake then
@@ -202,20 +212,35 @@ function Waveform.getWaveformData(filePath, width, options)
     -- Read actual channel count instead of forcing mono
     local n_channels = numChannels  -- Use actual channel count
 
-    -- Calculate optimal sample count for smooth waveform
-    -- Request exactly the display width in samples for 1:1 mapping
-    local samplesNeeded = width
+    -- Calculate how many samples we actually need for the edited portion
+    local totalEditedSamples = samplerate * length  -- Total samples in edited portion
 
-    -- Ensure we have a reasonable number of samples
-    samplesNeeded = math.max(100, math.min(samplesNeeded, 2000))
+    -- Calculate optimal number of samples to request
+    -- For short clips, request fewer samples and stretch them
+    -- For long clips, request more samples and compress them
+    local samplesNeeded
+
+    if totalEditedSamples < width * 100 then
+        -- Short clip: request fewer samples (minimum 50 for quality)
+        samplesNeeded = math.max(50, math.min(width / 4, totalEditedSamples / 100))
+    else
+        -- Normal/long clip: request proportional to width
+        samplesNeeded = width
+    end
+
+    -- Ensure reasonable bounds
+    samplesNeeded = math.floor(math.max(50, math.min(samplesNeeded, 2000)))
 
     local bufsize = samplesNeeded * 2 * n_channels  -- 2 values (max/min) per sample per channel
     local buf = reaper.new_array(bufsize)
     buf.clear()
 
-    -- Calculate samples per peak - lower value = more detail
-    local totalSamples = samplerate * length
-    local peakrate = math.max(1, totalSamples / samplesNeeded)
+    -- Calculate samples per peak based on EDITED portion only
+    local peakrate = math.max(1, totalEditedSamples / samplesNeeded)
+
+    -- Debug to verify we're getting the right portion (commented for production)
+    -- reaper.ShowConsoleMsg(string.format("  Edited duration: %.3fs, Total samples: %d, Samples needed: %d, Peakrate: %.2f\n",
+    --     length, totalEditedSamples, samplesNeeded, peakrate))
 
     local retval = reaper.GetMediaItemTake_Peaks(
         tempTake,
@@ -253,8 +278,10 @@ function Waveform.getWaveformData(filePath, width, options)
         if peaks_table and #peaks_table > 0 then
             local actualSamples = math.min(spl_cnt, samplesNeeded)
 
+            -- Debug output for edited portion (commented for production)
             -- reaper.ShowConsoleMsg(string.format("  Buffer size: %d, Using samples: %d\n",
             --     #peaks_table, actualSamples))
+            -- reaper.ShowConsoleMsg(string.format("  Waveform width: %d pixels\n", width))
 
             -- IMPORTANT: Data is organized in BLOCKS, not interleaved per sample!
             -- First block: ALL maximums (interleaved by channel)
@@ -292,7 +319,8 @@ function Waveform.getWaveformData(filePath, width, options)
                 end
             end
 
-            -- No interpolation needed - we have exactly width samples
+            -- No padding needed - we're now using interpolation to stretch/compress
+            -- The drawing code will handle mapping fewer samples to more pixels
 
             -- Keep backward compatibility: store first channel in root peaks object
             if n_channels > 0 and peaks.channels[1] then
@@ -307,7 +335,8 @@ function Waveform.getWaveformData(filePath, width, options)
                 local validSamples = 0
 
                 -- Find the maximum peak value in this channel
-                for i = 1, width do
+                local numSamples = peaks.channels[ch].max and #peaks.channels[ch].max or 0
+                for i = 1, numSamples do
                     if peaks.channels[ch] and peaks.channels[ch].max and peaks.channels[ch].max[i] then
                         local absMax = math.abs(peaks.channels[ch].max[i])
                         local absMin = math.abs(peaks.channels[ch].min[i] or 0)
@@ -353,7 +382,7 @@ function Waveform.getWaveformData(filePath, width, options)
                     normFactor = math.min(normFactor, 8.0)
 
                     -- Apply normalization to all samples
-                    for i = 1, width do
+                    for i = 1, numSamples do
                         if peaks.channels[ch].max[i] then
                             local maxVal = peaks.channels[ch].max[i] * normFactor
                             local minVal = peaks.channels[ch].min[i] * normFactor
@@ -445,39 +474,38 @@ function Waveform.getWaveformData(filePath, width, options)
                     end
                 end
             else
-                -- Complete failure - fill with zeros
+                -- Complete failure - fill with minimal data
                 for ch = 1, n_channels do
-                    for i = 1, width do
-                        peaks.channels[ch] = peaks.channels[ch] or {min = {}, max = {}, rms = {}}
-                        peaks.channels[ch].max[i] = 0
-                        peaks.channels[ch].min[i] = 0
-                        peaks.channels[ch].rms[i] = 0
-                    end
+                    peaks.channels[ch] = peaks.channels[ch] or {min = {}, max = {}, rms = {}}
+                    -- Just create one sample of silence
+                    peaks.channels[ch].max[1] = 0
+                    peaks.channels[ch].min[1] = 0
+                    peaks.channels[ch].rms[1] = 0
                 end
             end
 
             -- Set backward compatibility
-            for i = 1, width do
+            local numSamplesUsed = math.min(spl_cnt_mono, samplesNeeded)
+            for i = 1, numSamplesUsed do
                 peaks.max[i] = peaks.channels[1] and peaks.channels[1].max[i] or 0
                 peaks.min[i] = peaks.channels[1] and peaks.channels[1].min[i] or 0
                 peaks.rms[i] = peaks.channels[1] and peaks.channels[1].rms[i] or 0
             end
         end
     else
-        -- No data returned, fill with silence
+        -- No data returned, fill with minimal silence
         for ch = 1, n_channels do
             peaks.channels[ch] = {min = {}, max = {}, rms = {}}
-            for i = 1, width do
+            for i = 1, 1 do  -- Just one sample
                 peaks.channels[ch].max[i] = 0
                 peaks.channels[ch].min[i] = 0
                 peaks.channels[ch].rms[i] = 0
             end
         end
-        for i = 1, width do
-            peaks.max[i] = 0
-            peaks.min[i] = 0
-            peaks.rms[i] = 0
-        end
+        -- Minimal fallback data
+        peaks.max[1] = 0
+        peaks.min[1] = 0
+        peaks.rms[1] = 0
     end
 
     -- Clean up
@@ -620,8 +648,13 @@ function Waveform.drawWaveform(filePath, width, height, options)
             for pixel = 1, width do
                 local x = pos_x + pixel - 1
 
-                -- Map pixel to sample index with interpolation
-                local samplePos = ((pixel - 1) / (width - 1)) * (numSamples - 1) + 1
+                -- Map pixel position to sample position with stretching/compression
+                local samplePos
+                if width > 1 then
+                    samplePos = ((pixel - 1) / (width - 1)) * (numSamples - 1) + 1
+                else
+                    samplePos = 1  -- Single pixel case
+                end
                 local sampleIndex = math.floor(samplePos)
                 local fraction = samplePos - sampleIndex
 
@@ -629,17 +662,21 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 local minVal = 0
 
                 if sampleIndex < numSamples then
+                    -- Linear interpolation for smooth stretching
                     local max1 = channelPeaks.max[sampleIndex] or 0
                     local max2 = channelPeaks.max[math.min(sampleIndex + 1, numSamples)] or 0
                     local min1 = channelPeaks.min[sampleIndex] or 0
                     local min2 = channelPeaks.min[math.min(sampleIndex + 1, numSamples)] or 0
 
-                    -- Linear interpolation for smooth transitions
                     maxVal = max1 + (max2 - max1) * fraction
                     minVal = min1 + (min2 - min1) * fraction
-                else
+                elseif sampleIndex == numSamples then
                     maxVal = channelPeaks.max[numSamples] or 0
                     minVal = channelPeaks.min[numSamples] or 0
+                else
+                    -- Beyond available data
+                    maxVal = 0
+                    minVal = 0
                 end
 
                 -- Draw vertical line from min to max
@@ -653,15 +690,30 @@ function Waveform.drawWaveform(filePath, width, height, options)
                     1
                 )
 
-                -- Draw RMS if significant
-                local rmsVal = channelPeaks.rms[sampleIndex] or 0
-                if math.abs(rmsVal) > 0.01 then
-                    imgui.DrawList_AddLine(draw_list,
-                        x, centerY - (rmsVal * channelDrawHeight / 2),
-                        x, centerY + (rmsVal * channelDrawHeight / 2),
-                        rmsColors[ch] or rmsColors[1],
-                        1
-                    )
+                -- Draw RMS with interpolation
+                if sampleIndex < numSamples then
+                    local rms1 = channelPeaks.rms[sampleIndex] or 0
+                    local rms2 = channelPeaks.rms[math.min(sampleIndex + 1, numSamples)] or 0
+                    local rmsVal = rms1 + (rms2 - rms1) * fraction
+
+                    if math.abs(rmsVal) > 0.01 then
+                        imgui.DrawList_AddLine(draw_list,
+                            x, centerY - (rmsVal * channelDrawHeight / 2),
+                            x, centerY + (rmsVal * channelDrawHeight / 2),
+                            rmsColors[ch] or rmsColors[1],
+                            1
+                        )
+                    end
+                elseif sampleIndex == numSamples then
+                    local rmsVal = channelPeaks.rms[numSamples] or 0
+                    if math.abs(rmsVal) > 0.01 then
+                        imgui.DrawList_AddLine(draw_list,
+                            x, centerY - (rmsVal * channelDrawHeight / 2),
+                            x, centerY + (rmsVal * channelDrawHeight / 2),
+                            rmsColors[ch] or rmsColors[1],
+                            1
+                        )
+                    end
                 end
             end
         end

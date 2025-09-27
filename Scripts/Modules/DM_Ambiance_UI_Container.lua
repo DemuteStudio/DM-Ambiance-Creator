@@ -339,9 +339,14 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 local waveformOptions = {
                     useLogScale = false,   -- Disable logarithmic scaling for more accurate representation
                     amplifyQuiet = 3.0,    -- Amplification factor for quiet sounds
-                    startOffset = selectedItem.startOffset or 0,  -- Start position in the file
-                    displayLength = selectedItem.length           -- Length to display
+                    startOffset = selectedItem.startOffset or 0,  -- Start position in the file (D_STARTOFFS)
+                    displayLength = selectedItem.length           -- Length to display (D_LENGTH - edited duration)
                 }
+
+                -- Debug: Show what portion we're displaying (commented for production)
+                -- reaper.ShowConsoleMsg(string.format("[Waveform Display] File: %s\n", selectedItem.filePath or ""))
+                -- reaper.ShowConsoleMsg(string.format("  StartOffset: %.3f, Length: %.3f\n",
+                --     waveformOptions.startOffset, waveformOptions.displayLength))
                 waveformData = globals.Waveform.drawWaveform(selectedItem.filePath, math.floor(width * 0.95), 120, waveformOptions)
             else
                 -- Draw empty waveform box for missing files
