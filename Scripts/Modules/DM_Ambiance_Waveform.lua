@@ -2315,6 +2315,137 @@ function Waveform.autoDetectAreas(item, itemKey)
     return true, #mergedAreas
 end
 
+-- Split audio item into equal-sized areas
+function Waveform.splitCountAreas(item, itemKey, count)
+    if not item or not item.filePath or item.filePath == "" then
+        return false, 0
+    end
+
+    -- Check if file exists
+    local file = io.open(item.filePath, "r")
+    if not file then
+        return false, 0
+    end
+    file:close()
+
+    -- Validate count
+    if not count or count < 1 then
+        return false, 0
+    end
+
+    -- Get the length to divide
+    local totalLength = item.length or 0
+    if totalLength <= 0 then
+        -- Try to get length from the audio file
+        local source = reaper.PCM_Source_CreateFromFile(item.filePath)
+        if source then
+            totalLength = reaper.GetMediaSourceLength(source, false)
+            reaper.PCM_Source_Destroy(source)
+        end
+
+        if totalLength <= 0 then
+            return false, 0
+        end
+    end
+
+    -- Calculate area length
+    local areaLength = totalLength / count
+    local areas = {}
+
+    -- Create equal-sized areas
+    for i = 0, count - 1 do
+        local startPos = i * areaLength
+        local endPos = (i + 1) * areaLength
+
+        -- Ensure the last area doesn't exceed the total length
+        if i == count - 1 then
+            endPos = totalLength
+        end
+
+        table.insert(areas, {
+            startPos = startPos,
+            endPos = endPos,
+            name = string.format("Area %d", i + 1)
+        })
+    end
+
+    -- Store areas
+    if not globals.waveformAreas then
+        globals.waveformAreas = {}
+    end
+    globals.waveformAreas[itemKey] = areas
+
+    -- Also store in item for persistence
+    item.areas = areas
+
+    return true, #areas
+end
+
+-- Split audio item into fixed-duration areas
+function Waveform.splitTimeAreas(item, itemKey, duration)
+    if not item or not item.filePath or item.filePath == "" then
+        return false, 0
+    end
+
+    -- Check if file exists
+    local file = io.open(item.filePath, "r")
+    if not file then
+        return false, 0
+    end
+    file:close()
+
+    -- Validate duration
+    if not duration or duration <= 0 then
+        return false, 0
+    end
+
+    -- Get the total length
+    local totalLength = item.length or 0
+    if totalLength <= 0 then
+        -- Try to get length from the audio file
+        local source = reaper.PCM_Source_CreateFromFile(item.filePath)
+        if source then
+            totalLength = reaper.GetMediaSourceLength(source, false)
+            reaper.PCM_Source_Destroy(source)
+        end
+
+        if totalLength <= 0 then
+            return false, 0
+        end
+    end
+
+    -- Calculate how many complete areas we can fit
+    local numCompleteAreas = math.floor(totalLength / duration)
+    if numCompleteAreas == 0 then
+        return false, 0 -- Duration is longer than the file
+    end
+
+    local areas = {}
+
+    -- Create fixed-duration areas
+    for i = 0, numCompleteAreas - 1 do
+        local startPos = i * duration
+        local endPos = startPos + duration
+
+        table.insert(areas, {
+            startPos = startPos,
+            endPos = endPos,
+            name = string.format("Area %d", i + 1)
+        })
+    end
+
+    -- Store areas
+    if not globals.waveformAreas then
+        globals.waveformAreas = {}
+    end
+    globals.waveformAreas[itemKey] = areas
+
+    -- Also store in item for persistence
+    item.areas = areas
+
+    return true, #areas
+end
+
 -- Process debounced gate detection requests
 function Waveform.processGateDetectionDebounce()
     if not globals.gateDetectionDebounce then

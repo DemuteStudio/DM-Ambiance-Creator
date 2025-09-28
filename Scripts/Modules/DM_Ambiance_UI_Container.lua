@@ -403,93 +403,148 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             if selectedItem.gateStartOffset == nil then selectedItem.gateStartOffset = 0 end
             if selectedItem.gateEndOffset == nil then selectedItem.gateEndOffset = 0 end
 
-            -- Gate detection title with Auto Detect button
-            imgui.Text(globals.ctx, "Auto Variation Detection:")
-            imgui.SameLine(globals.ctx)
-            local buttonPressed = imgui.Button(globals.ctx, "Auto Detect##" .. containerId, 80, 0)
+            -- Initialize area creation mode and parameters with defaults if not set
+            if selectedItem.areaCreationMode == nil then selectedItem.areaCreationMode = 1 end -- 1: Auto Detect, 2: Split Count, 3: Split Time
+            if selectedItem.splitCount == nil then selectedItem.splitCount = 5 end
+            if selectedItem.splitDuration == nil then selectedItem.splitDuration = 2.0 end
 
-            -- First line: Thresholds and Min Length
+            -- Area creation mode dropdown
+            imgui.Text(globals.ctx, "Area Creation Mode:")
+            imgui.SameLine(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, 120)
+            local modeNames = "Auto Detect\0Split Count\0Split Time\0"
+            local modeChanged, newMode = imgui.Combo(globals.ctx, "##AreaMode" .. containerId, selectedItem.areaCreationMode - 1, modeNames)
+            if modeChanged then
+                selectedItem.areaCreationMode = newMode + 1
+            end
+            imgui.PopItemWidth(globals.ctx)
+
+            imgui.SameLine(globals.ctx)
+            local buttonPressed = imgui.Button(globals.ctx, "Generate##" .. containerId, 80, 0)
+
+            -- Parameters section based on selected mode
             local itemChanged = false
 
-            imgui.PushItemWidth(globals.ctx, 80)
-            local openChanged, newOpenThreshold = imgui.SliderDouble(globals.ctx, "Open##" .. containerId, selectedItem.gateOpenThreshold, -60, 0, "%.1f dB")
-            if openChanged then
-                selectedItem.gateOpenThreshold = newOpenThreshold
-                itemChanged = true
-            end
+            if selectedItem.areaCreationMode == 1 then -- Auto Detect mode
+                -- First line: Thresholds and Min Length
+                imgui.PushItemWidth(globals.ctx, 80)
+                local openChanged, newOpenThreshold = imgui.SliderDouble(globals.ctx, "Open##" .. containerId, selectedItem.gateOpenThreshold, -60, 0, "%.1f dB")
+                if openChanged then
+                    selectedItem.gateOpenThreshold = newOpenThreshold
+                    itemChanged = true
+                end
 
-            imgui.SameLine(globals.ctx)
-            local closeChanged, newCloseThreshold = imgui.SliderDouble(globals.ctx, "Close##" .. containerId, selectedItem.gateCloseThreshold, -60, 0, "%.1f dB")
-            if closeChanged then
-                selectedItem.gateCloseThreshold = newCloseThreshold
-                itemChanged = true
-            end
+                imgui.SameLine(globals.ctx)
+                local closeChanged, newCloseThreshold = imgui.SliderDouble(globals.ctx, "Close##" .. containerId, selectedItem.gateCloseThreshold, -60, 0, "%.1f dB")
+                if closeChanged then
+                    selectedItem.gateCloseThreshold = newCloseThreshold
+                    itemChanged = true
+                end
 
-            imgui.SameLine(globals.ctx)
-            local minLenChanged, newMinLength = imgui.SliderDouble(globals.ctx, "Min Length##" .. containerId, selectedItem.gateMinLength, 0, 5000, "%.0f ms")
-            if minLenChanged then
-                selectedItem.gateMinLength = newMinLength
-                itemChanged = true
-            end
-            imgui.PopItemWidth(globals.ctx)
+                imgui.SameLine(globals.ctx)
+                local minLenChanged, newMinLength = imgui.SliderDouble(globals.ctx, "Min Length##" .. containerId, selectedItem.gateMinLength, 0, 5000, "%.0f ms")
+                if minLenChanged then
+                    selectedItem.gateMinLength = newMinLength
+                    itemChanged = true
+                end
+                imgui.PopItemWidth(globals.ctx)
 
-            -- Second line: Offsets
-            imgui.Text(globals.ctx, "Offset:")
-            imgui.SameLine(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, 60)
-            local startOffsetChanged, newStartOffset = imgui.InputDouble(globals.ctx, "Start##" .. containerId, selectedItem.gateStartOffset, 0, 0, "%.0f ms")
-            if startOffsetChanged then
-                selectedItem.gateStartOffset = newStartOffset
-                itemChanged = true
-            end
+                -- Second line: Offsets
+                imgui.Text(globals.ctx, "Offset:")
+                imgui.SameLine(globals.ctx)
+                imgui.PushItemWidth(globals.ctx, 60)
+                local startOffsetChanged, newStartOffset = imgui.InputDouble(globals.ctx, "Start##" .. containerId, selectedItem.gateStartOffset, 0, 0, "%.0f ms")
+                if startOffsetChanged then
+                    selectedItem.gateStartOffset = newStartOffset
+                    itemChanged = true
+                end
 
-            imgui.SameLine(globals.ctx)
-            local endOffsetChanged, newEndOffset = imgui.InputDouble(globals.ctx, "End##" .. containerId, selectedItem.gateEndOffset, 0, 0, "%.0f ms")
-            if endOffsetChanged then
-                selectedItem.gateEndOffset = newEndOffset
-                itemChanged = true
+                imgui.SameLine(globals.ctx)
+                local endOffsetChanged, newEndOffset = imgui.InputDouble(globals.ctx, "End##" .. containerId, selectedItem.gateEndOffset, 0, 0, "%.0f ms")
+                if endOffsetChanged then
+                    selectedItem.gateEndOffset = newEndOffset
+                    itemChanged = true
+                end
+                imgui.PopItemWidth(globals.ctx)
+
+            elseif selectedItem.areaCreationMode == 2 then -- Split Count mode
+                imgui.Text(globals.ctx, "Number of areas:")
+                imgui.SameLine(globals.ctx)
+                imgui.PushItemWidth(globals.ctx, 80)
+                local countChanged, newCount = imgui.InputInt(globals.ctx, "##SplitCount" .. containerId, selectedItem.splitCount)
+                if countChanged then
+                    selectedItem.splitCount = math.max(1, math.min(100, newCount)) -- Clamp between 1 and 100
+                    itemChanged = true
+                end
+                imgui.PopItemWidth(globals.ctx)
+
+            elseif selectedItem.areaCreationMode == 3 then -- Split Time mode
+                imgui.Text(globals.ctx, "Area duration:")
+                imgui.SameLine(globals.ctx)
+                imgui.PushItemWidth(globals.ctx, 80)
+                local durationChanged, newDuration = imgui.InputDouble(globals.ctx, "##SplitDuration" .. containerId, selectedItem.splitDuration, 0.1, 1.0, "%.1f s")
+                if durationChanged then
+                    selectedItem.splitDuration = math.max(0.1, newDuration) -- Minimum 0.1 seconds
+                    itemChanged = true
+                end
+                imgui.PopItemWidth(globals.ctx)
             end
-            imgui.PopItemWidth(globals.ctx)
             if buttonPressed then
                 itemChanged = true
             end
 
-            -- Auto-trigger detection when any parameter changes
-            if itemChanged and globals.Waveform and globals.Waveform.autoDetectAreas then
+            -- Auto-trigger area creation when any parameter changes
+            if itemChanged and globals.Waveform then
                 local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
 
                 if buttonPressed then
-                    -- Button was pressed: immediate detection (no debouncing)
-                    local success, numAreas = globals.Waveform.autoDetectAreas(selectedItem, itemKey)
-                    if success then
-                        -- Store the parameters used for this detection
-                        selectedItem.lastGateParams = {
-                            openThreshold = selectedItem.gateOpenThreshold,
-                            closeThreshold = selectedItem.gateCloseThreshold,
-                            minLength = selectedItem.gateMinLength,
-                            startOffset = selectedItem.gateStartOffset,
-                            endOffset = selectedItem.gateEndOffset
-                        }
+                    -- Button was pressed: immediate area creation (no debouncing)
+                    local success, numAreas = false, 0
+
+                    if selectedItem.areaCreationMode == 1 then -- Auto Detect
+                        if globals.Waveform.autoDetectAreas then
+                            success, numAreas = globals.Waveform.autoDetectAreas(selectedItem, itemKey)
+                            if success then
+                                -- Store the parameters used for this detection
+                                selectedItem.lastGateParams = {
+                                    openThreshold = selectedItem.gateOpenThreshold,
+                                    closeThreshold = selectedItem.gateCloseThreshold,
+                                    minLength = selectedItem.gateMinLength,
+                                    startOffset = selectedItem.gateStartOffset,
+                                    endOffset = selectedItem.gateEndOffset
+                                }
+                            end
+                        end
+                    elseif selectedItem.areaCreationMode == 2 then -- Split Count
+                        if globals.Waveform.splitCountAreas then
+                            success, numAreas = globals.Waveform.splitCountAreas(selectedItem, itemKey, selectedItem.splitCount)
+                        end
+                    elseif selectedItem.areaCreationMode == 3 then -- Split Time
+                        if globals.Waveform.splitTimeAreas then
+                            success, numAreas = globals.Waveform.splitTimeAreas(selectedItem, itemKey, selectedItem.splitDuration)
+                        end
                     end
                 else
-                    -- Parameter changed: use debouncing to avoid lag during slider dragging
-                    -- Initialize debounce system if needed
-                    if not globals.gateDetectionDebounce then
-                        globals.gateDetectionDebounce = {}
-                    end
+                    -- Parameter changed: use debouncing to avoid lag during slider dragging (only for Auto Detect mode)
+                    if selectedItem.areaCreationMode == 1 and globals.Waveform.autoDetectAreas then
+                        -- Initialize debounce system if needed
+                        if not globals.gateDetectionDebounce then
+                            globals.gateDetectionDebounce = {}
+                        end
 
-                    -- Store the parameters and timestamp for debouncing
-                    globals.gateDetectionDebounce[itemKey] = {
-                        timestamp = reaper.time_precise(),
-                        params = {
-                            openThreshold = selectedItem.gateOpenThreshold,
-                            closeThreshold = selectedItem.gateCloseThreshold,
-                            minLength = selectedItem.gateMinLength,
-                            startOffset = selectedItem.gateStartOffset,
-                            endOffset = selectedItem.gateEndOffset
-                        },
-                        item = selectedItem
-                    }
+                        -- Store the parameters and timestamp for debouncing
+                        globals.gateDetectionDebounce[itemKey] = {
+                            timestamp = reaper.time_precise(),
+                            params = {
+                                openThreshold = selectedItem.gateOpenThreshold,
+                                closeThreshold = selectedItem.gateCloseThreshold,
+                                minLength = selectedItem.gateMinLength,
+                                startOffset = selectedItem.gateStartOffset,
+                                endOffset = selectedItem.gateEndOffset
+                            },
+                            item = selectedItem
+                        }
+                    end
                 end
             end
         end
