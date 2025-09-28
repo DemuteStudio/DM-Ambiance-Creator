@@ -157,8 +157,8 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
 
                 -- Check if customRouting has the right number of entries
                 if customChannels ~= expectedChannels then
-                    reaper.ShowConsoleMsg(string.format("WARNING: Corrupted customRouting detected for %s - expected %d channels, got %d. Clearing customRouting.\n",
-                        container.name or "unknown", expectedChannels, customChannels))
+                    -- reaper.ShowConsoleMsg(string.format("WARNING: Corrupted customRouting detected for %s - expected %d channels, got %d. Clearing customRouting.\n",
+                    --     container.name or "unknown", expectedChannels, customChannels))
                     container.customRouting = nil
                 end
 
@@ -173,8 +173,8 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
                     end
 
                     if hasInvalidEntries then
-                        reaper.ShowConsoleMsg(string.format("WARNING: Invalid entries in customRouting for %s. Clearing customRouting.\n",
-                            container.name or "unknown"))
+                        -- reaper.ShowConsoleMsg(string.format("WARNING: Invalid entries in customRouting for %s. Clearing customRouting.\n",
+                        --     container.name or "unknown"))
                         container.customRouting = nil
                     end
                 end
@@ -838,7 +838,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 minRequiredLength
             )
             
-            reaper.ShowConsoleMsg(message .. "\n")
+            -- reaper.ShowConsoleMsg(message .. "\n")
         end
     end
 
@@ -1038,16 +1038,22 @@ function Generation.generateGroups()
     reaper.UpdateArrange()
 
     -- MEGATHINK FIX: Complete project stabilization after generation
-    reaper.ShowConsoleMsg("INFO: Starting project stabilization after generation...\n")
+    -- reaper.ShowConsoleMsg("INFO: Starting project stabilization after generation...\n")
 
     -- Small delay to ensure all track operations are complete
     reaper.UpdateArrange()
 
-    -- Use fix-point stabilization for complete consistency
+    -- CRITICAL: Always force stabilization after generation, especially when regenerating
+    -- This ensures deleted containers don't leave groups/master with excessive channels
     if not globals.skipRoutingValidation then
-        Generation.stabilizeProjectConfiguration()
+        if globals.keepExistingTracks then
+            -- Force full stabilization when regenerating (container deletion case)
+            Generation.stabilizeProjectConfiguration(false)  -- Full mode, not light
+        else
+            -- Normal generation - use light stabilization
+            Generation.stabilizeProjectConfiguration(true)   -- Light mode
+        end
     else
-        reaper.ShowConsoleMsg("INFO: Stabilization skipped during special operations\n")
         -- Clear the skip flag for next time
         globals.skipRoutingValidation = false
     end
@@ -1211,8 +1217,11 @@ function Generation.generateSingleGroup(groupIndex)
         end
     end
 
-    -- Check for routing conflicts after generating single group
-    Generation.checkAndResolveConflicts()
+    -- CRITICAL: Force full stabilization after single group regeneration
+    -- This handles the case where containers were deleted from the tool
+    if not globals.skipRoutingValidation then
+        Generation.stabilizeProjectConfiguration(false)  -- Full stabilization
+    end
 
     -- Clear regeneration flag for the group and all its containers
     group.needsRegeneration = false
@@ -1397,18 +1406,18 @@ end
 function Generation.debugFolderStructure(groupName)
     local parentGroup, parentGroupIdx = Utils.findGroupByName(groupName)
     if not parentGroup then
-        reaper.ShowConsoleMsg("Group '" .. groupName .. "' not found\n")
+        -- reaper.ShowConsoleMsg("Group '" .. groupName .. "' not found\n")
         return
     end
     
-    reaper.ShowConsoleMsg("=== Folder Structure for '" .. groupName .. "' ===\n")
-    reaper.ShowConsoleMsg("Parent track index: " .. parentGroupIdx .. "\n")
+    -- reaper.ShowConsoleMsg("=== Folder Structure for '" .. groupName .. "' ===\n")
+    -- reaper.ShowConsoleMsg("Parent track index: " .. parentGroupIdx .. "\n")
     
     local containers = Utils.getAllContainersInGroup(parentGroupIdx)
     for i, container in ipairs(containers) do
-        reaper.ShowConsoleMsg("  Container " .. i .. ": '" .. container.name .. "' (index: " .. container.index .. ", depth: " .. container.originalDepth .. ")\n")
+        -- reaper.ShowConsoleMsg("  Container " .. i .. ": '" .. container.name .. "' (index: " .. container.index .. ", depth: " .. container.originalDepth .. ")\n")
     end
-    reaper.ShowConsoleMsg("========================\n")
+    -- reaper.ShowConsoleMsg("========================\n")
 end
 
 -- Function to place items using Chunk Mode
@@ -1687,12 +1696,16 @@ end
 
 -- Recalculate channel requirements bottom-up: children define parent needs
 -- CRITICAL: Now uses REAL track counts, not theoretical configuration
+-- ENHANCED: Detects orphaned tracks (tracks without corresponding containers)
 function Generation.recalculateChannelRequirements()
     if not globals.groups or #globals.groups == 0 then
         return
     end
 
-    reaper.ShowConsoleMsg("INFO: Starting bottom-up channel recalculation (REAL tracks)...\n")
+    -- STEP 0: Detect orphaned container tracks (tracks without matching tool containers)
+    Generation.detectOrphanedContainerTracks()
+
+    -- reaper.ShowConsoleMsg("INFO: Starting bottom-up channel recalculation (REAL tracks)...\n")
 
     -- Phase 1: Calculate actual requirements for each container based on REAL tracks
     local containerRequirements = {}
@@ -1719,8 +1732,8 @@ function Generation.recalculateChannelRequirements()
                         group = group
                     }
 
-                    reaper.ShowConsoleMsg(string.format("INFO: Container '%s' has %d REAL tracks → requires %d physical channels\n",
-                        container.name, realChildCount, requiredChannels))
+                    -- reaper.ShowConsoleMsg(string.format("INFO: Container '%s' has %d REAL tracks → requires %d physical channels\n",
+                    --     container.name, realChildCount, requiredChannels))
                 else
                     -- Fallback to theoretical if no tracks exist yet
                     local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
@@ -1737,8 +1750,8 @@ function Generation.recalculateChannelRequirements()
                             group = group
                         }
 
-                        reaper.ShowConsoleMsg(string.format("INFO: Container '%s' (no tracks yet) → requires %d channels (theoretical)\n",
-                            container.name, requiredChannels))
+                        -- reaper.ShowConsoleMsg(string.format("INFO: Container '%s' (no tracks yet) → requires %d channels (theoretical)\n",
+                        --     container.name, requiredChannels))
                     end
                 end
             end
@@ -1758,8 +1771,8 @@ function Generation.recalculateChannelRequirements()
                 -- Use the REAL physical channels (based on actual tracks)
                 maxChannels = math.max(maxChannels, req.physicalChannels)
                 containerCount = containerCount + 1
-                reaper.ShowConsoleMsg(string.format("    Container '%s' contributes %d physical channels\n",
-                    container.name, req.physicalChannels))
+                -- reaper.ShowConsoleMsg(string.format("    Container '%s' contributes %d physical channels\n",
+                --     container.name, req.physicalChannels))
             end
         end
 
@@ -1769,8 +1782,8 @@ function Generation.recalculateChannelRequirements()
             group = group
         }
 
-        reaper.ShowConsoleMsg(string.format("INFO: Group '%s' MAX requirement: %d channels for %d containers\n",
-            group.name, maxChannels, containerCount))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Group '%s' MAX requirement: %d channels for %d containers\n",
+        --     group.name, maxChannels, containerCount))
     end
 
     -- Phase 3: Calculate master track requirement (maximum of all REAL group channels)
@@ -1780,17 +1793,17 @@ function Generation.recalculateChannelRequirements()
         local oldMaster = masterRequirement
         masterRequirement = math.max(masterRequirement, req.requiredChannels)
         if req.requiredChannels > oldMaster then
-            reaper.ShowConsoleMsg(string.format("    Group '%s' increases master requirement: %d → %d channels\n",
-                groupName, oldMaster, masterRequirement))
+            -- reaper.ShowConsoleMsg(string.format("    Group '%s' increases master requirement: %d → %d channels\n",
+            --     groupName, oldMaster, masterRequirement))
         end
     end
 
-    reaper.ShowConsoleMsg(string.format("INFO: Master track FINAL requirement: %d channels (based on REAL group usage)\n", masterRequirement))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Master track FINAL requirement: %d channels (based on REAL group usage)\n", masterRequirement))
 
     -- Phase 4: Apply the calculated requirements to actual tracks
     Generation.applyChannelRequirements(containerRequirements, groupRequirements, masterRequirement)
 
-    reaper.ShowConsoleMsg("INFO: Bottom-up channel recalculation completed.\n")
+    -- reaper.ShowConsoleMsg("INFO: Bottom-up channel recalculation completed.\n")
 end
 
 -- Apply calculated channel requirements to actual REAPER tracks
@@ -1803,8 +1816,8 @@ function Generation.applyChannelRequirements(containerReqs, groupReqs, masterReq
         if containerTrack then
             local currentChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
             if currentChannels ~= req.physicalChannels then
-                reaper.ShowConsoleMsg(string.format("APPLY: Updating container '%s' from %d to %d channels\n",
-                    containerName, currentChannels, req.physicalChannels))
+                -- reaper.ShowConsoleMsg(string.format("APPLY: Updating container '%s' from %d to %d channels\n",
+                --     containerName, currentChannels, req.physicalChannels))
 
                 -- Apply change with verification
                 reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", req.physicalChannels)
@@ -1812,31 +1825,31 @@ function Generation.applyChannelRequirements(containerReqs, groupReqs, masterReq
                 -- MEGATHINK: Verify the change actually took effect
                 local verifyChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
                 if verifyChannels == req.physicalChannels then
-                    reaper.ShowConsoleMsg(string.format("✅ APPLY SUCCESS: Container '%s' confirmed at %d channels\n",
-                        containerName, verifyChannels))
+                    -- reaper.ShowConsoleMsg(string.format("✅ APPLY SUCCESS: Container '%s' confirmed at %d channels\n",
+                    --     containerName, verifyChannels))
                 else
-                    reaper.ShowConsoleMsg(string.format("❌ APPLY FAILED: Container '%s' still at %d channels (expected %d)\n",
-                        containerName, verifyChannels, req.physicalChannels))
+                    -- reaper.ShowConsoleMsg(string.format("❌ APPLY FAILED: Container '%s' still at %d channels (expected %d)\n",
+                    --     containerName, verifyChannels, req.physicalChannels))
 
                     -- Force multiple attempts with UI refresh
                     for attempt = 1, 3 do
-                        reaper.ShowConsoleMsg(string.format("MEGATHINK: Retry attempt %d for container '%s'\n", attempt, containerName))
+                        -- reaper.ShowConsoleMsg(string.format("MEGATHINK: Retry attempt %d for container '%s'\n", attempt, containerName))
                         reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", req.physicalChannels)
                         reaper.UpdateArrange()
                         reaper.TrackList_AdjustWindows(false)
                         local retryCheck = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
                         if retryCheck == req.physicalChannels then
-                            reaper.ShowConsoleMsg(string.format("✅ SUCCESS on retry %d\n", attempt))
+                            -- reaper.ShowConsoleMsg(string.format("✅ SUCCESS on retry %d\n", attempt))
                             break
                         end
                     end
                 end
             else
-                reaper.ShowConsoleMsg(string.format("APPLY: Container '%s' already has %d channels\n",
-                    containerName, currentChannels))
+                -- reaper.ShowConsoleMsg(string.format("APPLY: Container '%s' already has %d channels\n",
+                --     containerName, currentChannels))
             end
         else
-            reaper.ShowConsoleMsg(string.format("APPLY: FAILED to find container track '%s'\n", containerName))
+            -- reaper.ShowConsoleMsg(string.format("APPLY: FAILED to find container track '%s'\n", containerName))
         end
     end
 
@@ -1846,15 +1859,15 @@ function Generation.applyChannelRequirements(containerReqs, groupReqs, masterReq
         if groupTrack then
             local currentChannels = reaper.GetMediaTrackInfo_Value(groupTrack, "I_NCHAN")
             if currentChannels ~= req.requiredChannels then
-                reaper.ShowConsoleMsg(string.format("APPLY: Updating group '%s' from %d to %d channels\n",
-                    groupName, currentChannels, req.requiredChannels))
+                -- reaper.ShowConsoleMsg(string.format("APPLY: Updating group '%s' from %d to %d channels\n",
+                --     groupName, currentChannels, req.requiredChannels))
                 reaper.SetMediaTrackInfo_Value(groupTrack, "I_NCHAN", req.requiredChannels)
             else
-                reaper.ShowConsoleMsg(string.format("APPLY: Group '%s' already has %d channels\n",
-                    groupName, currentChannels))
+                -- reaper.ShowConsoleMsg(string.format("APPLY: Group '%s' already has %d channels\n",
+                --     groupName, currentChannels))
             end
         else
-            reaper.ShowConsoleMsg(string.format("APPLY: FAILED to find group track '%s'\n", groupName))
+            -- reaper.ShowConsoleMsg(string.format("APPLY: FAILED to find group track '%s'\n", groupName))
         end
     end
 
@@ -1863,11 +1876,11 @@ function Generation.applyChannelRequirements(containerReqs, groupReqs, masterReq
     if masterTrack then
         local currentChannels = reaper.GetMediaTrackInfo_Value(masterTrack, "I_NCHAN")
         if currentChannels ~= masterReq then
-            reaper.ShowConsoleMsg(string.format("APPLY: Updating master track from %d to %d channels\n",
-                currentChannels, masterReq))
+            -- reaper.ShowConsoleMsg(string.format("APPLY: Updating master track from %d to %d channels\n",
+            --     currentChannels, masterReq))
             reaper.SetMediaTrackInfo_Value(masterTrack, "I_NCHAN", masterReq)
         else
-            reaper.ShowConsoleMsg(string.format("APPLY: Master track already has %d channels\n", currentChannels))
+            -- reaper.ShowConsoleMsg(string.format("APPLY: Master track already has %d channels\n", currentChannels))
         end
     end
 
@@ -1885,13 +1898,13 @@ function Generation.findGroupTrackRobust(groupName)
         if track then
             local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
             if trackName == groupName then
-                reaper.ShowConsoleMsg(string.format("DEBUG: Found group '%s' at index %d\n", groupName, i))
+                -- reaper.ShowConsoleMsg(string.format("DEBUG: Found group '%s' at index %d\n", groupName, i))
                 return track
             end
         end
     end
 
-    reaper.ShowConsoleMsg(string.format("DEBUG: FAILED to find group track '%s'\n", groupName))
+    -- reaper.ShowConsoleMsg(string.format("DEBUG: FAILED to find group track '%s'\n", groupName))
     return nil
 end
 
@@ -1916,8 +1929,8 @@ function Generation.handleConfigurationDowngrade(container, oldChannelCount, new
         return  -- Not a downgrade
     end
 
-    reaper.ShowConsoleMsg(string.format("INFO: Handling downgrade for '%s': %d→%d channels\n",
-        container.name or "unknown", oldChannelCount, newChannelCount))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Handling downgrade for '%s': %d→%d channels\n",
+    --     container.name or "unknown", oldChannelCount, newChannelCount))
 
     -- Find the container track
     local containerTrack = nil
@@ -1934,7 +1947,7 @@ function Generation.handleConfigurationDowngrade(container, oldChannelCount, new
     end
 
     if not containerTrack then
-        reaper.ShowConsoleMsg(string.format("WARNING: Could not find track for container '%s'\n", container.name))
+        -- reaper.ShowConsoleMsg(string.format("WARNING: Could not find track for container '%s'\n", container.name))
         return
     end
 
@@ -1946,20 +1959,20 @@ function Generation.handleConfigurationDowngrade(container, oldChannelCount, new
     if newChannelMode then
         local oldChannelMode = container.channelMode
         container.channelMode = newChannelMode
-        reaper.ShowConsoleMsg(string.format("INFO: Updated channelMode for '%s': %d → %d\n",
-            container.name, oldChannelMode, newChannelMode))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Updated channelMode for '%s': %d → %d\n",
+        --     container.name, oldChannelMode, newChannelMode))
     end
 
     -- Clear corrupted customRouting
     if container.customRouting then
-        reaper.ShowConsoleMsg(string.format("INFO: Clearing customRouting for '%s' due to downgrade\n", container.name))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Clearing customRouting for '%s' due to downgrade\n", container.name))
         container.customRouting = nil
     end
 
     -- Force regeneration to apply new routing
     container.needsRegeneration = true
 
-    reaper.ShowConsoleMsg(string.format("INFO: Downgrade handling completed for '%s'\n", container.name))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Downgrade handling completed for '%s'\n", container.name))
 end
 
 -- Detect channelMode from track count (inverse of config lookup)
@@ -1974,10 +1987,10 @@ function Generation.detectChannelModeFromTrackCount(trackCount)
 
     local newMode = trackCountToMode[trackCount]
     if newMode then
-        reaper.ShowConsoleMsg(string.format("INFO: Detected channelMode %d for %d tracks\n", newMode, trackCount))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Detected channelMode %d for %d tracks\n", newMode, trackCount))
         return newMode
     else
-        reaper.ShowConsoleMsg(string.format("WARNING: No channelMode mapping for %d tracks, keeping current\n", trackCount))
+        -- reaper.ShowConsoleMsg(string.format("WARNING: No channelMode mapping for %d tracks, keeping current\n", trackCount))
         return nil
     end
 end
@@ -1989,7 +2002,7 @@ function Generation.removeExcessChildTracks(containerTrack, oldChannelCount, new
     local tracksToRemove = oldChannelCount - newChannelCount
     if tracksToRemove <= 0 then return end
 
-    reaper.ShowConsoleMsg(string.format("INFO: Safely removing %d excess child tracks (folder aware)\n", tracksToRemove))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Safely removing %d excess child tracks (folder aware)\n", tracksToRemove))
 
     -- STEP 1: Find all direct children of the container
     local childTracks = {}
@@ -2009,10 +2022,10 @@ function Generation.removeExcessChildTracks(containerTrack, oldChannelCount, new
         end
     end
 
-    reaper.ShowConsoleMsg(string.format("INFO: Found %d child tracks before removal\n", #childTracks))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Found %d child tracks before removal\n", #childTracks))
 
     if #childTracks ~= oldChannelCount then
-        reaper.ShowConsoleMsg(string.format("WARNING: Expected %d children, found %d\n", oldChannelCount, #childTracks))
+        -- reaper.ShowConsoleMsg(string.format("WARNING: Expected %d children, found %d\n", oldChannelCount, #childTracks))
     end
 
     -- STEP 2: Determine which tracks to keep and which to remove
@@ -2024,21 +2037,21 @@ function Generation.removeExcessChildTracks(containerTrack, oldChannelCount, new
         table.insert(tracksToDelete, childTracks[i])
     end
 
-    reaper.ShowConsoleMsg(string.format("INFO: Will remove %d tracks, keep %d tracks\n", #tracksToDelete, tracksToKeep))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Will remove %d tracks, keep %d tracks\n", #tracksToDelete, tracksToKeep))
 
     -- STEP 3: CRITICAL - Adjust folder structure BEFORE removing tracks
     if tracksToKeep > 0 and #childTracks >= tracksToKeep then
         local newLastChild = childTracks[tracksToKeep]
-        reaper.ShowConsoleMsg(string.format("INFO: Setting new last child (index %d) to I_FOLDERDEPTH = -1\n",
-            newLastChild.index))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Setting new last child (index %d) to I_FOLDERDEPTH = -1\n",
+        --     newLastChild.index))
         reaper.SetMediaTrackInfo_Value(newLastChild.track, "I_FOLDERDEPTH", -1)
     end
 
     -- STEP 4: Remove tracks in reverse order to avoid index shifts
     for i = #tracksToDelete, 1, -1 do
         local trackInfo = tracksToDelete[i]
-        reaper.ShowConsoleMsg(string.format("INFO: Removing child track at index %d (depth was %d)\n",
-            trackInfo.index, trackInfo.depth))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Removing child track at index %d (depth was %d)\n",
+        --     trackInfo.index, trackInfo.depth))
         reaper.DeleteTrack(trackInfo.track)
     end
 
@@ -2051,7 +2064,7 @@ function Generation.validateFolderStructure(containerTrack, expectedChildren)
     local containerDepth = reaper.GetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH")
 
     if containerDepth ~= 1 then
-        reaper.ShowConsoleMsg(string.format("WARNING: Container lost folder status (depth = %d, should be 1)\n", containerDepth))
+        -- reaper.ShowConsoleMsg(string.format("WARNING: Container lost folder status (depth = %d, should be 1)\n", containerDepth))
         reaper.SetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH", 1)
     end
 
@@ -2071,22 +2084,22 @@ function Generation.validateFolderStructure(containerTrack, expectedChildren)
         end
     end
 
-    reaper.ShowConsoleMsg(string.format("VALIDATE: Expected %d children, found %d children\n",
-        expectedChildren, actualChildren))
+    -- reaper.ShowConsoleMsg(string.format("VALIDATE: Expected %d children, found %d children\n",
+    --     expectedChildren, actualChildren))
 
     -- Ensure last child closes the folder
     if lastChild then
         local lastDepth = reaper.GetMediaTrackInfo_Value(lastChild, "I_FOLDERDEPTH")
         if lastDepth ~= -1 then
-            reaper.ShowConsoleMsg("VALIDATE: Correcting last child folder depth to -1\n")
+            -- reaper.ShowConsoleMsg("VALIDATE: Correcting last child folder depth to -1\n")
             reaper.SetMediaTrackInfo_Value(lastChild, "I_FOLDERDEPTH", -1)
         end
     end
 
     if actualChildren == expectedChildren then
-        reaper.ShowConsoleMsg("VALIDATE: ✅ Folder structure is correct\n")
+        -- reaper.ShowConsoleMsg("VALIDATE: ✅ Folder structure is correct\n")
     else
-        reaper.ShowConsoleMsg("VALIDATE: ❌ Folder structure mismatch\n")
+        -- reaper.ShowConsoleMsg("VALIDATE: ❌ Folder structure mismatch\n")
     end
 end
 
@@ -2115,12 +2128,12 @@ function Generation.detectAndHandleConfigurationChanges(container)
     -- Get real track count
     local realTrackCount = Generation.getExistingChildTrackCount(container)
 
-    reaper.ShowConsoleMsg(string.format("DEBUG: Container '%s' - channelMode: %s→%d, config channels: %d, real tracks: %s\n",
-        container.name or "unknown",
-        previousChannelMode and tostring(previousChannelMode) or "nil",
-        currentChannelMode,
-        newChannelCount,
-        realTrackCount and tostring(realTrackCount) or "nil"))
+    -- reaper.ShowConsoleMsg(string.format("DEBUG: Container '%s' - channelMode: %s→%d, config channels: %d, real tracks: %s\n",
+    --     container.name or "unknown",
+    --     previousChannelMode and tostring(previousChannelMode) or "nil",
+    --     currentChannelMode,
+    --     newChannelCount,
+    --     realTrackCount and tostring(realTrackCount) or "nil"))
 
     -- Detect changes based on previousChannelMode
     if previousChannelMode and previousChannelMode ~= currentChannelMode then
@@ -2131,13 +2144,13 @@ function Generation.detectAndHandleConfigurationChanges(container)
 
             if oldChannelCount > newChannelCount then
                 -- TRUE DOWNGRADE DETECTED
-                reaper.ShowConsoleMsg(string.format("INFO: TRUE DOWNGRADE: %s changed %d.0→%d.0 (%d→%d channels)\n",
-                    container.name or "unknown", oldChannelCount, newChannelCount, oldChannelCount, newChannelCount))
+                -- reaper.ShowConsoleMsg(string.format("INFO: TRUE DOWNGRADE: %s changed %d.0→%d.0 (%d→%d channels)\n",
+                --     container.name or "unknown", oldChannelCount, newChannelCount, oldChannelCount, newChannelCount))
 
                 Generation.propagateConfigurationDowngrade(oldChannelCount, newChannelCount, currentChannelMode)
 
                 -- MEGATHINK FIX: Force complete stabilization after downgrade
-                reaper.ShowConsoleMsg("INFO: Starting complete project stabilization after downgrade...\n")
+                -- reaper.ShowConsoleMsg("INFO: Starting complete project stabilization after downgrade...\n")
                 reaper.UpdateArrange()
 
                 -- Clear skip flag before stabilization
@@ -2148,16 +2161,16 @@ function Generation.detectAndHandleConfigurationChanges(container)
 
             elseif oldChannelCount < newChannelCount then
                 -- TRUE UPGRADE DETECTED
-                reaper.ShowConsoleMsg(string.format("INFO: TRUE UPGRADE: %s changed %d.0→%d.0 (%d→%d channels)\n",
-                    container.name or "unknown", oldChannelCount, newChannelCount, oldChannelCount, newChannelCount))
+                -- reaper.ShowConsoleMsg(string.format("INFO: TRUE UPGRADE: %s changed %d.0→%d.0 (%d→%d channels)\n",
+                --     container.name or "unknown", oldChannelCount, newChannelCount, oldChannelCount, newChannelCount))
                 -- Normal creation will handle upgrades
             end
         end
     else
         -- No channelMode change, check for track count mismatch
         if realTrackCount and realTrackCount ~= newChannelCount then
-            reaper.ShowConsoleMsg(string.format("INFO: Track mismatch for '%s': has %d tracks but should have %d\n",
-                container.name or "unknown", realTrackCount, newChannelCount))
+            -- reaper.ShowConsoleMsg(string.format("INFO: Track mismatch for '%s': has %d tracks but should have %d\n",
+            --     container.name or "unknown", realTrackCount, newChannelCount))
         end
     end
 end
@@ -2182,13 +2195,13 @@ function Generation.propagateConfigurationDowngrade(oldChannelCount, newChannelC
         end
     end
 
-    reaper.ShowConsoleMsg(string.format("INFO: Found %d containers to downgrade\n", #affectedContainers))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Found %d containers to downgrade\n", #affectedContainers))
 
     -- Apply downgrade to ALL affected containers
     for _, info in ipairs(affectedContainers) do
         Generation.handleConfigurationDowngrade(info.container, oldChannelCount, newChannelCount)
-        reaper.ShowConsoleMsg(string.format("INFO: Downgraded container '%s' in group '%s'\n",
-            info.container.name or "unknown", info.group.name or "unknown"))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Downgraded container '%s' in group '%s'\n",
+        --     info.container.name or "unknown", info.group.name or "unknown"))
     end
 
     -- CRITICAL: Set a flag to prevent RoutingValidator from "fixing" during this operation
@@ -2199,12 +2212,12 @@ function Generation.propagateConfigurationDowngrade(oldChannelCount, newChannelC
         globals.RoutingValidator.clearValidation()
     end
 
-    reaper.ShowConsoleMsg(string.format("INFO: Propagation complete. %d containers processed.\n", #affectedContainers))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Propagation complete. %d containers processed.\n", #affectedContainers))
 
     -- REGRESSION FIX: Clear skip flag immediately after propagation
     -- This allows validation to detect other containers with bad routing
     globals.skipRoutingValidation = false
-    reaper.ShowConsoleMsg("INFO: Propagation finished - validation re-enabled to catch other issues\n")
+    -- reaper.ShowConsoleMsg("INFO: Propagation finished - validation re-enabled to catch other issues\n")
 end
 
 -- Get the current number of child tracks for a container
@@ -2213,7 +2226,7 @@ function Generation.getExistingChildTrackCount(container)
     local containerTrack = Generation.findContainerTrackRobust(container)
 
     if not containerTrack then
-        reaper.ShowConsoleMsg(string.format("DEBUG: Could not find container track for '%s'\n", container.name or "unknown"))
+        -- reaper.ShowConsoleMsg(string.format("DEBUG: Could not find container track for '%s'\n", container.name or "unknown"))
         return nil
     end
 
@@ -2231,8 +2244,8 @@ function Generation.getExistingChildTrackCount(container)
         end
     end
 
-    reaper.ShowConsoleMsg(string.format("DEBUG: Container '%s' has %d direct children\n",
-        container.name or "unknown", childCount))
+    -- reaper.ShowConsoleMsg(string.format("DEBUG: Container '%s' has %d direct children\n",
+    --     container.name or "unknown", childCount))
 
     return childCount
 end
@@ -2246,7 +2259,7 @@ function Generation.findContainerTrackRobust(container)
     if container.trackGUID then
         local track = reaper.BR_GetMediaTrackByGUID(0, container.trackGUID)
         if track then
-            reaper.ShowConsoleMsg(string.format("DEBUG: Found container '%s' by GUID\n", containerName))
+            -- reaper.ShowConsoleMsg(string.format("DEBUG: Found container '%s' by GUID\n", containerName))
             return track
         end
     end
@@ -2258,14 +2271,14 @@ function Generation.findContainerTrackRobust(container)
         if track then
             local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
             if trackName == containerName then
-                reaper.ShowConsoleMsg(string.format("DEBUG: Found container '%s' by name at index %d\n",
-                    containerName, i))
+                -- reaper.ShowConsoleMsg(string.format("DEBUG: Found container '%s' by name at index %d\n",
+                --     containerName, i))
                 return track
             end
         end
     end
 
-    reaper.ShowConsoleMsg(string.format("DEBUG: FAILED to find container track '%s'\n", containerName))
+    -- reaper.ShowConsoleMsg(string.format("DEBUG: FAILED to find container track '%s'\n", containerName))
     return nil
 end
 
@@ -2279,25 +2292,25 @@ function Generation.stabilizeProjectConfiguration(lightMode)
     local iteration = 0
     local hasChanges = true
 
-    reaper.ShowConsoleMsg(string.format("INFO: Starting %s fix-point stabilization...\n", lightMode and "light" or "full"))
+    -- reaper.ShowConsoleMsg(string.format("INFO: Starting %s fix-point stabilization...\n", lightMode and "light" or "full"))
 
     while hasChanges and iteration < maxIterations do
         iteration = iteration + 1
-        reaper.ShowConsoleMsg(string.format("INFO: Stabilization iteration %d/%d\n", iteration, maxIterations))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Stabilization iteration %d/%d\n", iteration, maxIterations))
 
         -- Capture project state before changes
         local startState = Generation.captureProjectState()
 
         -- STEP 1: Validate and resolve conflicts FIRST (prevents overwrites)
         if not lightMode or iteration > 1 then
-            reaper.ShowConsoleMsg("  → Validating and resolving conflicts...\n")
+            -- reaper.ShowConsoleMsg("  → Validating and resolving conflicts...\n")
             Generation.checkAndResolveConflicts()
         else
-            reaper.ShowConsoleMsg("  → Skipping validation in light mode first iteration\n")
+            -- reaper.ShowConsoleMsg("  → Skipping validation in light mode first iteration\n")
         end
 
         -- STEP 2: Recalculate channel requirements bottom-up AFTER fixes
-        reaper.ShowConsoleMsg("  → Recalculating channel requirements...\n")
+        -- reaper.ShowConsoleMsg("  → Recalculating channel requirements...\n")
         Generation.recalculateChannelRequirements()
 
         -- Capture project state after changes
@@ -2307,9 +2320,9 @@ function Generation.stabilizeProjectConfiguration(lightMode)
         hasChanges = not Generation.compareProjectStates(startState, endState)
 
         if hasChanges then
-            reaper.ShowConsoleMsg(string.format("  → Changes detected, continuing iteration %d\n", iteration + 1))
+            -- reaper.ShowConsoleMsg(string.format("  → Changes detected, continuing iteration %d\n", iteration + 1))
         else
-            reaper.ShowConsoleMsg("  → No changes detected, system is stable!\n")
+            -- reaper.ShowConsoleMsg("  → No changes detected, system is stable!\n")
         end
 
         -- Force update REAPER display between iterations
@@ -2317,12 +2330,58 @@ function Generation.stabilizeProjectConfiguration(lightMode)
     end
 
     if iteration >= maxIterations and hasChanges then
-        reaper.ShowConsoleMsg("WARNING: Stabilization reached max iterations, may not be fully stable\n")
+        -- reaper.ShowConsoleMsg("WARNING: Stabilization reached max iterations, may not be fully stable\n")
     else
-        reaper.ShowConsoleMsg(string.format("SUCCESS: Project stabilized after %d iterations\n", iteration))
+        -- reaper.ShowConsoleMsg(string.format("SUCCESS: Project stabilized after %d iterations\n", iteration))
     end
 
     return not hasChanges  -- Return true if fully stabilized
+end
+
+-- Detect orphaned container tracks that no longer have corresponding containers in the tool
+-- This is critical for handling cases where containers were deleted from the tool
+function Generation.detectOrphanedContainerTracks()
+    -- Build a set of all container names that should exist
+    local validContainerNames = {}
+    for _, group in ipairs(globals.groups or {}) do
+        for _, container in ipairs(group.containers or {}) do
+            if container.name then
+                validContainerNames[container.name] = true
+            end
+        end
+    end
+
+    -- Scan all tracks to find container tracks that aren't in our tool
+    for i = 0, reaper.CountTracks(0) - 1 do
+        local track = reaper.GetTrack(0, i)
+        if track then
+            local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
+
+            -- Check if this looks like a container track
+            local hasChildren = false
+            local parentTrack = reaper.GetParentTrack(track)
+            if parentTrack then
+                -- Check if any tracks are children of this track
+                for j = 0, reaper.CountTracks(0) - 1 do
+                    local childTrack = reaper.GetTrack(0, j)
+                    if reaper.GetParentTrack(childTrack) == track then
+                        hasChildren = true
+                        break
+                    end
+                end
+            end
+
+            -- If track has children but no corresponding container in tool, it's orphaned
+            if hasChildren and trackName and trackName ~= "" and not validContainerNames[trackName] then
+                -- This is an orphaned container track - it should be ignored in calculations
+                -- Mark it somehow or just skip it in getExistingChildTrackCount
+                if not globals.orphanedContainers then
+                    globals.orphanedContainers = {}
+                end
+                globals.orphanedContainers[trackName] = track
+            end
+        end
+    end
 end
 
 -- Capture current project state for comparison
@@ -2368,8 +2427,8 @@ function Generation.compareProjectStates(state1, state2)
 
     -- Compare master channels
     if state1.masterChannels ~= state2.masterChannels then
-        reaper.ShowConsoleMsg(string.format("  State change: Master %d → %d\n",
-            state1.masterChannels, state2.masterChannels))
+        -- reaper.ShowConsoleMsg(string.format("  State change: Master %d → %d\n",
+        --     state1.masterChannels, state2.masterChannels))
         return false
     end
 
@@ -2377,8 +2436,8 @@ function Generation.compareProjectStates(state1, state2)
     for name, channels1 in pairs(state1.containerChannels) do
         local channels2 = state2.containerChannels[name]
         if channels1 ~= channels2 then
-            reaper.ShowConsoleMsg(string.format("  State change: Container '%s' %d → %d\n",
-                name, channels1, channels2 or 0))
+            -- reaper.ShowConsoleMsg(string.format("  State change: Container '%s' %d → %d\n",
+            --     name, channels1, channels2 or 0))
             return false
         end
     end
@@ -2387,8 +2446,8 @@ function Generation.compareProjectStates(state1, state2)
     for name, channels1 in pairs(state1.groupChannels) do
         local channels2 = state2.groupChannels[name]
         if channels1 ~= channels2 then
-            reaper.ShowConsoleMsg(string.format("  State change: Group '%s' %d → %d\n",
-                name, channels1, channels2 or 0))
+            -- reaper.ShowConsoleMsg(string.format("  State change: Group '%s' %d → %d\n",
+            --     name, channels1, channels2 or 0))
             return false
         end
     end

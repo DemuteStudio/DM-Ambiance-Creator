@@ -102,7 +102,7 @@ local SEVERITY = {
 function RoutingValidator.validateProjectRouting()
     -- CRITICAL: Skip validation if downgrade operation is in progress
     if globals.skipRoutingValidation then
-        reaper.ShowConsoleMsg("INFO: RoutingValidator: Validation skipped (downgrade in progress)\n")
+        -- reaper.ShowConsoleMsg("INFO: RoutingValidator: Validation skipped (downgrade in progress)\n")
         return {}
     end
 
@@ -682,10 +682,10 @@ function RoutingValidator.findMasterFormat(projectTree)
     end
 
     if masterFormat then
-        reaper.ShowConsoleMsg(string.format("INFO: Master format detected: %d real channels (container: %s)\n",
-            maxChannels, masterFormat.container.name or "unknown"))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Master format detected: %d real channels (container: %s)\n",
+        --     maxChannels, masterFormat.container.name or "unknown"))
     else
-        reaper.ShowConsoleMsg("INFO: No master format detected, using stereo default\n")
+        -- reaper.ShowConsoleMsg("INFO: No master format detected, using stereo default\n")
     end
 
     return masterFormat
@@ -1185,11 +1185,11 @@ function RoutingValidator.applyNewRouting(containerTrackInfo, newRouting)
     local trackNumber = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER")
     local trackName = reaper.GetTrackName(containerTrack) or "unnamed"
 
-    reaper.ShowConsoleMsg(string.format("ROUTING FIX: Track verification for '%s'\n", containerTrackInfo.name or "unknown"))
-    reaper.ShowConsoleMsg(string.format("  GUID: %s\n", trackGUID or "nil"))
-    reaper.ShowConsoleMsg(string.format("  Track Number: %d\n", trackNumber))
-    reaper.ShowConsoleMsg(string.format("  Track Name: '%s'\n", trackName))
-    reaper.ShowConsoleMsg(string.format("  Current Channels: %d → Target: %d\n", oldChannels, maxChannel))
+    -- reaper.ShowConsoleMsg(string.format("ROUTING FIX: Track verification for '%s'\n", containerTrackInfo.name or "unknown"))
+    -- reaper.ShowConsoleMsg(string.format("  GUID: %s\n", trackGUID or "nil"))
+    -- reaper.ShowConsoleMsg(string.format("  Track Number: %d\n", trackNumber))
+    -- reaper.ShowConsoleMsg(string.format("  Track Name: '%s'\n", trackName))
+    -- reaper.ShowConsoleMsg(string.format("  Current Channels: %d → Target: %d\n", oldChannels, maxChannel))
 
     -- Check for duplicate track names that might cause confusion
     local duplicateCount = 0
@@ -1200,9 +1200,9 @@ function RoutingValidator.applyNewRouting(containerTrackInfo, newRouting)
             duplicateCount = duplicateCount + 1
         end
     end
-    if duplicateCount > 1 then
-        reaper.ShowConsoleMsg(string.format("  WARNING: Found %d tracks with name '%s'\n", duplicateCount, trackName))
-    end
+    -- if duplicateCount > 1 then
+    --     reaper.ShowConsoleMsg(string.format("  WARNING: Found %d tracks with name '%s'\n", duplicateCount, trackName))
+    -- end
 
     -- CRITICAL FIX: Wrap in Undo block to ensure changes are committed to REAPER
     reaper.Undo_BeginBlock()
@@ -1231,18 +1231,14 @@ function RoutingValidator.applyNewRouting(containerTrackInfo, newRouting)
 
     local foundChannels = foundTrack and reaper.GetMediaTrackInfo_Value(foundTrack, "I_NCHAN") or "N/A"
 
-    reaper.ShowConsoleMsg(string.format("  Verification: Original ref=%d, GUID lookup=%s, Same track: %s\n",
-        actualChannels, tostring(foundChannels), tostring(foundTrack == containerTrack)))
+    -- reaper.ShowConsoleMsg(string.format("  Verification: Original ref=%d, GUID lookup=%s, Same track: %s\n",
+    --     actualChannels, tostring(foundChannels), tostring(foundTrack == containerTrack)))
 
     if actualChannels == maxChannel then
-        reaper.ShowConsoleMsg(string.format("✅ SUCCESS: Container '%s' confirmed at %d channels\n",
-            containerTrackInfo.name or "unknown", actualChannels))
+        -- reaper.ShowConsoleMsg(string.format("✅ SUCCESS: Container '%s' confirmed at %d channels\n",
+        --     containerTrackInfo.name or "unknown", actualChannels))
     else
-        reaper.ShowConsoleMsg(string.format("❌ FAILED: Container '%s' still at %d channels (expected %d), API returned %s\n",
-            containerTrackInfo.name or "unknown", actualChannels, maxChannel, tostring(success)))
-
-        -- MEGATHINK: Enhanced retry with Undo blocks for each attempt
-        reaper.ShowConsoleMsg("MEGATHINK: Forcing multiple update attempts with Undo blocks...\n")
+        -- MEGATHINK: Enhanced retry with Undo blocks for each attempt (silent mode)
         for attempt = 1, 3 do
             reaper.Undo_BeginBlock()
             reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", maxChannel)
@@ -1253,9 +1249,7 @@ function RoutingValidator.applyNewRouting(containerTrackInfo, newRouting)
             reaper.UpdateTimeline()
 
             local checkChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
-            reaper.ShowConsoleMsg(string.format("  Retry %d: %d channels\n", attempt, checkChannels))
             if checkChannels == maxChannel then
-                reaper.ShowConsoleMsg(string.format("✅ SUCCESS on retry %d\n", attempt))
                 break
             end
         end
@@ -2299,7 +2293,7 @@ function RoutingValidator.checkOptimizationOpportunities()
     end
 
     if optimizationNeeded then
-        reaper.ShowConsoleMsg(string.format("INFO: Channel optimization opportunities detected (%d tracks)\n", #savings))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Channel optimization opportunities detected (%d tracks)\n", #savings))
 
         -- Auto-optimize if enabled, otherwise suggest
         if globals.autoOptimizeChannels then
@@ -2308,7 +2302,7 @@ function RoutingValidator.checkOptimizationOpportunities()
             RoutingValidator.showOptimizationSuggestion(savings)
         end
     else
-        reaper.ShowConsoleMsg("INFO: Project channel allocation is already optimal.\n")
+        -- reaper.ShowConsoleMsg("INFO: Project channel allocation is already optimal.\n")
     end
 end
 
@@ -2317,8 +2311,8 @@ function RoutingValidator.applyChannelOptimization(savings)
     reaper.Undo_BeginBlock()
 
     for _, saving in ipairs(savings) do
-        reaper.ShowConsoleMsg(string.format("INFO: Optimizing track '%s': %d → %d channels\n",
-            saving.track.name, saving.current, saving.required))
+        -- reaper.ShowConsoleMsg(string.format("INFO: Optimizing track '%s': %d → %d channels\n",
+        --     saving.track.name, saving.current, saving.required))
         reaper.SetMediaTrackInfo_Value(saving.track.track, "I_NCHAN", saving.required)
     end
 
@@ -2335,8 +2329,8 @@ function RoutingValidator.showOptimizationSuggestion(savings)
         totalSavings = totalSavings + saving.savings
     end
 
-    reaper.ShowConsoleMsg(string.format("SUGGESTION: %d channels could be saved across %d tracks. Enable auto-optimization or run manual optimization.\n",
-        totalSavings, #savings))
+    -- reaper.ShowConsoleMsg(string.format("SUGGESTION: %d channels could be saved across %d tracks. Enable auto-optimization or run manual optimization.\n",
+    --     totalSavings, #savings))
 end
 
 -- Get current project track cache (for external access)

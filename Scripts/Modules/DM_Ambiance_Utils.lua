@@ -1749,7 +1749,7 @@ function Utils.optimizeProjectChannelCount()
         return
     end
 
-    reaper.ShowConsoleMsg("INFO: Starting global channel optimization...\n")
+    -- reaper.ShowConsoleMsg("INFO: Starting global channel optimization...\n")
     reaper.Undo_BeginBlock()
 
     -- Calculate actual channel usage for the entire project
@@ -1759,7 +1759,7 @@ function Utils.optimizeProjectChannelCount()
     Utils.applyChannelOptimizations(actualUsage)
 
     reaper.Undo_EndBlock("Optimize Project Channel Count", -1)
-    reaper.ShowConsoleMsg("INFO: Global channel optimization completed.\n")
+    -- reaper.ShowConsoleMsg("INFO: Global channel optimization completed.\n")
 end
 
 -- Calculate actual channel usage across the project
@@ -1818,8 +1818,8 @@ function Utils.applyChannelOptimizations(usage)
         if containerTrack then
             local currentChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
             if currentChannels > info.required then
-                reaper.ShowConsoleMsg(string.format("INFO: Optimizing container '%s': %d → %d channels\n",
-                    containerName, currentChannels, info.required))
+                -- reaper.ShowConsoleMsg(string.format("INFO: Optimizing container '%s': %d → %d channels\n",
+                --     containerName, currentChannels, info.required))
                 reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", info.required)
             end
         end
@@ -1831,8 +1831,8 @@ function Utils.applyChannelOptimizations(usage)
         if groupTrack then
             local currentChannels = reaper.GetMediaTrackInfo_Value(groupTrack, "I_NCHAN")
             if currentChannels > info.required then
-                reaper.ShowConsoleMsg(string.format("INFO: Optimizing group '%s': %d → %d channels\n",
-                    groupName, currentChannels, info.required))
+                -- reaper.ShowConsoleMsg(string.format("INFO: Optimizing group '%s': %d → %d channels\n",
+                --     groupName, currentChannels, info.required))
                 reaper.SetMediaTrackInfo_Value(groupTrack, "I_NCHAN", info.required)
             end
         end
@@ -1843,8 +1843,8 @@ function Utils.applyChannelOptimizations(usage)
     if masterTrack then
         local currentChannels = reaper.GetMediaTrackInfo_Value(masterTrack, "I_NCHAN")
         if currentChannels > usage.master then
-            reaper.ShowConsoleMsg(string.format("INFO: Optimizing master track: %d → %d channels\n",
-                currentChannels, usage.master))
+            -- reaper.ShowConsoleMsg(string.format("INFO: Optimizing master track: %d → %d channels\n",
+            --     currentChannels, usage.master))
             reaper.SetMediaTrackInfo_Value(masterTrack, "I_NCHAN", usage.master)
         end
     end
