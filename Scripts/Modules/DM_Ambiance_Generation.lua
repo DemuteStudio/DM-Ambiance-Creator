@@ -1037,20 +1037,17 @@ function Generation.generateGroups()
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
 
-    -- CRITICAL: Force a final recalculation after all containers have been processed
-    -- This ensures we see the updated channelModes and real track counts
-    reaper.ShowConsoleMsg("INFO: Final recalculation after all container updates...\n")
+    -- MEGATHINK FIX: Complete project stabilization after generation
+    reaper.ShowConsoleMsg("INFO: Starting project stabilization after generation...\n")
 
     -- Small delay to ensure all track operations are complete
     reaper.UpdateArrange()
 
-    Generation.recalculateChannelRequirements()
-
-    -- Check for routing conflicts after generation (if not skipped)
+    -- Use fix-point stabilization for complete consistency
     if not globals.skipRoutingValidation then
-        Generation.checkAndResolveConflicts()
+        Generation.stabilizeProjectConfiguration()
     else
-        reaper.ShowConsoleMsg("INFO: Routing validation skipped during downgrade operation\n")
+        reaper.ShowConsoleMsg("INFO: Stabilization skipped during special operations\n")
         -- Clear the skip flag for next time
         globals.skipRoutingValidation = false
     end
@@ -1808,7 +1805,32 @@ function Generation.applyChannelRequirements(containerReqs, groupReqs, masterReq
             if currentChannels ~= req.physicalChannels then
                 reaper.ShowConsoleMsg(string.format("APPLY: Updating container '%s' from %d to %d channels\n",
                     containerName, currentChannels, req.physicalChannels))
+
+                -- Apply change with verification
                 reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", req.physicalChannels)
+
+                -- MEGATHINK: Verify the change actually took effect
+                local verifyChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+                if verifyChannels == req.physicalChannels then
+                    reaper.ShowConsoleMsg(string.format("✅ APPLY SUCCESS: Container '%s' confirmed at %d channels\n",
+                        containerName, verifyChannels))
+                else
+                    reaper.ShowConsoleMsg(string.format("❌ APPLY FAILED: Container '%s' still at %d channels (expected %d)\n",
+                        containerName, verifyChannels, req.physicalChannels))
+
+                    -- Force multiple attempts with UI refresh
+                    for attempt = 1, 3 do
+                        reaper.ShowConsoleMsg(string.format("MEGATHINK: Retry attempt %d for container '%s'\n", attempt, containerName))
+                        reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", req.physicalChannels)
+                        reaper.UpdateArrange()
+                        reaper.TrackList_AdjustWindows(false)
+                        local retryCheck = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+                        if retryCheck == req.physicalChannels then
+                            reaper.ShowConsoleMsg(string.format("✅ SUCCESS on retry %d\n", attempt))
+                            break
+                        end
+                    end
+                end
             else
                 reaper.ShowConsoleMsg(string.format("APPLY: Container '%s' already has %d channels\n",
                     containerName, currentChannels))
@@ -2114,15 +2136,15 @@ function Generation.detectAndHandleConfigurationChanges(container)
 
                 Generation.propagateConfigurationDowngrade(oldChannelCount, newChannelCount, currentChannelMode)
 
-                -- ULTRATHINK FIX: Force immediate recalculation after downgrade
-                reaper.ShowConsoleMsg("INFO: IMMEDIATE recalculation after downgrade...\n")
+                -- MEGATHINK FIX: Force complete stabilization after downgrade
+                reaper.ShowConsoleMsg("INFO: Starting complete project stabilization after downgrade...\n")
                 reaper.UpdateArrange()
-                Generation.recalculateChannelRequirements()
 
-                -- CRITICAL: Clear skip flag and run validation to catch other containers with bad routing
+                -- Clear skip flag before stabilization
                 globals.skipRoutingValidation = false
-                reaper.ShowConsoleMsg("INFO: Running validation to detect other routing issues...\n")
-                Generation.checkAndResolveConflicts()
+
+                -- Run fix-point stabilization until convergence
+                Generation.stabilizeProjectConfiguration()
 
             elseif oldChannelCount < newChannelCount then
                 -- TRUE UPGRADE DETECTED
@@ -2245,6 +2267,133 @@ function Generation.findContainerTrackRobust(container)
 
     reaper.ShowConsoleMsg(string.format("DEBUG: FAILED to find container track '%s'\n", containerName))
     return nil
+end
+
+-- ===================================================================
+-- FIX-POINT STABILIZATION SYSTEM
+-- ===================================================================
+
+-- Stabilize project configuration until convergence (Fix-Point approach)
+function Generation.stabilizeProjectConfiguration(lightMode)
+    local maxIterations = lightMode and 2 or 5  -- Light mode: fewer iterations
+    local iteration = 0
+    local hasChanges = true
+
+    reaper.ShowConsoleMsg(string.format("INFO: Starting %s fix-point stabilization...\n", lightMode and "light" or "full"))
+
+    while hasChanges and iteration < maxIterations do
+        iteration = iteration + 1
+        reaper.ShowConsoleMsg(string.format("INFO: Stabilization iteration %d/%d\n", iteration, maxIterations))
+
+        -- Capture project state before changes
+        local startState = Generation.captureProjectState()
+
+        -- STEP 1: Validate and resolve conflicts FIRST (prevents overwrites)
+        if not lightMode or iteration > 1 then
+            reaper.ShowConsoleMsg("  → Validating and resolving conflicts...\n")
+            Generation.checkAndResolveConflicts()
+        else
+            reaper.ShowConsoleMsg("  → Skipping validation in light mode first iteration\n")
+        end
+
+        -- STEP 2: Recalculate channel requirements bottom-up AFTER fixes
+        reaper.ShowConsoleMsg("  → Recalculating channel requirements...\n")
+        Generation.recalculateChannelRequirements()
+
+        -- Capture project state after changes
+        local endState = Generation.captureProjectState()
+
+        -- Check if anything changed
+        hasChanges = not Generation.compareProjectStates(startState, endState)
+
+        if hasChanges then
+            reaper.ShowConsoleMsg(string.format("  → Changes detected, continuing iteration %d\n", iteration + 1))
+        else
+            reaper.ShowConsoleMsg("  → No changes detected, system is stable!\n")
+        end
+
+        -- Force update REAPER display between iterations
+        reaper.UpdateArrange()
+    end
+
+    if iteration >= maxIterations and hasChanges then
+        reaper.ShowConsoleMsg("WARNING: Stabilization reached max iterations, may not be fully stable\n")
+    else
+        reaper.ShowConsoleMsg(string.format("SUCCESS: Project stabilized after %d iterations\n", iteration))
+    end
+
+    return not hasChanges  -- Return true if fully stabilized
+end
+
+-- Capture current project state for comparison
+function Generation.captureProjectState()
+    local state = {
+        containerChannels = {},
+        groupChannels = {},
+        masterChannels = 0
+    }
+
+    -- Capture all container track channel counts
+    for _, group in ipairs(globals.groups or {}) do
+        for _, container in ipairs(group.containers or {}) do
+            if container.name then
+                local containerTrack = Generation.findContainerTrackRobust(container)
+                if containerTrack then
+                    state.containerChannels[container.name] = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+                end
+            end
+        end
+
+        -- Capture group track channel count
+        if group.name then
+            local groupTrack = Generation.findGroupTrackRobust(group.name)
+            if groupTrack then
+                state.groupChannels[group.name] = reaper.GetMediaTrackInfo_Value(groupTrack, "I_NCHAN")
+            end
+        end
+    end
+
+    -- Capture master track channels
+    local masterTrack = reaper.GetMasterTrack(0)
+    if masterTrack then
+        state.masterChannels = reaper.GetMediaTrackInfo_Value(masterTrack, "I_NCHAN")
+    end
+
+    return state
+end
+
+-- Compare two project states to detect changes
+function Generation.compareProjectStates(state1, state2)
+    if not state1 or not state2 then return false end
+
+    -- Compare master channels
+    if state1.masterChannels ~= state2.masterChannels then
+        reaper.ShowConsoleMsg(string.format("  State change: Master %d → %d\n",
+            state1.masterChannels, state2.masterChannels))
+        return false
+    end
+
+    -- Compare container channels
+    for name, channels1 in pairs(state1.containerChannels) do
+        local channels2 = state2.containerChannels[name]
+        if channels1 ~= channels2 then
+            reaper.ShowConsoleMsg(string.format("  State change: Container '%s' %d → %d\n",
+                name, channels1, channels2 or 0))
+            return false
+        end
+    end
+
+    -- Compare group channels
+    for name, channels1 in pairs(state1.groupChannels) do
+        local channels2 = state2.groupChannels[name]
+        if channels1 ~= channels2 then
+            reaper.ShowConsoleMsg(string.format("  State change: Group '%s' %d → %d\n",
+                name, channels1, channels2 or 0))
+            return false
+        end
+    end
+
+    return true  -- No changes detected
 end
 
 -- Centralized routing validation and issue resolution

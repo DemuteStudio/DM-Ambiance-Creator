@@ -1170,9 +1170,96 @@ end
 function RoutingValidator.applyNewRouting(containerTrackInfo, newRouting)
     local containerTrack = containerTrackInfo.track
 
-    -- Update container's channel count
+    -- Update container's channel count with REAPER even constraint
     local maxChannel = math.max(table.unpack(newRouting))
-    reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", maxChannel)
+
+    -- Apply REAPER constraint: channel counts must be even
+    if maxChannel % 2 == 1 then
+        maxChannel = maxChannel + 1
+    end
+
+    local oldChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+
+    -- MEGATHINK: Comprehensive track identification logging
+    local trackGUID = reaper.GetTrackGUID(containerTrack)
+    local trackNumber = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER")
+    local trackName = reaper.GetTrackName(containerTrack) or "unnamed"
+
+    reaper.ShowConsoleMsg(string.format("ROUTING FIX: Track verification for '%s'\n", containerTrackInfo.name or "unknown"))
+    reaper.ShowConsoleMsg(string.format("  GUID: %s\n", trackGUID or "nil"))
+    reaper.ShowConsoleMsg(string.format("  Track Number: %d\n", trackNumber))
+    reaper.ShowConsoleMsg(string.format("  Track Name: '%s'\n", trackName))
+    reaper.ShowConsoleMsg(string.format("  Current Channels: %d → Target: %d\n", oldChannels, maxChannel))
+
+    -- Check for duplicate track names that might cause confusion
+    local duplicateCount = 0
+    for i = 0, reaper.CountTracks(0) - 1 do
+        local track = reaper.GetTrack(0, i)
+        local name = reaper.GetTrackName(track) or "unnamed"
+        if name == trackName then
+            duplicateCount = duplicateCount + 1
+        end
+    end
+    if duplicateCount > 1 then
+        reaper.ShowConsoleMsg(string.format("  WARNING: Found %d tracks with name '%s'\n", duplicateCount, trackName))
+    end
+
+    -- CRITICAL FIX: Wrap in Undo block to ensure changes are committed to REAPER
+    reaper.Undo_BeginBlock()
+
+    -- Apply the change
+    local success = reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", maxChannel)
+
+    -- MEGATHINK: Force REAPER UI synchronization immediately after change
+    reaper.UpdateArrange()
+    reaper.TrackList_AdjustWindows(false)
+
+    -- MEGATHINK: Immediate verification with fresh track lookup
+    local actualChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+
+    -- Also try to find track by GUID to verify it's the same track
+    local foundTrack = nil
+    if trackGUID then
+        for i = 0, reaper.CountTracks(0) - 1 do
+            local track = reaper.GetTrack(0, i)
+            if reaper.GetTrackGUID(track) == trackGUID then
+                foundTrack = track
+                break
+            end
+        end
+    end
+
+    local foundChannels = foundTrack and reaper.GetMediaTrackInfo_Value(foundTrack, "I_NCHAN") or "N/A"
+
+    reaper.ShowConsoleMsg(string.format("  Verification: Original ref=%d, GUID lookup=%s, Same track: %s\n",
+        actualChannels, tostring(foundChannels), tostring(foundTrack == containerTrack)))
+
+    if actualChannels == maxChannel then
+        reaper.ShowConsoleMsg(string.format("✅ SUCCESS: Container '%s' confirmed at %d channels\n",
+            containerTrackInfo.name or "unknown", actualChannels))
+    else
+        reaper.ShowConsoleMsg(string.format("❌ FAILED: Container '%s' still at %d channels (expected %d), API returned %s\n",
+            containerTrackInfo.name or "unknown", actualChannels, maxChannel, tostring(success)))
+
+        -- MEGATHINK: Enhanced retry with Undo blocks for each attempt
+        reaper.ShowConsoleMsg("MEGATHINK: Forcing multiple update attempts with Undo blocks...\n")
+        for attempt = 1, 3 do
+            reaper.Undo_BeginBlock()
+            reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", maxChannel)
+            reaper.Undo_EndBlock(string.format("Retry Channel Fix %d", attempt), -1)
+
+            reaper.UpdateArrange()
+            reaper.TrackList_AdjustWindows(false)
+            reaper.UpdateTimeline()
+
+            local checkChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+            reaper.ShowConsoleMsg(string.format("  Retry %d: %d channels\n", attempt, checkChannels))
+            if checkChannels == maxChannel then
+                reaper.ShowConsoleMsg(string.format("✅ SUCCESS on retry %d\n", attempt))
+                break
+            end
+        end
+    end
 
     -- Update child track routing
     local childIndex = 1
@@ -1204,6 +1291,13 @@ function RoutingValidator.applyNewRouting(containerTrackInfo, newRouting)
             end
         end
     end
+
+    -- CRITICAL FIX: Close Undo block to commit all changes to REAPER
+    reaper.Undo_EndBlock("Fix Container Routing", -1)
+
+    -- MEGATHINK: Final UI synchronization to ensure changes are visible
+    reaper.UpdateArrange()
+    reaper.UpdateTimeline()
 
     return true
 end
