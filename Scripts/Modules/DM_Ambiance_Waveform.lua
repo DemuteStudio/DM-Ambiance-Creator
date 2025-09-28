@@ -2067,4 +2067,236 @@ function Waveform.isMouseAboutToInteractWithWaveform()
     return false
 end
 
+-- Convert dB to linear amplitude
+local function dbToLinear(db)
+    return 10 ^ (db / 20)
+end
+
+-- Auto-detect areas based on gate parameters
+function Waveform.autoDetectAreas(item, itemKey)
+    if not item or not item.filePath or item.filePath == "" then
+        return false
+    end
+
+    -- Check if file exists
+    local file = io.open(item.filePath, "r")
+    if not file then
+        return false
+    end
+    file:close()
+
+    -- Get gate parameters with defaults
+    local openThresholdDb = item.gateOpenThreshold or -20
+    local closeThresholdDb = item.gateCloseThreshold or -30
+    local minLengthMs = item.gateMinLength or 100
+    local startOffsetMs = item.gateStartOffset or 0
+    local endOffsetMs = item.gateEndOffset or 0
+
+    -- Convert parameters
+    local openThreshold = dbToLinear(openThresholdDb)
+    local closeThreshold = dbToLinear(closeThresholdDb)
+    local minLength = minLengthMs / 1000.0  -- Convert to seconds
+    local startOffset = startOffsetMs / 1000.0
+    local endOffset = endOffsetMs / 1000.0
+
+    -- Create PCM source
+    local source = reaper.PCM_Source_CreateFromFile(item.filePath)
+    if not source then
+        return false
+    end
+
+    local samplerate = reaper.GetMediaSourceSampleRate(source)
+    local numChannels = math.floor(reaper.GetMediaSourceNumChannels(source) or 1)
+    local totalLength = reaper.GetMediaSourceLength(source, false)
+
+    -- Calculate the portion to analyze
+    local analyzeStart = item.startOffset or 0
+    local analyzeLength = item.length or (totalLength - analyzeStart)
+    analyzeLength = math.min(analyzeLength, totalLength - analyzeStart)
+
+    -- Create temporary item for audio accessor
+    local tempTrack = reaper.GetTrack(0, 0)
+    if not tempTrack then
+        reaper.InsertTrackAtIndex(0, false)
+        tempTrack = reaper.GetTrack(0, 0)
+    end
+
+    if not tempTrack then
+        reaper.PCM_Source_Destroy(source)
+        return false
+    end
+
+    local tempItem = reaper.AddMediaItemToTrack(tempTrack)
+    if not tempItem then
+        reaper.PCM_Source_Destroy(source)
+        return false
+    end
+
+    reaper.SetMediaItemInfo_Value(tempItem, "D_POSITION", 0)
+    reaper.SetMediaItemInfo_Value(tempItem, "D_LENGTH", analyzeLength)
+
+    local tempTake = reaper.AddTakeToMediaItem(tempItem)
+    if not tempTake then
+        reaper.DeleteTrackMediaItem(tempTrack, tempItem)
+        reaper.PCM_Source_Destroy(source)
+        return false
+    end
+
+    reaper.SetMediaItemTake_Source(tempTake, source)
+    reaper.SetMediaItemTakeInfo_Value(tempTake, "D_STARTOFFS", analyzeStart)
+    reaper.UpdateItemInProject(tempItem)
+
+    -- Create audio accessor
+    local accessor = reaper.CreateTakeAudioAccessor(tempTake)
+    if not accessor then
+        reaper.DeleteTrackMediaItem(tempTrack, tempItem)
+        return false
+    end
+
+    -- Analysis parameters
+    local windowSize = math.max(1, math.floor(samplerate * 0.01))  -- 10ms window for RMS
+    local hopSize = math.max(1, math.floor(samplerate * 0.005))    -- 5ms hop for smoother detection
+    local totalSamples = math.floor(analyzeLength * samplerate)
+
+    -- Audio buffer
+    local bufferSize = windowSize * numChannels
+    local audioBuffer = reaper.new_array(bufferSize * 2)
+
+    -- Gate state
+    local gateOpen = false
+    local areaStartTime = 0
+    local areas = {}
+
+    -- Process audio in chunks
+    for samplePos = 0, totalSamples - windowSize, hopSize do
+        local currentTime = samplePos / samplerate
+
+        -- Clear buffer
+        audioBuffer.clear()
+
+        -- Read audio samples
+        local startTime = currentTime
+        local ret = reaper.GetAudioAccessorSamples(
+            accessor,
+            samplerate,
+            numChannels,
+            startTime,
+            windowSize,
+            audioBuffer
+        )
+
+        -- Convert buffer to table
+        local samples = audioBuffer.table(1, windowSize * numChannels)
+
+        if samples and #samples > 0 then
+            -- Calculate RMS level across all channels
+            local sumSquares = 0
+            local sampleCount = 0
+
+            for s = 0, windowSize - 1 do
+                for ch = 1, numChannels do
+                    local idx = s * numChannels + ch
+                    if samples[idx] then
+                        local value = samples[idx]
+                        sumSquares = sumSquares + (value * value)
+                        sampleCount = sampleCount + 1
+                    end
+                end
+            end
+
+            local rmsLevel = 0
+            if sampleCount > 0 then
+                rmsLevel = math.sqrt(sumSquares / sampleCount)
+            end
+
+            -- Gate logic
+            if not gateOpen then
+                -- Gate is closed, check for opening
+                if rmsLevel > openThreshold then
+                    gateOpen = true
+                    areaStartTime = math.max(0, currentTime - startOffset)
+                end
+            else
+                -- Gate is open, check for closing
+                if rmsLevel < closeThreshold then
+                    -- Check if minimum length has been reached
+                    local gateLength = currentTime - areaStartTime
+                    if gateLength >= minLength then
+                        local areaEndTime = math.min(analyzeLength, currentTime + endOffset)
+
+                        -- Create new area
+                        if areaEndTime > areaStartTime then
+                            table.insert(areas, {
+                                startPos = areaStartTime,
+                                endPos = areaEndTime,
+                                name = string.format("Gate %d", #areas + 1)
+                            })
+                        end
+
+                        gateOpen = false
+                    end
+                end
+            end
+        end
+
+        -- Limit number of areas to prevent UI issues
+        if #areas >= 100 then
+            break
+        end
+    end
+
+    -- Handle case where gate is still open at the end
+    if gateOpen then
+        local gateLength = analyzeLength - areaStartTime
+        if gateLength >= minLength then
+            local areaEndTime = math.min(analyzeLength, analyzeLength + endOffset)
+            if areaEndTime > areaStartTime then
+                table.insert(areas, {
+                    startPos = areaStartTime,
+                    endPos = areaEndTime,
+                    name = string.format("Gate %d", #areas + 1)
+                })
+            end
+        end
+    end
+
+    -- Cleanup
+    reaper.DestroyAudioAccessor(accessor)
+    reaper.DeleteTrackMediaItem(tempTrack, tempItem)
+
+    -- Merge areas that are too close together (< 50ms apart)
+    local mergedAreas = {}
+    local mergeThreshold = 0.05  -- 50ms
+
+    for i, area in ipairs(areas) do
+        local merged = false
+
+        for j, prevArea in ipairs(mergedAreas) do
+            if area.startPos - prevArea.endPos < mergeThreshold then
+                -- Merge with previous area
+                prevArea.endPos = area.endPos
+                merged = true
+                break
+            end
+        end
+
+        if not merged then
+            table.insert(mergedAreas, {
+                startPos = area.startPos,
+                endPos = area.endPos,
+                name = area.name
+            })
+        end
+    end
+
+    -- Store detected areas
+    if itemKey then
+        globals.waveformAreas[itemKey] = mergedAreas
+        -- Also store in item for persistence
+        item.areas = mergedAreas
+    end
+
+    return true, #mergedAreas
+end
+
 return Waveform

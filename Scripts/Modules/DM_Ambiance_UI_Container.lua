@@ -364,6 +364,80 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.Text(globals.ctx, "File: No path specified")
             imgui.PopStyleColor(globals.ctx, 1)
         end
+
+        -- Gate detection controls (only show if file exists)
+        if fileExists and filePathValid then
+            imgui.Spacing(globals.ctx)
+
+            -- Initialize gate parameters with defaults if not set
+            if selectedItem.gateOpenThreshold == nil then selectedItem.gateOpenThreshold = -20 end
+            if selectedItem.gateCloseThreshold == nil then selectedItem.gateCloseThreshold = -30 end
+            if selectedItem.gateMinLength == nil then selectedItem.gateMinLength = 100 end
+            if selectedItem.gateStartOffset == nil then selectedItem.gateStartOffset = 0 end
+            if selectedItem.gateEndOffset == nil then selectedItem.gateEndOffset = 0 end
+
+            -- Gate detection title
+            imgui.Text(globals.ctx, "Auto Area Detection:")
+
+            -- First line: Thresholds and Min Length
+            local itemChanged = false
+
+            imgui.PushItemWidth(globals.ctx, 80)
+            local openChanged, newOpenThreshold = imgui.SliderDouble(globals.ctx, "Open##" .. containerId, selectedItem.gateOpenThreshold, -60, 0, "%.1f dB")
+            if openChanged then
+                selectedItem.gateOpenThreshold = newOpenThreshold
+                itemChanged = true
+            end
+
+            imgui.SameLine(globals.ctx)
+            local closeChanged, newCloseThreshold = imgui.SliderDouble(globals.ctx, "Close##" .. containerId, selectedItem.gateCloseThreshold, -60, 0, "%.1f dB")
+            if closeChanged then
+                selectedItem.gateCloseThreshold = newCloseThreshold
+                itemChanged = true
+            end
+
+            imgui.SameLine(globals.ctx)
+            local minLenChanged, newMinLength = imgui.SliderDouble(globals.ctx, "Min##" .. containerId, selectedItem.gateMinLength, 0, 5000, "%.0f ms")
+            if minLenChanged then
+                selectedItem.gateMinLength = newMinLength
+                itemChanged = true
+            end
+            imgui.PopItemWidth(globals.ctx)
+
+            -- Second line: Offsets and Auto Detect button
+            imgui.PushItemWidth(globals.ctx, 60)
+            local startOffsetChanged, newStartOffset = imgui.InputDouble(globals.ctx, "Start##" .. containerId, selectedItem.gateStartOffset, 0, 0, "%.0f ms")
+            if startOffsetChanged then
+                selectedItem.gateStartOffset = newStartOffset
+                itemChanged = true
+            end
+
+            imgui.SameLine(globals.ctx)
+            local endOffsetChanged, newEndOffset = imgui.InputDouble(globals.ctx, "End##" .. containerId, selectedItem.gateEndOffset, 0, 0, "%.0f ms")
+            if endOffsetChanged then
+                selectedItem.gateEndOffset = newEndOffset
+                itemChanged = true
+            end
+            imgui.PopItemWidth(globals.ctx)
+
+            imgui.SameLine(globals.ctx)
+            if imgui.Button(globals.ctx, "Auto Detect##" .. containerId, 80, 0) then
+                itemChanged = true
+            end
+
+            -- Auto-trigger detection when any parameter changes
+            if itemChanged and globals.Waveform and globals.Waveform.autoDetectAreas then
+                local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
+                local success, numAreas = globals.Waveform.autoDetectAreas(selectedItem, itemKey)
+
+                if success then
+                    -- Show brief feedback
+                    if numAreas > 0 then
+                        -- Could add a tooltip or brief message here if needed
+                    end
+                end
+            end
+        end
         
         -- Note: We don't clear the marker when switching files anymore
         -- Each file keeps its own marker until explicitly cleared with double-click
