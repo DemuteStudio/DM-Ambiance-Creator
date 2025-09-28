@@ -90,6 +90,11 @@ local function loop()
         globals.Waveform.updatePlaybackPosition()
     end
 
+    -- Process debounced gate detection requests
+    if globals.Waveform and globals.Waveform.processGateDetectionDebounce then
+        globals.Waveform.processGateDetectionDebounce()
+    end
+
     -- Render the main window; returns 'open' (true if window is open)
     local open = UI.ShowMainWindow(true)
     

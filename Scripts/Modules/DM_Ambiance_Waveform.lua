@@ -2165,6 +2165,9 @@ function Waveform.autoDetectAreas(item, itemKey)
     -- Gate state
     local gateOpen = false
     local areaStartTime = 0
+    local gateOpenTime = 0
+    local belowThresholdCount = 0  -- Count consecutive samples below close threshold
+    local belowThresholdRequired = 3  -- Require N consecutive samples below threshold to close
     local areas = {}
 
     -- Process audio in chunks
@@ -2214,26 +2217,39 @@ function Waveform.autoDetectAreas(item, itemKey)
                 -- Gate is closed, check for opening
                 if rmsLevel > openThreshold then
                     gateOpen = true
-                    areaStartTime = math.max(0, currentTime - startOffset)
+                    -- Start offset: positive values make the start earlier (subtract from current time)
+                    areaStartTime = math.max(0, currentTime - (startOffset / 1000.0))
+                    gateOpenTime = currentTime  -- Remember when gate actually opened for length calculation
+                    belowThresholdCount = 0  -- Reset close counter
                 end
             else
                 -- Gate is open, check for closing
-                if rmsLevel < closeThreshold then
-                    -- Check if minimum length has been reached
-                    local gateLength = currentTime - areaStartTime
-                    if gateLength >= minLength then
-                        local areaEndTime = math.min(analyzeLength, currentTime + endOffset)
+                local actualGateLength = currentTime - gateOpenTime  -- Time since gate opened
 
-                        -- Create new area
-                        if areaEndTime > areaStartTime then
-                            table.insert(areas, {
-                                startPos = areaStartTime,
-                                endPos = areaEndTime,
-                                name = string.format("Gate %d", #areas + 1)
-                            })
+                -- Only check for closing if minimum length has been reached
+                if actualGateLength >= minLength then
+                    if rmsLevel < closeThreshold then
+                        belowThresholdCount = belowThresholdCount + 1
+
+                        -- Close gate only after consecutive samples below threshold
+                        if belowThresholdCount >= belowThresholdRequired then
+                            local areaEndTime = math.min(analyzeLength, currentTime + (endOffset / 1000.0))
+
+                            -- Create new area
+                            if areaEndTime > areaStartTime then
+                                table.insert(areas, {
+                                    startPos = areaStartTime,
+                                    endPos = areaEndTime,
+                                    name = string.format("Variation %d", #areas + 1)
+                                })
+                            end
+
+                            gateOpen = false
+                            belowThresholdCount = 0
                         end
-
-                        gateOpen = false
+                    else
+                        -- Reset counter if signal goes back above threshold
+                        belowThresholdCount = 0
                     end
                 end
             end
@@ -2247,14 +2263,14 @@ function Waveform.autoDetectAreas(item, itemKey)
 
     -- Handle case where gate is still open at the end
     if gateOpen then
-        local gateLength = analyzeLength - areaStartTime
-        if gateLength >= minLength then
-            local areaEndTime = math.min(analyzeLength, analyzeLength + endOffset)
+        local actualGateLength = analyzeLength - gateOpenTime
+        if actualGateLength >= minLength then
+            local areaEndTime = math.min(analyzeLength, analyzeLength + (endOffset / 1000.0))
             if areaEndTime > areaStartTime then
                 table.insert(areas, {
                     startPos = areaStartTime,
                     endPos = areaEndTime,
-                    name = string.format("Gate %d", #areas + 1)
+                    name = string.format("Variation %d", #areas + 1)
                 })
             end
         end
@@ -2297,6 +2313,60 @@ function Waveform.autoDetectAreas(item, itemKey)
     end
 
     return true, #mergedAreas
+end
+
+-- Process debounced gate detection requests
+function Waveform.processGateDetectionDebounce()
+    if not globals.gateDetectionDebounce then
+        return
+    end
+
+    local currentTime = reaper.time_precise()
+    local debounceDelay = 0.3  -- 300ms delay after last change
+
+    for itemKey, debounceData in pairs(globals.gateDetectionDebounce) do
+        if currentTime - debounceData.timestamp >= debounceDelay then
+            -- Check if parameters have actually changed since last detection
+            local item = debounceData.item
+            local shouldDetect = false
+
+            -- Check if this is the first detection for this item
+            if not item.lastGateParams then
+                shouldDetect = true
+            else
+                -- Compare with last detection parameters
+                local lastParams = item.lastGateParams
+                local currentParams = debounceData.params
+
+                if lastParams.openThreshold ~= currentParams.openThreshold or
+                   lastParams.closeThreshold ~= currentParams.closeThreshold or
+                   lastParams.minLength ~= currentParams.minLength or
+                   lastParams.startOffset ~= currentParams.startOffset or
+                   lastParams.endOffset ~= currentParams.endOffset then
+                    shouldDetect = true
+                end
+            end
+
+            if shouldDetect then
+                -- Perform the detection
+                local success, numAreas = Waveform.autoDetectAreas(item, itemKey)
+
+                if success then
+                    -- Store the parameters used for this detection
+                    item.lastGateParams = {
+                        openThreshold = debounceData.params.openThreshold,
+                        closeThreshold = debounceData.params.closeThreshold,
+                        minLength = debounceData.params.minLength,
+                        startOffset = debounceData.params.startOffset,
+                        endOffset = debounceData.params.endOffset
+                    }
+                end
+            end
+
+            -- Remove from debounce queue
+            globals.gateDetectionDebounce[itemKey] = nil
+        end
+    end
 end
 
 return Waveform

@@ -376,8 +376,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             if selectedItem.gateStartOffset == nil then selectedItem.gateStartOffset = 0 end
             if selectedItem.gateEndOffset == nil then selectedItem.gateEndOffset = 0 end
 
-            -- Gate detection title
-            imgui.Text(globals.ctx, "Auto Area Detection:")
+            -- Gate detection title with Auto Detect button
+            imgui.Text(globals.ctx, "Auto Variation Detection:")
+            imgui.SameLine(globals.ctx)
+            local buttonPressed = imgui.Button(globals.ctx, "Auto Detect##" .. containerId, 80, 0)
 
             -- First line: Thresholds and Min Length
             local itemChanged = false
@@ -397,14 +399,16 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             end
 
             imgui.SameLine(globals.ctx)
-            local minLenChanged, newMinLength = imgui.SliderDouble(globals.ctx, "Min##" .. containerId, selectedItem.gateMinLength, 0, 5000, "%.0f ms")
+            local minLenChanged, newMinLength = imgui.SliderDouble(globals.ctx, "Min Length##" .. containerId, selectedItem.gateMinLength, 0, 5000, "%.0f ms")
             if minLenChanged then
                 selectedItem.gateMinLength = newMinLength
                 itemChanged = true
             end
             imgui.PopItemWidth(globals.ctx)
 
-            -- Second line: Offsets and Auto Detect button
+            -- Second line: Offsets
+            imgui.Text(globals.ctx, "Offset:")
+            imgui.SameLine(globals.ctx)
             imgui.PushItemWidth(globals.ctx, 60)
             local startOffsetChanged, newStartOffset = imgui.InputDouble(globals.ctx, "Start##" .. containerId, selectedItem.gateStartOffset, 0, 0, "%.0f ms")
             if startOffsetChanged then
@@ -419,22 +423,46 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 itemChanged = true
             end
             imgui.PopItemWidth(globals.ctx)
-
-            imgui.SameLine(globals.ctx)
-            if imgui.Button(globals.ctx, "Auto Detect##" .. containerId, 80, 0) then
+            if buttonPressed then
                 itemChanged = true
             end
 
             -- Auto-trigger detection when any parameter changes
             if itemChanged and globals.Waveform and globals.Waveform.autoDetectAreas then
                 local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
-                local success, numAreas = globals.Waveform.autoDetectAreas(selectedItem, itemKey)
 
-                if success then
-                    -- Show brief feedback
-                    if numAreas > 0 then
-                        -- Could add a tooltip or brief message here if needed
+                if buttonPressed then
+                    -- Button was pressed: immediate detection (no debouncing)
+                    local success, numAreas = globals.Waveform.autoDetectAreas(selectedItem, itemKey)
+                    if success then
+                        -- Store the parameters used for this detection
+                        selectedItem.lastGateParams = {
+                            openThreshold = selectedItem.gateOpenThreshold,
+                            closeThreshold = selectedItem.gateCloseThreshold,
+                            minLength = selectedItem.gateMinLength,
+                            startOffset = selectedItem.gateStartOffset,
+                            endOffset = selectedItem.gateEndOffset
+                        }
                     end
+                else
+                    -- Parameter changed: use debouncing to avoid lag during slider dragging
+                    -- Initialize debounce system if needed
+                    if not globals.gateDetectionDebounce then
+                        globals.gateDetectionDebounce = {}
+                    end
+
+                    -- Store the parameters and timestamp for debouncing
+                    globals.gateDetectionDebounce[itemKey] = {
+                        timestamp = reaper.time_precise(),
+                        params = {
+                            openThreshold = selectedItem.gateOpenThreshold,
+                            closeThreshold = selectedItem.gateCloseThreshold,
+                            minLength = selectedItem.gateMinLength,
+                            startOffset = selectedItem.gateStartOffset,
+                            endOffset = selectedItem.gateEndOffset
+                        },
+                        item = selectedItem
+                    }
                 end
             end
         end
