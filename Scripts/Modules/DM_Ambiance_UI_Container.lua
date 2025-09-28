@@ -23,7 +23,7 @@ function UI_Container.initModule(g)
 end
 
 -- Display the preset controls for a specific container (load/save container presets)
-function UI_Container.drawContainerPresetControls(groupIndex, containerIndex)
+function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, width, presetDropdownWidth, buttonSpacing)
     local groupId = "group" .. groupIndex
     local containerId = groupId .. "_container" .. containerIndex
     local presetKey = groupIndex .. "_" .. containerIndex
@@ -45,8 +45,12 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex)
         containerPresetItems = containerPresetItems .. name .. "\0"
     end
 
+    -- Use parameters if provided, otherwise use defaults for backward compatibility
+    local dropdownWidth = presetDropdownWidth or (width * 0.65)
+    local spacing = buttonSpacing or 8
+
     -- Preset dropdown control
-    imgui.PushItemWidth(globals.ctx, 200)
+    imgui.PushItemWidth(globals.ctx, dropdownWidth)
     local rv, newSelectedContainerIndex = imgui.Combo(
         globals.ctx,
         "##ContainerPresetSelector" .. containerId,
@@ -56,9 +60,10 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex)
     if rv then
         globals.selectedContainerPresetIndex[presetKey] = newSelectedContainerIndex
     end
+    imgui.PopItemWidth(globals.ctx)
 
     -- Load preset button: loads the selected preset into this container
-    imgui.SameLine(globals.ctx)
+    imgui.SameLine(globals.ctx, 0, spacing)
     if globals.Icons.createDownloadButton(globals.ctx, "loadContainer" .. containerId, "Load container preset")
         and globals.selectedContainerPresetIndex[presetKey] >= 0
         and globals.selectedContainerPresetIndex[presetKey] < #containerPresetList then
@@ -68,7 +73,7 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex)
     end
 
     -- Save preset button: opens a popup to save the current container as a preset
-    imgui.SameLine(globals.ctx)
+    imgui.SameLine(globals.ctx, 0, spacing)
     if globals.Icons.createUploadButton(globals.ctx, "saveContainer" .. containerId, "Save container preset") then
         -- Check if a media directory is configured before allowing save
         if not globals.Utils.isMediaDirectoryConfigured() then
@@ -131,14 +136,21 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     imgui.Text(globals.ctx, "Container Settings: " .. container.name)
     imgui.Separator(globals.ctx)
 
+    -- Container name and preset controls on same line for full width usage
+    local nameWidth = width * 0.25
+    local presetDropdownWidth = width * 0.5
+    local buttonSpacing = 4
+
     -- Editable container name input field
     local containerName = container.name
-    imgui.PushItemWidth(globals.ctx, width * 0.5)
+    imgui.PushItemWidth(globals.ctx, nameWidth)
     local rv, newContainerName = imgui.InputText(globals.ctx, "Name##detail_" .. containerId, containerName)
     if rv then container.name = newContainerName end
-    
-    -- Container preset controls (load/save)
-    UI_Container.drawContainerPresetControls(groupIndex, containerIndex)
+    imgui.PopItemWidth(globals.ctx)
+
+    -- Container preset controls on same line
+    imgui.SameLine(globals.ctx, 0, 8)
+    UI_Container.drawContainerPresetControls(groupIndex, containerIndex, width, presetDropdownWidth, buttonSpacing)
 
     -- Drop zone for importing items from timeline or Media Explorer
     UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId, width)
@@ -812,35 +824,39 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     imgui.Text(globals.ctx, "Track Volume")
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Controls the volume of the container's track in Reaper. Affects all items in this container.")
-    
-    imgui.PushItemWidth(globals.ctx, width * 0.6)
-    
+
     -- Ensure trackVolume is initialized
     if container.trackVolume == nil then
         container.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
     end
-    
+
     -- Convert current dB to normalized
     local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.trackVolume)
-    
+
+    -- Layout: slider and input field occupy full width (100%)
+    local inputFieldWidth = 85  -- Fixed width for dB input
+    local sliderWidth = width - inputFieldWidth - 8  -- Remaining space minus spacing
+
+    imgui.PushItemWidth(globals.ctx, sliderWidth)
     local rv, newNormalizedVolume = imgui.SliderDouble(
-        globals.ctx, 
-        "##TrackVolume_" .. containerId, 
-        normalizedVolume, 
+        globals.ctx,
+        "##TrackVolume_" .. containerId,
+        normalizedVolume,
         0.0,  -- Min normalized
         1.0,  -- Max normalized
         ""    -- No format
     )
-    if rv then 
+    if rv then
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         container.trackVolume = newVolumeDB
         -- Apply volume to track in real-time
         globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
     end
-    
-    -- Manual dB input field
-    imgui.SameLine(globals.ctx)
-    imgui.PushItemWidth(globals.ctx, 65)
+    imgui.PopItemWidth(globals.ctx)
+
+    -- Manual dB input field with remaining space
+    imgui.SameLine(globals.ctx, 0, 8)
+    imgui.PushItemWidth(globals.ctx, inputFieldWidth)
     local displayValue = container.trackVolume <= -144 and -144 or container.trackVolume
     local rv2, manualDB = imgui.InputDouble(
         globals.ctx,
@@ -851,7 +867,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     )
     if rv2 then
         -- Clamp to valid range
-        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
+        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
                            math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
         container.trackVolume = manualDB
         globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, manualDB)
@@ -881,7 +897,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         container.channelMode = 0
     end
 
-    imgui.PushItemWidth(globals.ctx, width * 0.6)
+    imgui.PushItemWidth(globals.ctx, width * 0.95)  -- Use 95% of width for better visual alignment
     local rv, newMode = imgui.Combo(
         globals.ctx,
         "##ChannelMode_" .. containerId,
@@ -918,7 +934,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 container.channelVariant = 0
             end
 
-            imgui.PushItemWidth(globals.ctx, width * 0.6)
+            imgui.PushItemWidth(globals.ctx, width * 0.95)  -- Match channel mode width
             local rv, newVariant = imgui.Combo(
                 globals.ctx,
                 "##ChannelVariant_" .. containerId,
@@ -942,33 +958,32 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         -- Channel-specific controls
         imgui.Text(globals.ctx, "Channel Settings:")
 
-        -- Define fixed positions for alignment
-        local labelPosX = 10      -- Starting position for labels
-        local sliderPosX = 90     -- Fixed position for all sliders (after longest label)
-        
+        -- Calculate optimal layout for 100% width usage
+        local labelWidth = 80            -- Fixed width for labels
+        local inputWidth = 85            -- Fixed width for dB input
+        local sliderWidth = width - labelWidth - inputWidth - 16  -- Remaining space minus spacing
+
         for i = 1, config.channels do
             local label = activeConfig.labels and activeConfig.labels[i] or ("Channel " .. i)
 
             imgui.PushID(globals.ctx, "channel_" .. i .. "_" .. containerId)
-            
-            -- Position and draw the label
-            imgui.SetCursorPosX(globals.ctx, labelPosX)
+
+            -- Label with fixed width
             imgui.Text(globals.ctx, label .. ":")
-            
+
             -- Initialize volume if needed
             if container.channelVolumes[i] == nil then
                 container.channelVolumes[i] = 0.0
             end
-            
-            -- Move to same line and position the slider
-            imgui.SameLine(globals.ctx)
-            imgui.SetCursorPosX(globals.ctx, sliderPosX)
-            
+
+            -- Volume slider on same line with optimized spacing
+            imgui.SameLine(globals.ctx, labelWidth)
+
             -- Convert current dB to normalized
             local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.channelVolumes[i])
-            
-            -- Volume control at fixed position
-            imgui.PushItemWidth(globals.ctx, width * 0.5)
+
+            -- Volume control with optimized width
+            imgui.PushItemWidth(globals.ctx, sliderWidth)
             local rv, newNormalizedVolume = imgui.SliderDouble(
                 globals.ctx,
                 "##Vol_" .. i,
@@ -984,10 +999,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, newVolumeDB)
             end
             imgui.PopItemWidth(globals.ctx)
-            
-            -- Manual dB input field
-            imgui.SameLine(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, 65)
+
+            -- Manual dB input field with consistent spacing
+            imgui.SameLine(globals.ctx, 0, 8)
+            imgui.PushItemWidth(globals.ctx, inputWidth)
             local displayValue = container.channelVolumes[i] <= -144 and -144 or container.channelVolumes[i]
             local rv2, manualDB = imgui.InputDouble(
                 globals.ctx,
@@ -998,13 +1013,13 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             )
             if rv2 then
                 -- Clamp to valid range
-                manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
+                manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
                                    math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
                 container.channelVolumes[i] = manualDB
                 globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, manualDB)
             end
             imgui.PopItemWidth(globals.ctx)
-            
+
             imgui.PopID(globals.ctx)
         end
     end
@@ -1029,8 +1044,8 @@ end
 function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId, width)
     local container = globals.groups[groupIndex].containers[containerIndex]
     local dropZoneHeight = 60
-    local buttonWidth = 100
-    local dropZoneWidth = width * 0.7 - buttonWidth - 10 -- Leave space for button and margin
+    local buttonWidth = 90
+    local dropZoneWidth = width * 0.75 - buttonWidth - 12 -- Optimized space usage
 
     -- Get current cursor position for drawing
     local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
@@ -1169,7 +1184,7 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
     imgui.DrawList_AddText(drawList, textX, textY, 0xCCCCCCCC, textLabel)
 
     -- Add Media Explorer button next to the drop zone
-    imgui.SameLine(globals.ctx, 0, 10) -- 10px margin
+    imgui.SameLine(globals.ctx, 0, 8) -- Consistent 8px margin
     if imgui.Button(globals.ctx, "Media\nExplorer##" .. containerId, buttonWidth, dropZoneHeight) then
         reaper.Main_OnCommand(50124, 0) -- Open Media Explorer
     end

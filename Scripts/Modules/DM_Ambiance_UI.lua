@@ -399,8 +399,9 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     imgui.Text(globals.ctx, titlePrefix .. "Randomization parameters")
 
     local checkboxWidth = 20
-    local controlWidth = width * 0.50
-    local labelOffset = checkboxWidth + controlWidth + 10
+    local linkButtonWidth = 24  -- Approximate width of link button
+    local labelWidth = 120      -- Fixed width for labels
+    local controlWidth = width - checkboxWidth - linkButtonWidth - labelWidth - 20  -- Use remaining space
 
     -- Pitch randomization (checkbox + link button + slider on same line)
     imgui.BeginGroup(globals.ctx)
