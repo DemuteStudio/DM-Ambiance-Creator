@@ -177,6 +177,30 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         globals.Waveform.clearContainerCache(container)
     end
 
+    -- Edit Mode toggle button
+    imgui.SameLine(globals.ctx)
+    imgui.Text(globals.ctx, " | ")
+    imgui.SameLine(globals.ctx)
+
+    -- Initialize edit mode state if not set
+    if not globals.containerEditModes then
+        globals.containerEditModes = {}
+    end
+    local editModeKey = groupIndex .. "_" .. containerIndex
+    if globals.containerEditModes[editModeKey] == nil then
+        globals.containerEditModes[editModeKey] = false
+    end
+
+    local isEditMode = globals.containerEditModes[editModeKey]
+    local buttonLabel = isEditMode and "Exit Edit Mode##" .. containerId or "Edit Mode##" .. containerId
+    local buttonColor = isEditMode and 0xFF4444FF or 0x44AA44FF
+
+    imgui.PushStyleColor(globals.ctx, imgui.Col_Button, buttonColor)
+    if imgui.Button(globals.ctx, buttonLabel) then
+        globals.containerEditModes[editModeKey] = not isEditMode
+    end
+    imgui.PopStyleColor(globals.ctx, 1)
+
     -- Display imported items with persistent state
     if #container.items > 0 then
         -- Create unique key for this container's expanded state and selection
@@ -296,10 +320,13 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         imgui.PopID(globals.ctx)
     end
     
-    -- Waveform Viewer Section (for selected imported items)
+    -- Waveform Viewer Section (for selected imported items) - only visible in Edit Mode
     local selectionKey = groupIndex .. "_" .. containerIndex
-    if globals.selectedItemIndex and globals.selectedItemIndex[selectionKey] and 
-       globals.selectedItemIndex[selectionKey] > 0 and 
+    local editModeKey = groupIndex .. "_" .. containerIndex
+    local isEditMode = globals.containerEditModes and globals.containerEditModes[editModeKey]
+
+    if isEditMode and globals.selectedItemIndex and globals.selectedItemIndex[selectionKey] and
+       globals.selectedItemIndex[selectionKey] > 0 and
        globals.selectedItemIndex[selectionKey] <= #container.items then
         
         local selectedItem = container.items[globals.selectedItemIndex[selectionKey]]
@@ -480,6 +507,14 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 -- Create unique itemKey for this item
                 local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
 
+                -- Initialize waveform height if not set
+                if not globals.waveformHeights then
+                    globals.waveformHeights = {}
+                end
+                if not globals.waveformHeights[itemKey] then
+                    globals.waveformHeights[itemKey] = 120  -- Default height
+                end
+
                 -- Ensure areas from the item are loaded into waveformAreas for display
                 if selectedItem.areas and #selectedItem.areas > 0 then
                     globals.waveformAreas[itemKey] = selectedItem.areas
@@ -538,7 +573,35 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 -- reaper.ShowConsoleMsg(string.format("[Waveform Display] File: %s\n", selectedItem.filePath or ""))
                 -- reaper.ShowConsoleMsg(string.format("  StartOffset: %.3f, Length: %.3f\n",
                 --     waveformOptions.startOffset, waveformOptions.displayLength))
-                waveformData = globals.Waveform.drawWaveform(selectedItem.filePath, math.floor(width * 0.95), 120, waveformOptions)
+                waveformData = globals.Waveform.drawWaveform(selectedItem.filePath, math.floor(width * 0.95), globals.waveformHeights[itemKey], waveformOptions)
+
+                -- Add resize handle after waveform
+                local draw_list = imgui.GetWindowDrawList(globals.ctx)
+                local pos_x, pos_y = imgui.GetCursorScreenPos(globals.ctx)
+                local handleHeight = 8
+                local waveformWidth = width * 0.95
+
+                -- Draw resize handle
+                imgui.DrawList_AddRectFilled(draw_list,
+                    pos_x, pos_y,
+                    pos_x + waveformWidth, pos_y + handleHeight,
+                    0x606060FF
+                )
+
+                -- Make resize handle interactive
+                imgui.InvisibleButton(globals.ctx, "WaveformResize##" .. itemKey, waveformWidth, handleHeight)
+
+                if imgui.IsItemActive(globals.ctx) and imgui.IsMouseDragging(globals.ctx, 0) then
+                    local _, mouseY = imgui.GetMouseDragDelta(globals.ctx, 0)
+                    local newHeight = math.max(60, math.min(400, globals.waveformHeights[itemKey] + mouseY))
+                    globals.waveformHeights[itemKey] = newHeight
+                    imgui.ResetMouseDragDelta(globals.ctx, 0)
+                end
+
+                -- Change cursor when hovering over resize handle
+                if imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetMouseCursor(globals.ctx, imgui.MouseCursor_ResizeNS)
+                end
 
                 -- Synchronize areas from waveformAreas back to the item after any changes
                 if globals.waveformAreas[itemKey] then
@@ -547,19 +610,30 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     selectedItem.areas = nil
                 end
             else
+                -- Create unique itemKey for this item even if file doesn't exist
+                local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
+
+                -- Initialize waveform height if not set
+                if not globals.waveformHeights then
+                    globals.waveformHeights = {}
+                end
+                if not globals.waveformHeights[itemKey] then
+                    globals.waveformHeights[itemKey] = 120  -- Default height
+                end
+
                 -- Draw empty waveform box for missing files
                 local draw_list = imgui.GetWindowDrawList(globals.ctx)
                 local pos_x, pos_y = imgui.GetCursorScreenPos(globals.ctx)
                 local waveformWidth = width * 0.95
-                local waveformHeight = 120
-                
+                local waveformHeight = globals.waveformHeights[itemKey]
+
                 -- Draw background
                 imgui.DrawList_AddRectFilled(draw_list,
                     pos_x, pos_y,
                     pos_x + waveformWidth, pos_y + waveformHeight,
                     0x1A1A1AFF
                 )
-                
+
                 -- Draw border
                 imgui.DrawList_AddRect(draw_list,
                     pos_x, pos_y,
@@ -567,7 +641,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     0x606060FF,
                     0, 0, 1
                 )
-                
+
                 -- Draw "No waveform" text in center
                 local text = fileExists and "Loading..." or "File not found"
                 local text_size_x, text_size_y = imgui.CalcTextSize(globals.ctx, text)
@@ -577,8 +651,34 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     0x808080FF,
                     text
                 )
-                
+
                 imgui.Dummy(globals.ctx, waveformWidth, waveformHeight)
+
+                -- Add resize handle after empty waveform box
+                local pos_x2, pos_y2 = imgui.GetCursorScreenPos(globals.ctx)
+                local handleHeight = 8
+
+                -- Draw resize handle
+                imgui.DrawList_AddRectFilled(draw_list,
+                    pos_x2, pos_y2,
+                    pos_x2 + waveformWidth, pos_y2 + handleHeight,
+                    0x606060FF
+                )
+
+                -- Make resize handle interactive
+                imgui.InvisibleButton(globals.ctx, "WaveformResize##" .. itemKey, waveformWidth, handleHeight)
+
+                if imgui.IsItemActive(globals.ctx) and imgui.IsMouseDragging(globals.ctx, 0) then
+                    local _, mouseY = imgui.GetMouseDragDelta(globals.ctx, 0)
+                    local newHeight = math.max(60, math.min(400, globals.waveformHeights[itemKey] + mouseY))
+                    globals.waveformHeights[itemKey] = newHeight
+                    imgui.ResetMouseDragDelta(globals.ctx, 0)
+                end
+
+                -- Change cursor when hovering over resize handle
+                if imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetMouseCursor(globals.ctx, imgui.MouseCursor_ResizeNS)
+                end
             end
             
             -- Audio playback controls
@@ -593,14 +693,38 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             end
             imgui.PopStyleColor(globals.ctx, 1)
 
+            -- Initialize audio preview volume if needed
+            if not globals.audioPreview then
+                globals.audioPreview = { volume = 0.7 }
+            end
+
             -- Play/Stop buttons
-            if globals.audioPreview and globals.audioPreview.isPlaying and 
+            if globals.audioPreview and globals.audioPreview.isPlaying and
                globals.audioPreview.currentFile == selectedItem.filePath then
                 -- Stop button
                 if imgui.Button(globals.ctx, "■ Stop##" .. containerId, 80, 0) then
                     globals.Waveform.stopPlayback()
                 end
-                
+
+                -- Volume control on same line as stop button
+                imgui.SameLine(globals.ctx)
+                imgui.PushItemWidth(globals.ctx, 100)
+                local rv, newVolume = imgui.SliderDouble(
+                    globals.ctx,
+                    "##PreviewVolume_" .. containerId,
+                    globals.audioPreview.volume,
+                    0.0,
+                    1.0,
+                    "Vol: %.2f"
+                )
+                if rv then
+                    globals.audioPreview.volume = newVolume
+                    if globals.Waveform and globals.Waveform.setPreviewVolume then
+                        globals.Waveform.setPreviewVolume(newVolume)
+                    end
+                end
+                imgui.PopItemWidth(globals.ctx)
+
                 -- Show playback position
                 if waveformData then
                     imgui.SameLine(globals.ctx)
@@ -631,32 +755,27 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                             startPosition  -- Use saved position if available
                         )
                     end
+
+                    -- Volume control on same line as play button
+                    imgui.SameLine(globals.ctx)
+                    imgui.PushItemWidth(globals.ctx, 100)
+                    local rv, newVolume = imgui.SliderDouble(
+                        globals.ctx,
+                        "##PreviewVolume_" .. containerId,
+                        globals.audioPreview.volume,
+                        0.0,
+                        1.0,
+                        "Vol: %.2f"
+                    )
+                    if rv then
+                        globals.audioPreview.volume = newVolume
+                        if globals.Waveform and globals.Waveform.setPreviewVolume then
+                            globals.Waveform.setPreviewVolume(newVolume)
+                        end
+                    end
+                    imgui.PopItemWidth(globals.ctx)
                 end
             end
-            
-            -- Volume control for preview
-            imgui.Text(globals.ctx, "Preview Volume:")
-            imgui.PushItemWidth(globals.ctx, width * 0.6)
-            
-            if not globals.audioPreview then
-                globals.audioPreview = { volume = 0.7 }
-            end
-            
-            local rv, newVolume = imgui.SliderDouble(
-                globals.ctx,
-                "##PreviewVolume_" .. containerId,
-                globals.audioPreview.volume,
-                0.0,
-                1.0,
-                "%.2f"
-            )
-            if rv then
-                globals.audioPreview.volume = newVolume
-                if globals.Waveform and globals.Waveform.setPreviewVolume then
-                    globals.Waveform.setPreviewVolume(newVolume)
-                end
-            end
-            imgui.PopItemWidth(globals.ctx)
 
             -- Handle spacebar for play/pause
             -- Note: Key_Space constant is 32 (ASCII code for space)
