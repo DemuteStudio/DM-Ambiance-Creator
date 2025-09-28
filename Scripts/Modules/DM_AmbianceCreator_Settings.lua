@@ -26,6 +26,7 @@ local defaultSettings = {
     uiRounding = 2.0, -- Default rounding for UI elements
     itemSpacing = 8, -- Default item spacing
     crossfadeMargin = 0.2, -- Default crossfade margin in seconds
+    waveformAutoPlayOnSelect = true, -- Auto-play when selecting items in waveform
 }
 
 -- Initialize the module with global references and load settings
@@ -77,9 +78,14 @@ function Settings.loadSettings()
         for line in file:lines() do
             local key, value = line:match("([^=]+)=(.+)")
             if key and value then
-                -- Convert boolean values from string to boolean
-                if value == "true" then value = true
-                elseif value == "false" then value = false
+                -- Convert boolean values from string to boolean (robust conversion)
+                if value == "true" or value == "1" then
+                    value = true
+                elseif value == "false" or value == "0" then
+                    value = false
+                elseif tonumber(value) then
+                    -- Convert numeric strings to numbers
+                    value = tonumber(value)
                 end
                 settings[key] = value
             end
@@ -88,7 +94,11 @@ function Settings.loadSettings()
         -- Merge loaded settings with defaults
         globals.settings = {}
         for k, v in pairs(defaultSettings) do
-            globals.settings[k] = settings[k] ~= nil and settings[k] or v
+            if settings[k] ~= nil then
+                globals.settings[k] = settings[k]
+            else
+                globals.settings[k] = v
+            end
         end
     else
         globals.settings = defaultSettings
@@ -127,17 +137,18 @@ end
 -- Initialize temporary variables if necessary
 
 local function initTempSettings()
-    if not tempSettings.uiRounding then
-        -- Read the actual values from the file
-        Settings.loadSettings() -- Force reload from the file
-        -- Save the original values
+    if not tempSettings.initialized then
+        -- Save the original values (use current in-memory settings, no reload)
         originalSettings.uiRounding = globals.settings.uiRounding
         originalSettings.itemSpacing = globals.settings.itemSpacing
         originalSettings.crossfadeMargin = globals.settings.crossfadeMargin
+        originalSettings.waveformAutoPlayOnSelect = globals.settings.waveformAutoPlayOnSelect
         -- Initialize temporary variables
         tempSettings.uiRounding = globals.settings.uiRounding
         tempSettings.itemSpacing = globals.settings.itemSpacing
         tempSettings.crossfadeMargin = globals.settings.crossfadeMargin
+        tempSettings.waveformAutoPlayOnSelect = globals.settings.waveformAutoPlayOnSelect
+        tempSettings.initialized = true
     end
 end
 
@@ -154,6 +165,7 @@ local function restoreOriginalSettings()
     globals.settings.uiRounding = originalSettings.uiRounding
     globals.settings.itemSpacing = originalSettings.itemSpacing
     globals.settings.crossfadeMargin = originalSettings.crossfadeMargin
+    globals.settings.waveformAutoPlayOnSelect = originalSettings.waveformAutoPlayOnSelect
 end
 
 -- Applies all temporary changes to the real settings
@@ -162,6 +174,7 @@ local function applyTempSettings()
     Settings.setSetting("uiRounding", tempSettings.uiRounding)
     Settings.setSetting("itemSpacing", tempSettings.itemSpacing)
     Settings.setSetting("crossfadeMargin", tempSettings.crossfadeMargin)
+    Settings.setSetting("waveformAutoPlayOnSelect", tempSettings.waveformAutoPlayOnSelect)
     Settings.saveSettings()
 end
 
@@ -169,12 +182,15 @@ end
 function Settings.showSettingsWindow(open)
     local ctx = globals.ctx
     local imgui = globals.imgui
-    
+
     -- Initialize temporary variables
     initTempSettings()
-    
+
     local windowFlags = imgui.WindowFlags_NoResize | imgui.WindowFlags_AlwaysAutoResize
-    local visible, open = imgui.Begin(ctx, 'Ambiance Creator Settings', open, windowFlags)
+    local visible, openResult = imgui.Begin(ctx, 'Ambiance Creator Settings', open, windowFlags)
+
+    -- Track if buttons were pressed
+    local buttonPressed = false
     
     -- CRITICAL: Only render content and call End() if Begin() returned true
     if visible then
@@ -232,28 +248,40 @@ function Settings.showSettingsWindow(open)
         
         -- Appearance settings section
         Settings.showAppearanceSettings()
-        
+
+        -- Waveform settings section
+        Settings.showWaveformSettings()
+
         -- Control buttons at the bottom
         if imgui.Button(ctx, "Save & Close", 120, 0) then
             applyTempSettings()
             resetTempSettings()
-            open = false
+            openResult = false
+            buttonPressed = true
         end
         imgui.SameLine(ctx)
         if imgui.Button(ctx, "Cancel", 120, 0) then
             restoreOriginalSettings()
             resetTempSettings()
-            open = false
+            openResult = false
+            buttonPressed = true
         end
         
         -- CRITICAL: Only call End() if Begin() returned true
         imgui.End(ctx)
     end
     
+    -- Handle window closed by X button (not by Save/Cancel buttons)
+    if open and not openResult and not buttonPressed then
+        -- Window was closed by X button, restore original settings and reset temp settings
+        restoreOriginalSettings()
+        resetTempSettings()
+    end
+
     -- Handle the popup for configuring the media directory (separate from main window)
     Settings.handleSetupMediaDirectoryPopup()
-    
-    return open
+
+    return openResult
 end
 
 -------
@@ -521,6 +549,26 @@ function Settings.showCrossfadeSettings()
     end
     imgui.SameLine(ctx)
     globals.Utils.HelpMarker("Determines the length of automatic crossfades created when regenerating content in a time selection. A higher value creates longer and smoother transitions")
+    imgui.Separator(ctx)
+end
+
+-- Add the waveform settings section
+
+function Settings.showWaveformSettings()
+    local ctx = globals.ctx
+    local imgui = globals.imgui
+    imgui.TextColored(ctx, 0xFFAA00FF, "Waveform Settings")
+    imgui.Separator(ctx)
+
+    -- Auto-play checkbox
+    local rv, autoPlay = imgui.Checkbox(ctx, "Auto-play on selection",
+        tempSettings.waveformAutoPlayOnSelect)
+    if rv then
+        tempSettings.waveformAutoPlayOnSelect = autoPlay
+    end
+    imgui.SameLine(ctx)
+    globals.Utils.HelpMarker("When enabled: Play on selection & click\nWhen disabled: Click only sets position marker")
+
     imgui.Separator(ctx)
 end
 

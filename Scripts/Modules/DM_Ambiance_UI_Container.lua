@@ -171,6 +171,12 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         -- reaper.ShowConsoleMsg(string.format("[UI] Generated peaks for %d files\n", generated))
     end
 
+    -- Button to clear cache for all items in container
+    imgui.SameLine(globals.ctx)
+    if imgui.Button(globals.ctx, "Clear All Peaks##" .. containerId) then
+        globals.Waveform.clearContainerCache(container)
+    end
+
     -- Display imported items with persistent state
     if #container.items > 0 then
         -- Create unique key for this container's expanded state and selection
@@ -231,7 +237,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                         end
 
                         -- Auto-play if enabled and we actually changed selection
-                        if globals.waveformAutoPlayOnSelect and previouslySelectedIndex ~= l then
+                        if globals.Settings.getSetting("waveformAutoPlayOnSelect") and previouslySelectedIndex ~= l then
                             -- Stop any current playback first
                             if globals.Waveform then
                                 globals.Waveform.stopPlayback()
@@ -311,34 +317,11 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         -- local _, showRMS = imgui.Checkbox(globals.ctx, "RMS##waveform",
         --     globals.waveformShowRMS ~= false)
         -- globals.waveformShowRMS = showRMS
-        
-        imgui.SameLine(globals.ctx)
-        imgui.SetCursorPosX(globals.ctx, width * 0.4)
-        local _, autoPlay = imgui.Checkbox(globals.ctx, "Auto-play##waveform",
-            globals.waveformAutoPlayOnSelect ~= false)
-        globals.waveformAutoPlayOnSelect = autoPlay
-        if imgui.IsItemHovered(globals.ctx) then
-            imgui.SetTooltip(globals.ctx, "When enabled: Play on selection & click\nWhen disabled: Click only sets position marker")
-        end
 
         imgui.Separator(globals.ctx)
 
-        -- Display selected item info and controls on one line
+        -- Display selected item info
         imgui.Text(globals.ctx, "Selected: " .. selectedItem.name)
-
-        -- Clear Cache button
-        imgui.SameLine(globals.ctx)
-        if imgui.SmallButton(globals.ctx, "Clear Cache") then
-            globals.Waveform.clearFileCache(selectedItem.filePath)
-        end
-
-        -- Rebuild Peaks button
-        imgui.SameLine(globals.ctx)
-        if imgui.SmallButton(globals.ctx, "Rebuild Peaks") then
-            if globals.Waveform.regeneratePeaksFile(selectedItem.filePath) then
-                globals.Waveform.clearFileCache(selectedItem.filePath)
-            end
-        end
         
         -- Check if file path exists and is valid
         local filePathValid = selectedItem.filePath and selectedItem.filePath ~= ""
@@ -425,7 +408,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                         globals.audioPreview.clickedPosition = clickPosition
 
                         -- Only start playback if auto-play is enabled
-                        if globals.waveformAutoPlayOnSelect then
+                        if globals.Settings.getSetting("waveformAutoPlayOnSelect") then
                             -- Start playback from the clicked position
                             globals.Waveform.startPlayback(
                                 selectedItem.filePath,
@@ -489,7 +472,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
             -- Add hint about spacebar and clicking
             imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x808080FF)
-            if globals.waveformAutoPlayOnSelect then
+            if globals.Settings.getSetting("waveformAutoPlayOnSelect") then
                 imgui.Text(globals.ctx, "Tip: [Space] play/pause • Click to set position & play • Double-click to reset")
             else
                 imgui.Text(globals.ctx, "Tip: [Space] play/pause • Click to set position • Double-click to reset")

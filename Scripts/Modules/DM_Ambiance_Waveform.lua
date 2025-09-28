@@ -1679,6 +1679,17 @@ function Waveform.clearFileCache(filePath)
     end
 end
 
+-- Clear cache for all items in a container
+function Waveform.clearContainerCache(container)
+    if container and container.items then
+        for _, item in ipairs(container.items) do
+            if item.filePath and item.filePath ~= "" then
+                Waveform.clearFileCache(item.filePath)
+            end
+        end
+    end
+end
+
 -- Clear all cache
 function Waveform.clearCache()
     globals.waveformCache = {}
