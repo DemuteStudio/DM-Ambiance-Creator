@@ -142,43 +142,6 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
     -- Drop zone for importing items from timeline or Media Explorer
     UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId, width)
-    
-    -- Button to generate peaks for all items in container
-    imgui.SameLine(globals.ctx)
-    if imgui.Button(globals.ctx, "Build All Peaks##" .. containerId) then
-        local generated = globals.Waveform.generatePeaksForContainer(container)
-        -- reaper.ShowConsoleMsg(string.format("[UI] Generated peaks for %d files\n", generated))
-    end
-
-    -- Button to clear cache for all items in container
-    imgui.SameLine(globals.ctx)
-    if imgui.Button(globals.ctx, "Clear All Peaks##" .. containerId) then
-        globals.Waveform.clearContainerCache(container)
-    end
-
-    -- Edit Mode toggle button
-    imgui.SameLine(globals.ctx)
-    imgui.Text(globals.ctx, " | ")
-    imgui.SameLine(globals.ctx)
-
-    -- Initialize edit mode state if not set
-    if not globals.containerEditModes then
-        globals.containerEditModes = {}
-    end
-    local editModeKey = groupIndex .. "_" .. containerIndex
-    if globals.containerEditModes[editModeKey] == nil then
-        globals.containerEditModes[editModeKey] = false
-    end
-
-    local isEditMode = globals.containerEditModes[editModeKey]
-    local buttonLabel = isEditMode and "Exit Edit Mode##" .. containerId or "Edit Mode##" .. containerId
-    local buttonColor = isEditMode and 0xFF4444FF or 0x44AA44FF
-
-    imgui.PushStyleColor(globals.ctx, imgui.Col_Button, buttonColor)
-    if imgui.Button(globals.ctx, buttonLabel) then
-        globals.containerEditModes[editModeKey] = not isEditMode
-    end
-    imgui.PopStyleColor(globals.ctx, 1)
 
     -- Display imported items with persistent state
     if #container.items > 0 then
@@ -1191,8 +1154,10 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
     -- Draw the text
     imgui.DrawList_AddText(drawList, textX, textY, 0xCCCCCCCC, textLabel)
 
-    -- Add fallback button for timeline items
-    imgui.SameLine(globals.ctx)
+    -- Add buttons below the drop zone
+    imgui.Spacing(globals.ctx)
+
+    -- Import Selected button
     if imgui.Button(globals.ctx, "Import Selected##" .. containerId) then
         local items = globals.Items.getSelectedItems()
         if #items > 0 then
@@ -1214,6 +1179,42 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
             reaper.MB("No item selected!", "Error", 0)
         end
     end
+
+    -- Build All Peaks button
+    imgui.SameLine(globals.ctx)
+    if imgui.Button(globals.ctx, "Build All Peaks##" .. containerId) then
+        local generated = globals.Waveform.generatePeaksForContainer(container)
+    end
+
+    -- Clear All Peaks button
+    imgui.SameLine(globals.ctx)
+    if imgui.Button(globals.ctx, "Clear All Peaks##" .. containerId) then
+        globals.Waveform.clearContainerCache(container)
+    end
+
+    -- Edit Mode toggle button
+    imgui.SameLine(globals.ctx)
+    imgui.Text(globals.ctx, " | ")
+    imgui.SameLine(globals.ctx)
+
+    -- Initialize edit mode state if not set
+    if not globals.containerEditModes then
+        globals.containerEditModes = {}
+    end
+    local editModeKey = groupIndex .. "_" .. containerIndex
+    if globals.containerEditModes[editModeKey] == nil then
+        globals.containerEditModes[editModeKey] = false
+    end
+
+    local isEditMode = globals.containerEditModes[editModeKey]
+    local buttonLabel = isEditMode and "Exit Edit Mode##" .. containerId or "Edit Mode##" .. containerId
+    local buttonColor = isEditMode and 0xFF4444FF or 0x44AA44FF
+
+    imgui.PushStyleColor(globals.ctx, imgui.Col_Button, buttonColor)
+    if imgui.Button(globals.ctx, buttonLabel) then
+        globals.containerEditModes[editModeKey] = not isEditMode
+    end
+    imgui.PopStyleColor(globals.ctx, 1)
 end
 
 return UI_Container
