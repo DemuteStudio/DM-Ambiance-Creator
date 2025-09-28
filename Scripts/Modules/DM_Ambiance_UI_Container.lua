@@ -1029,7 +1029,8 @@ end
 function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId, width)
     local container = globals.groups[groupIndex].containers[containerIndex]
     local dropZoneHeight = 60
-    local dropZoneWidth = width * 0.7
+    local buttonWidth = 100
+    local dropZoneWidth = width * 0.7 - buttonWidth - 10 -- Leave space for button and margin
 
     -- Get current cursor position for drawing
     local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
@@ -1166,6 +1167,12 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
 
     -- Draw the text
     imgui.DrawList_AddText(drawList, textX, textY, 0xCCCCCCCC, textLabel)
+
+    -- Add Media Explorer button next to the drop zone
+    imgui.SameLine(globals.ctx, 0, 10) -- 10px margin
+    if imgui.Button(globals.ctx, "Media\nExplorer##" .. containerId, buttonWidth, dropZoneHeight) then
+        reaper.Main_OnCommand(50124, 0) -- Open Media Explorer
+    end
 
     -- Add buttons below the drop zone
     imgui.Spacing(globals.ctx)
