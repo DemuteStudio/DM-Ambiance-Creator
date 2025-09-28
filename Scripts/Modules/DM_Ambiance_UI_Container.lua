@@ -1050,6 +1050,7 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
     -- Create an invisible button for the drop zone area
     imgui.SetCursorScreenPos(globals.ctx, min_x, min_y)
     local isHovered = imgui.InvisibleButton(globals.ctx, "DropZone##" .. containerId, dropZoneWidth, dropZoneHeight)
+    local isClicked = imgui.IsItemClicked(globals.ctx)
 
     -- Check if we're in a drag-drop operation
     local isDragActive = false
@@ -1080,8 +1081,6 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
 
         -- Only process on actual drop completion (when mouse is released)
         if hasFiles and imgui.IsMouseReleased(globals.ctx, 0) then
-            reaper.ShowConsoleMsg("[DragDrop] Drop completed, processing files...\n")
-
             -- Get all dropped files using correct syntax
             local fileIndex = 0
             while true do
@@ -1091,19 +1090,15 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
                     break
                 end
 
-                reaper.ShowConsoleMsg(string.format("[DragDrop] Adding file: %s\n", filePath))
                 table.insert(files, filePath)
                 fileIndex = fileIndex + 1
             end
 
             -- Process dropped files
             if #files > 0 then
-                reaper.ShowConsoleMsg(string.format("[DragDrop] Processing %d files\n", #files))
                 local items = globals.Items.processDroppedFiles(files)
-                reaper.ShowConsoleMsg(string.format("[DragDrop] Created %d items\n", #items))
                 for _, item in ipairs(items) do
                     table.insert(container.items, item)
-                    reaper.ShowConsoleMsg(string.format("[DragDrop] Added item: %s\n", item.name))
                     -- Generate peaks for the imported item if needed
                     if item.filePath and item.filePath ~= "" then
                         local peaksFile = item.filePath .. ".reapeaks"
@@ -1120,13 +1115,10 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
         elseif not hasFiles and imgui.IsMouseReleased(globals.ctx, 0) then
             -- If no files, check for timeline items on drop completion
             -- This handles drops from REAPER timeline
-            reaper.ShowConsoleMsg("[DragDrop] Mouse released, checking timeline items\n")
             local timelineItems = globals.Items.getSelectedItems()
-            reaper.ShowConsoleMsg(string.format("[DragDrop] Found %d timeline items\n", #timelineItems))
             if #timelineItems > 0 then
                 for _, item in ipairs(timelineItems) do
                     table.insert(container.items, item)
-                    reaper.ShowConsoleMsg(string.format("[DragDrop] Added timeline item: %s\n", item.name))
                     -- Generate peaks for the imported item if needed
                     if item.filePath and item.filePath ~= "" then
                         local peaksFile = item.filePath .. ".reapeaks"
@@ -1145,23 +1137,11 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
         imgui.EndDragDropTarget(globals.ctx)
     end
 
-    -- Add text centered in the drop zone
-    local textLabel = "Drag items here from timeline or Media Explorer"
-    local textSizeX, textSizeY = imgui.CalcTextSize(globals.ctx, textLabel)
-    local textX = min_x + (dropZoneWidth - textSizeX) / 2
-    local textY = min_y + (dropZoneHeight - textSizeY) / 2
-
-    -- Draw the text
-    imgui.DrawList_AddText(drawList, textX, textY, 0xCCCCCCCC, textLabel)
-
-    -- Add buttons below the drop zone
-    imgui.Spacing(globals.ctx)
-
-    -- Import Selected button
-    if imgui.Button(globals.ctx, "Import Selected##" .. containerId) then
-        local items = globals.Items.getSelectedItems()
-        if #items > 0 then
-            for _, item in ipairs(items) do
+    -- Handle click on drop zone to import selected timeline items
+    if isClicked and not isDragActive then
+        local timelineItems = globals.Items.getSelectedItems()
+        if #timelineItems > 0 then
+            for _, item in ipairs(timelineItems) do
                 table.insert(container.items, item)
                 -- Generate peaks for the imported item if needed
                 if item.filePath and item.filePath ~= "" then
@@ -1175,13 +1155,22 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
                     end
                 end
             end
-        else
-            reaper.MB("No item selected!", "Error", 0)
         end
     end
 
+    -- Add text centered in the drop zone
+    local textLabel = "Drag files here or click to import selected timeline items"
+    local textSizeX, textSizeY = imgui.CalcTextSize(globals.ctx, textLabel)
+    local textX = min_x + (dropZoneWidth - textSizeX) / 2
+    local textY = min_y + (dropZoneHeight - textSizeY) / 2
+
+    -- Draw the text
+    imgui.DrawList_AddText(drawList, textX, textY, 0xCCCCCCCC, textLabel)
+
+    -- Add buttons below the drop zone
+    imgui.Spacing(globals.ctx)
+
     -- Build All Peaks button
-    imgui.SameLine(globals.ctx)
     if imgui.Button(globals.ctx, "Build All Peaks##" .. containerId) then
         local generated = globals.Waveform.generatePeaksForContainer(container)
     end
