@@ -522,6 +522,20 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
     -- Get effective parameters considering inheritance from parent group
     local effectiveParams = globals.Structures.getEffectiveContainerParams(group, container)
 
+    -- Find group and container indices for area functionality
+    local groupIndex = nil
+    local containerIndex = nil
+    for gi, g in ipairs(globals.groups) do
+        for ci, c in ipairs(g.containers) do
+            if c == container then
+                groupIndex = gi
+                containerIndex = ci
+                break
+            end
+        end
+        if groupIndex then break end
+    end
+
     -- Determine if we're in multi-channel mode
     local isMultiChannel = container.channelMode and container.channelMode > 0
 
@@ -535,22 +549,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             if foundContainer and #foundChannelTracks > 0 then
                 -- Found all tracks by GUID
                 -- Check if this is the last container in the group
-                local isLastInGroup = false
-                local groupIndex = nil
-                local containerIndex = nil
-                
-                -- Find group and container indices
-                for gi, g in ipairs(globals.groups) do
-                    for ci, c in ipairs(g.containers) do
-                        if c == container then
-                            groupIndex = gi
-                            containerIndex = ci
-                            isLastInGroup = (ci == #g.containers)
-                            break
-                        end
-                    end
-                    if groupIndex then break end
-                end
+                local isLastInGroup = (containerIndex == #group.containers)
                 
                 -- Restore folder structure with proper closing
                 Generation.adjustFolderClosing(foundContainer, foundChannelTracks, isLastInGroup)
@@ -576,30 +575,11 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                     Generation.clearChannelTracks(channelTracks)
                 elseif #channelTracks == 0 then
                     -- No existing structure found, create new one
-                    -- Check if this is the last container in the group
-                    local isLastInGroup = false
-                    for gi, g in ipairs(globals.groups) do
-                        for ci, c in ipairs(g.containers) do
-                            if c == container then
-                                isLastInGroup = (ci == #g.containers)
-                                break
-                            end
-                        end
-                        if isLastInGroup then break end
-                    end
+                    local isLastInGroup = (containerIndex == #group.containers)
                     channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
                 else
                     -- Partial or incorrect structure, recreate
-                    local isLastInGroup = false
-                    for gi, g in ipairs(globals.groups) do
-                        for ci, c in ipairs(g.containers) do
-                            if c == container then
-                                isLastInGroup = (ci == #g.containers)
-                                break
-                            end
-                        end
-                        if isLastInGroup then break end
-                    end
+                    local isLastInGroup = (containerIndex == #group.containers)
                     Generation.deleteContainerChildTracks(containerGroup)
                     channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
                 end
@@ -618,16 +598,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
         -- Create new structure based on mode
         if isMultiChannel then
             -- Check if this is the last container in the group
-            local isLastInGroup = false
-            for gi, g in ipairs(globals.groups) do
-                for ci, c in ipairs(g.containers) do
-                    if c == container then
-                        isLastInGroup = (ci == #g.containers)
-                        break
-                    end
-                end
-                if isLastInGroup then break end
-            end
+            local isLastInGroup = (containerIndex == #group.containers)
             channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
         else
             channelTracks = {containerGroup}
@@ -690,7 +661,10 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             while lastItemEnd < globals.endTime do
                 -- Select a random item from the container
                 local randomItemIndex = math.random(1, #effectiveParams.items)
-                local itemData = effectiveParams.items[randomItemIndex]
+                local originalItemData = effectiveParams.items[randomItemIndex]
+
+                -- Select area if available, or use full item
+                local itemData = Utils.selectRandomAreaOrFullItem(originalItemData)
             
             -- Vérification pour les intervalles négatifs
             if interval < 0 then
@@ -1425,7 +1399,10 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
         itemCount = itemCount + 1
         -- Select a random item from the container
         local randomItemIndex = math.random(1, #effectiveParams.items)
-        local itemData = effectiveParams.items[randomItemIndex]
+        local originalItemData = effectiveParams.items[randomItemIndex]
+
+        -- Select area if available, or use full item
+        local itemData = Utils.selectRandomAreaOrFullItem(originalItemData)
         
         -- Vérification pour les intervalles négatifs (overlap)
         if interval < 0 then

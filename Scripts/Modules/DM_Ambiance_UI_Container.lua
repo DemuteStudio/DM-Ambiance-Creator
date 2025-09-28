@@ -371,12 +371,17 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
         -- Draw waveform if the Waveform module is available
         if globals.Waveform then
-            -- reaper.ShowConsoleMsg(string.format("[UI] Drawing waveform - fileExists: %s, path: %s\n", 
+            -- reaper.ShowConsoleMsg(string.format("[UI] Drawing waveform - fileExists: %s, path: %s\n",
                 -- tostring(fileExists), selectedItem.filePath or "nil"))
             local waveformData = nil
             if fileExists then
                 -- Create unique itemKey for this item
                 local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
+
+                -- Ensure areas from the item are loaded into waveformAreas for display
+                if selectedItem.areas and #selectedItem.areas > 0 then
+                    globals.waveformAreas[itemKey] = selectedItem.areas
+                end
 
                 -- Enhanced waveform options
                 local waveformOptions = {
@@ -432,6 +437,13 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 -- reaper.ShowConsoleMsg(string.format("  StartOffset: %.3f, Length: %.3f\n",
                 --     waveformOptions.startOffset, waveformOptions.displayLength))
                 waveformData = globals.Waveform.drawWaveform(selectedItem.filePath, math.floor(width * 0.95), 120, waveformOptions)
+
+                -- Synchronize areas from waveformAreas back to the item after any changes
+                if globals.waveformAreas[itemKey] then
+                    selectedItem.areas = globals.waveformAreas[itemKey]
+                else
+                    selectedItem.areas = nil
+                end
             else
                 -- Draw empty waveform box for missing files
                 local draw_list = imgui.GetWindowDrawList(globals.ctx)

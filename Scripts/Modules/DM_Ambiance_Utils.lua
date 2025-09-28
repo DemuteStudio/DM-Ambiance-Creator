@@ -1889,4 +1889,59 @@ function Utils.suggestRoutingFix(conflictInfo)
     return suggestions
 end
 
+-- Generate a unique itemKey for identifying items and their areas
+-- @param groupIndex number: The group index (1-based)
+-- @param containerIndex number: The container index (1-based)
+-- @param itemIndex number: The item index (1-based)
+-- @return string: The unique item key
+function Utils.generateItemKey(groupIndex, containerIndex, itemIndex)
+    return string.format("g%d_c%d_i%d", groupIndex, containerIndex, itemIndex)
+end
+
+-- Get areas for a specific item
+-- @param itemKey string: The unique item key
+-- @return table: Array of areas or empty table if none exist
+function Utils.getItemAreas(itemKey)
+    if not itemKey or not globals.waveformAreas or not globals.waveformAreas[itemKey] then
+        return {}
+    end
+    return globals.waveformAreas[itemKey]
+end
+
+-- Select a random area from an item, or return the full item if no areas exist
+-- @param itemData table: The original item data
+-- @return table: Modified item data with area-specific startOffset and length
+function Utils.selectRandomAreaOrFullItem(itemData)
+    local areas = itemData.areas or {}
+
+    if #areas == 0 then
+        -- No areas defined, return original item
+        return itemData
+    end
+
+    -- Select a random area
+    local randomAreaIndex = math.random(1, #areas)
+    local selectedArea = areas[randomAreaIndex]
+
+    -- Create a copy of the item data with area-specific modifications
+    local areaItemData = {}
+    for k, v in pairs(itemData) do
+        areaItemData[k] = v
+    end
+
+    -- Adjust startOffset and length to match the selected area
+    -- Areas store positions in seconds relative to the audio file
+    local areaStartTime = selectedArea.startPos
+    local areaEndTime = selectedArea.endPos
+    local areaLength = areaEndTime - areaStartTime
+
+    -- Set the start offset to the area's start position
+    areaItemData.startOffset = areaStartTime
+    areaItemData.length = areaLength
+    areaItemData.originalLength = itemData.length  -- Store original length for reference
+    areaItemData.selectedArea = selectedArea  -- Store which area was selected
+
+    return areaItemData
+end
+
 return Utils

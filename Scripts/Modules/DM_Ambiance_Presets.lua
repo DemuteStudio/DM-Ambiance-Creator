@@ -163,7 +163,7 @@ function Presets.loadPreset(name)
   if success and type(presetData) == "table" then
     globals.groups = presetData
     globals.currentPresetName = name
-    
+
     -- Apply track volumes for all groups and containers if they have tracks
     for groupIndex, group in ipairs(presetData) do
       -- Apply group track volume if it exists
@@ -250,7 +250,9 @@ function Presets.loadGroupPreset(name, groupIndex)
 
   if success and type(presetData) == "table" then
     globals.groups[groupIndex] = presetData
-    
+
+    -- Areas are now stored directly in items and will be synchronized to waveformAreas by the UI when needed
+
     -- Apply group track volume if it exists
     if presetData.trackVolume then
       globals.Utils.setGroupTrackVolume(groupIndex, presetData.trackVolume)
@@ -284,6 +286,7 @@ function Presets.saveContainerPreset(name, groupIndex, containerIndex)
 
   -- Remove any reference to track name (if any)
   local container = globals.groups[groupIndex].containers[containerIndex]
+
   local path = Presets.getPresetsPath("Containers") .. name .. ".lua"
   local file = io.open(path, "w")
 
@@ -310,14 +313,14 @@ function Presets.loadContainerPreset(name, groupIndex, containerIndex)
   local success, presetData = pcall(dofile, path)
 
   if success and type(presetData) == "table" then
-    -- Appliquer directement le preset chargé sans préserver les items existants
+    -- Apply the preset data to the container
     globals.groups[groupIndex].containers[containerIndex] = presetData
-    
+
     -- Apply the container track volume if the container track exists
     if presetData.trackVolume then
       globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, presetData.trackVolume)
     end
-    
+
     return true
   else
     reaper.ShowConsoleMsg("Error loading container preset: " .. tostring(presetData) .. "\n")
