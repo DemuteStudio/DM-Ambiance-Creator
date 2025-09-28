@@ -100,6 +100,12 @@ local SEVERITY = {
 
 -- Main validation function - validates entire project routing
 function RoutingValidator.validateProjectRouting()
+    -- CRITICAL: Skip validation if downgrade operation is in progress
+    if globals.skipRoutingValidation then
+        reaper.ShowConsoleMsg("INFO: RoutingValidator: Validation skipped (downgrade in progress)\n")
+        return {}
+    end
+
     local startTime = reaper.time_precise()
 
     -- Skip if validation was done recently (performance optimization)
@@ -622,39 +628,52 @@ function RoutingValidator.detectChannelConflicts(projectTree)
 end
 
 -- Find the master format (configuration with the most channels)
+-- CRITICAL: This now uses REAL tracks, not theoretical configuration
 function RoutingValidator.findMasterFormat(projectTree)
     local masterFormat = nil
     local maxChannels = 0
 
-    -- Scan globals.groups directly for accurate container data
-    for _, group in ipairs(globals.groups or {}) do
-        for _, container in ipairs(group.containers or {}) do
-            if container.channelMode and container.channelMode > 0 then
-                local config = Constants.CHANNEL_CONFIGS[container.channelMode]
-                if config then
-                    local activeConfig = config
-                    local channelCount = config.channels
+    -- Scan actual tracks to find the real channel usage
+    for _, trackInfo in ipairs(projectTree.toolTracks or {}) do
+        if trackInfo.isFromTool then
+            -- Get the REAL number of child tracks for this container
+            local realChildCount = RoutingValidator.getRealChildTrackCount(trackInfo)
 
-                    -- Handle variants for accurate config
-                    if config.hasVariants then
-                        local variant = container.channelVariant or 0
-                        if config.variants and config.variants[variant] then
-                            activeConfig = config.variants[variant]
-                            activeConfig.channels = config.channels  -- Preserve channel count
-                            activeConfig.name = config.name
+            if realChildCount > maxChannels then
+                maxChannels = realChildCount
+
+                -- Find the corresponding container configuration
+                local container = RoutingValidator.findContainerByTrackName(trackInfo.name)
+                if container and container.channelMode and container.channelMode > 0 then
+                    local config = Constants.CHANNEL_CONFIGS[container.channelMode]
+                    if config then
+                        local activeConfig = config
+
+                        -- Handle variants
+                        if config.hasVariants then
+                            local variant = container.channelVariant or 0
+                            if config.variants and config.variants[variant] then
+                                activeConfig = config.variants[variant]
+                                activeConfig.channels = realChildCount  -- Use REAL count
+                                activeConfig.name = config.name
+                            end
+                        else
+                            -- Override with real channel count
+                            activeConfig = {
+                                name = config.name,
+                                channels = realChildCount,
+                                routing = RoutingValidator.generateSequentialRouting(realChildCount),
+                                labels = RoutingValidator.generateLabelsForChannelCount(realChildCount, config)
+                            }
                         end
-                    end
 
-                    if channelCount > maxChannels then
-                        maxChannels = channelCount
-
-                        -- Build master format info
                         masterFormat = {
                             config = activeConfig,
-                            routing = container.customRouting or activeConfig.routing,
-                            labels = activeConfig.labels,
+                            routing = RoutingValidator.generateSequentialRouting(realChildCount),
+                            labels = RoutingValidator.generateLabelsForChannelCount(realChildCount, config),
                             container = container,
-                            group = group
+                            group = RoutingValidator.findGroupByContainer(container),
+                            realChannelCount = realChildCount
                         }
                     end
                 end
@@ -662,7 +681,104 @@ function RoutingValidator.findMasterFormat(projectTree)
         end
     end
 
+    if masterFormat then
+        reaper.ShowConsoleMsg(string.format("INFO: Master format detected: %d real channels (container: %s)\n",
+            maxChannels, masterFormat.container.name or "unknown"))
+    else
+        reaper.ShowConsoleMsg("INFO: No master format detected, using stereo default\n")
+    end
+
     return masterFormat
+end
+
+-- Get the REAL number of child tracks for a container track
+function RoutingValidator.getRealChildTrackCount(trackInfo)
+    if not trackInfo or not trackInfo.track then return 0 end
+
+    local containerTrack = trackInfo.track
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+
+    -- Check if it's a folder
+    local folderDepth = reaper.GetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH")
+    if folderDepth ~= 1 then
+        return 0  -- Not a folder
+    end
+
+    -- Count direct children
+    local childCount = 0
+    local trackIdx = containerIdx + 1
+    local depth = 1
+
+    while trackIdx < reaper.CountTracks(0) and depth > 0 do
+        local track = reaper.GetTrack(0, trackIdx)
+        if not track then break end
+
+        local parent = reaper.GetParentTrack(track)
+        if parent == containerTrack then
+            childCount = childCount + 1
+        end
+
+        local trackDepth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+        depth = depth + trackDepth
+        trackIdx = trackIdx + 1
+    end
+
+    return childCount
+end
+
+-- Generate sequential routing for a given channel count (1,2,3,4...)
+function RoutingValidator.generateSequentialRouting(channelCount)
+    local routing = {}
+    for i = 1, channelCount do
+        table.insert(routing, i)
+    end
+    return routing
+end
+
+-- Generate appropriate labels for a channel count based on configuration
+function RoutingValidator.generateLabelsForChannelCount(channelCount, baseConfig)
+    if channelCount == 2 then
+        return {"L", "R"}
+    elseif channelCount == 4 then
+        return {"L", "R", "LS", "RS"}  -- 4.0 Quad
+    elseif channelCount == 5 then
+        -- Use base config to determine variant if available
+        if baseConfig and baseConfig.hasVariants then
+            local defaultVariant = baseConfig.variants[0]
+            if defaultVariant and defaultVariant.labels then
+                return defaultVariant.labels
+            end
+        end
+        return {"L", "R", "C", "LS", "RS"}  -- Default 5.0
+    elseif channelCount == 7 then
+        -- Use base config to determine variant if available
+        if baseConfig and baseConfig.hasVariants then
+            local defaultVariant = baseConfig.variants[0]
+            if defaultVariant and defaultVariant.labels then
+                return defaultVariant.labels
+            end
+        end
+        return {"L", "R", "C", "LS", "RS", "LB", "RB"}  -- Default 7.0
+    else
+        -- Fallback: generate generic labels
+        local labels = {}
+        for i = 1, channelCount do
+            table.insert(labels, "Ch" .. i)
+        end
+        return labels
+    end
+end
+
+-- Find group containing a specific container
+function RoutingValidator.findGroupByContainer(targetContainer)
+    for _, group in ipairs(globals.groups or {}) do
+        for _, container in ipairs(group.containers or {}) do
+            if container == targetContainer then
+                return group
+            end
+        end
+    end
+    return nil
 end
 
 -- Create reference routing table based on master format
@@ -2055,9 +2171,78 @@ function RoutingValidator.validateAndShow()
         else
             RoutingValidator.showValidationModal(issues)
         end
+    else
+        -- No routing issues, check for optimization opportunities
+        RoutingValidator.checkOptimizationOpportunities()
     end
 
     return issues
+end
+
+-- Check for channel optimization opportunities
+function RoutingValidator.checkOptimizationOpportunities()
+    if not projectTrackCache then return end
+
+    local optimizationNeeded = false
+    local savings = {}
+
+    -- Check if any tracks have more channels than needed
+    for _, trackInfo in pairs(projectTrackCache.allTracks) do
+        if trackInfo and trackInfo.track then
+            local currentChannels = trackInfo.channelCount
+            local requiredChannels = RoutingValidator.getTrackRequiredChannels(trackInfo)
+
+            if currentChannels > requiredChannels then
+                optimizationNeeded = true
+                table.insert(savings, {
+                    track = trackInfo,
+                    current = currentChannels,
+                    required = requiredChannels,
+                    savings = currentChannels - requiredChannels
+                })
+            end
+        end
+    end
+
+    if optimizationNeeded then
+        reaper.ShowConsoleMsg(string.format("INFO: Channel optimization opportunities detected (%d tracks)\n", #savings))
+
+        -- Auto-optimize if enabled, otherwise suggest
+        if globals.autoOptimizeChannels then
+            RoutingValidator.applyChannelOptimization(savings)
+        else
+            RoutingValidator.showOptimizationSuggestion(savings)
+        end
+    else
+        reaper.ShowConsoleMsg("INFO: Project channel allocation is already optimal.\n")
+    end
+end
+
+-- Apply channel optimization
+function RoutingValidator.applyChannelOptimization(savings)
+    reaper.Undo_BeginBlock()
+
+    for _, saving in ipairs(savings) do
+        reaper.ShowConsoleMsg(string.format("INFO: Optimizing track '%s': %d → %d channels\n",
+            saving.track.name, saving.current, saving.required))
+        reaper.SetMediaTrackInfo_Value(saving.track.track, "I_NCHAN", saving.required)
+    end
+
+    reaper.Undo_EndBlock("Optimize Channel Count", -1)
+
+    -- Clear cache to reflect changes
+    projectTrackCache = nil
+end
+
+-- Show optimization suggestion to user
+function RoutingValidator.showOptimizationSuggestion(savings)
+    local totalSavings = 0
+    for _, saving in ipairs(savings) do
+        totalSavings = totalSavings + saving.savings
+    end
+
+    reaper.ShowConsoleMsg(string.format("SUGGESTION: %d channels could be saved across %d tracks. Enable auto-optimization or run manual optimization.\n",
+        totalSavings, #savings))
 end
 
 -- Get current project track cache (for external access)

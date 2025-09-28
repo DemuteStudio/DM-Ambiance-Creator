@@ -75,21 +75,13 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
         return {containerTrack}
     end
 
+    -- STEP 1: Detect and handle configuration changes
+    Generation.detectAndHandleConfigurationChanges(container)
+
     -- Get the active configuration (with variant if applicable)
     local activeConfig = config
     if config.hasVariants then
         activeConfig = config.variants[container.channelVariant or 0]
-        -- Debug: print what we got
-        if activeConfig then
-            reaper.ShowConsoleMsg(string.format("DEBUG: Using variant %d for %s - routing: %s\n",
-                container.channelVariant or 0,
-                container.name or "unknown",
-                table.concat(activeConfig.routing or {}, ", ")))
-        else
-            reaper.ShowConsoleMsg(string.format("DEBUG: No variant found for %s, variant: %d\n",
-                container.name or "unknown",
-                container.channelVariant or 0))
-        end
     end
 
     local channelTracks = {}
@@ -188,39 +180,14 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
                 end
             end
 
-            -- Debug: check both routing sources (only for first track to avoid spam)
-            if i == 1 then
-                if container.customRouting then
-                    reaper.ShowConsoleMsg(string.format("DEBUG: Found customRouting: %s\n",
-                        table.concat(container.customRouting, ", ")))
-                else
-                    reaper.ShowConsoleMsg("DEBUG: No customRouting found\n")
-                end
-                if activeConfig.routing then
-                    reaper.ShowConsoleMsg(string.format("DEBUG: activeConfig.routing: %s\n",
-                        table.concat(activeConfig.routing, ", ")))
-                else
-                    reaper.ShowConsoleMsg("DEBUG: No activeConfig.routing found\n")
-                end
-            end
-
             local routing = container.customRouting or activeConfig.routing
             local destChannel = 0 -- Default to channel 1 (0-based)
 
-            -- Debug: print routing info
-            reaper.ShowConsoleMsg(string.format("DEBUG: Track %d (%s): routing table = %s\n",
-                i, channelLabel,
-                routing and table.concat(routing, ", ") or "nil"))
-
             if routing and routing[i] then
                 destChannel = routing[i] - 1
-                reaper.ShowConsoleMsg(string.format("DEBUG: Track %d (%s): routing[%d] = %d -> destChannel = %d\n",
-                    i, channelLabel, i, routing[i], destChannel))
             else
                 -- Fallback: use channel index as destination
                 destChannel = i - 1
-                reaper.ShowConsoleMsg(string.format("DEBUG: Track %d (%s): No routing entry, using fallback destChannel = %d\n",
-                    i, channelLabel, destChannel))
             end
 
             -- For mono to mono routing in Reaper:
@@ -229,9 +196,6 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
 
             -- Destination: 1024 + channel number for mono routing
             local dstChannels = 1024 + destChannel
-
-            reaper.ShowConsoleMsg(string.format("DEBUG: Track %d (%s): Final send -> channel %d (REAPER: %d)\n",
-                i, channelLabel, destChannel + 1, dstChannels))
 
             reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "I_SRCCHAN", srcChannels)
             reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "I_DSTCHAN", dstChannels)
@@ -1073,6 +1037,18 @@ function Generation.generateGroups()
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
 
+    -- STEP 1: Recalculate channel requirements bottom-up after generation
+    Generation.recalculateChannelRequirements()
+
+    -- STEP 2: Check for routing conflicts after generation (if not skipped)
+    if not globals.skipRoutingValidation then
+        Generation.checkAndResolveConflicts()
+    else
+        reaper.ShowConsoleMsg("INFO: Routing validation skipped during downgrade operation\n")
+        -- Clear the skip flag for next time
+        globals.skipRoutingValidation = false
+    end
+
     if globals.keepExistingTracks then
         reaper.Undo_EndBlock("Regenerate all groups", -1)
     else
@@ -1700,6 +1676,356 @@ function Generation.applyRoutingFixes(suggestions)
     end
 
     reaper.UpdateArrange()
+end
+
+-- ===================================================================
+-- CHANNEL OPTIMIZATION AND RECALCULATION
+-- ===================================================================
+
+-- Recalculate channel requirements bottom-up: children define parent needs
+-- CRITICAL: Now uses REAL track counts, not theoretical configuration
+function Generation.recalculateChannelRequirements()
+    if not globals.groups or #globals.groups == 0 then
+        return
+    end
+
+    reaper.ShowConsoleMsg("INFO: Starting bottom-up channel recalculation (REAL tracks)...\n")
+
+    -- Phase 1: Calculate actual requirements for each container based on REAL tracks
+    local containerRequirements = {}
+
+    for _, group in ipairs(globals.groups) do
+        for _, container in ipairs(group.containers) do
+            if container.channelMode and container.channelMode > 0 then
+                -- Get the REAL number of child tracks
+                local realChildCount = Generation.getExistingChildTrackCount(container)
+
+                if realChildCount and realChildCount > 0 then
+                    -- Use REAL count, not theoretical config
+                    local requiredChannels = realChildCount
+
+                    -- Apply REAPER even constraint
+                    if requiredChannels % 2 == 1 then
+                        requiredChannels = requiredChannels + 1
+                    end
+
+                    containerRequirements[container.name] = {
+                        logicalChannels = realChildCount,  -- REAL count
+                        physicalChannels = requiredChannels,
+                        container = container,
+                        group = group
+                    }
+
+                    reaper.ShowConsoleMsg(string.format("INFO: Container '%s' has %d REAL tracks → requires %d physical channels\n",
+                        container.name, realChildCount, requiredChannels))
+                else
+                    -- Fallback to theoretical if no tracks exist yet
+                    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+                    if config then
+                        local requiredChannels = config.channels
+                        if requiredChannels % 2 == 1 then
+                            requiredChannels = requiredChannels + 1
+                        end
+
+                        containerRequirements[container.name] = {
+                            logicalChannels = config.channels,
+                            physicalChannels = requiredChannels,
+                            container = container,
+                            group = group
+                        }
+
+                        reaper.ShowConsoleMsg(string.format("INFO: Container '%s' (no tracks yet) → requires %d channels (theoretical)\n",
+                            container.name, requiredChannels))
+                    end
+                end
+            end
+        end
+    end
+
+    -- Phase 2: Calculate requirements for each group (sum of containers)
+    local groupRequirements = {}
+
+    for _, group in ipairs(globals.groups) do
+        local maxChannels = 2  -- Minimum stereo
+        local containerCount = 0
+
+        for _, container in ipairs(group.containers) do
+            local req = containerRequirements[container.name]
+            if req then
+                maxChannels = math.max(maxChannels, req.physicalChannels)
+                containerCount = containerCount + 1
+            end
+        end
+
+        groupRequirements[group.name] = {
+            requiredChannels = maxChannels,
+            containerCount = containerCount,
+            group = group
+        }
+
+        reaper.ShowConsoleMsg(string.format("INFO: Group '%s' requires %d channels for %d containers\n",
+            group.name, maxChannels, containerCount))
+    end
+
+    -- Phase 3: Calculate master track requirement (maximum of all groups)
+    local masterRequirement = 2  -- Minimum stereo
+
+    for _, req in pairs(groupRequirements) do
+        masterRequirement = math.max(masterRequirement, req.requiredChannels)
+    end
+
+    reaper.ShowConsoleMsg(string.format("INFO: Master track requires %d channels\n", masterRequirement))
+
+    -- Phase 4: Apply the calculated requirements to actual tracks
+    Generation.applyChannelRequirements(containerRequirements, groupRequirements, masterRequirement)
+
+    reaper.ShowConsoleMsg("INFO: Bottom-up channel recalculation completed.\n")
+end
+
+-- Apply calculated channel requirements to actual REAPER tracks
+function Generation.applyChannelRequirements(containerReqs, groupReqs, masterReq)
+    reaper.Undo_BeginBlock()
+
+    -- Update container tracks
+    for containerName, req in pairs(containerReqs) do
+        local containerTrack = Generation.findContainerTrack(req.group.name, containerName)
+        if containerTrack then
+            local currentChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+            if currentChannels ~= req.physicalChannels then
+                reaper.ShowConsoleMsg(string.format("INFO: Updating container '%s' from %d to %d channels\n",
+                    containerName, currentChannels, req.physicalChannels))
+                reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", req.physicalChannels)
+            end
+        end
+    end
+
+    -- Update group tracks
+    for groupName, req in pairs(groupReqs) do
+        local groupTrack = Generation.findGroupTrack(groupName)
+        if groupTrack then
+            local currentChannels = reaper.GetMediaTrackInfo_Value(groupTrack, "I_NCHAN")
+            if currentChannels ~= req.requiredChannels then
+                reaper.ShowConsoleMsg(string.format("INFO: Updating group '%s' from %d to %d channels\n",
+                    groupName, currentChannels, req.requiredChannels))
+                reaper.SetMediaTrackInfo_Value(groupTrack, "I_NCHAN", req.requiredChannels)
+            end
+        end
+    end
+
+    -- Update master track
+    local masterTrack = reaper.GetMasterTrack(0)
+    if masterTrack then
+        local currentChannels = reaper.GetMediaTrackInfo_Value(masterTrack, "I_NCHAN")
+        if currentChannels ~= masterReq then
+            reaper.ShowConsoleMsg(string.format("INFO: Updating master track from %d to %d channels\n",
+                currentChannels, masterReq))
+            reaper.SetMediaTrackInfo_Value(masterTrack, "I_NCHAN", masterReq)
+        end
+    end
+
+    reaper.Undo_EndBlock("Optimize Project Channel Count", -1)
+end
+
+-- Find container track by group and container name
+function Generation.findContainerTrack(groupName, containerName)
+    local groupTrack = Generation.findGroupTrack(groupName)
+    if not groupTrack then return nil end
+
+    local groupIdx = reaper.GetMediaTrackInfo_Value(groupTrack, "IP_TRACKNUMBER") - 1
+    return globals.Utils.findContainerGroup(groupIdx, containerName)
+end
+
+-- Find group track by name
+function Generation.findGroupTrack(groupName)
+    local groupTrack, _ = globals.Utils.findGroupByName(groupName)
+    return groupTrack
+end
+
+-- Handle configuration downgrades (e.g., 5.0 → 4.0)
+function Generation.handleConfigurationDowngrade(container, oldChannelCount, newChannelCount)
+    if newChannelCount >= oldChannelCount then
+        return  -- Not a downgrade
+    end
+
+    reaper.ShowConsoleMsg(string.format("INFO: Handling downgrade for '%s': %d→%d channels\n",
+        container.name or "unknown", oldChannelCount, newChannelCount))
+
+    -- Find the container track
+    local containerTrack = nil
+    for _, group in ipairs(globals.groups or {}) do
+        if group.containers then
+            for _, cont in ipairs(group.containers) do
+                if cont == container then
+                    containerTrack = Generation.findContainerTrack(group.name, container.name)
+                    break
+                end
+            end
+        end
+        if containerTrack then break end
+    end
+
+    if not containerTrack then
+        reaper.ShowConsoleMsg(string.format("WARNING: Could not find track for container '%s'\n", container.name))
+        return
+    end
+
+    -- Remove excess child tracks
+    Generation.removeExcessChildTracks(containerTrack, oldChannelCount, newChannelCount)
+
+    -- Clear corrupted customRouting
+    if container.customRouting then
+        reaper.ShowConsoleMsg(string.format("INFO: Clearing customRouting for '%s' due to downgrade\n", container.name))
+        container.customRouting = nil
+    end
+
+    -- Force regeneration to apply new routing
+    container.needsRegeneration = true
+
+    reaper.ShowConsoleMsg(string.format("INFO: Downgrade handling completed for '%s'\n", container.name))
+end
+
+-- Remove excess child tracks during downgrade
+function Generation.removeExcessChildTracks(containerTrack, oldChannelCount, newChannelCount)
+    if not containerTrack then return end
+
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+    local tracksToRemove = oldChannelCount - newChannelCount
+
+    reaper.ShowConsoleMsg(string.format("INFO: Removing %d excess child tracks\n", tracksToRemove))
+
+    -- Remove tracks from the end (highest channel numbers first)
+    for i = 1, tracksToRemove do
+        local childTrackIdx = containerIdx + oldChannelCount - i + 1
+        if childTrackIdx < reaper.CountTracks(0) then
+            local childTrack = reaper.GetTrack(0, childTrackIdx)
+            if childTrack then
+                local parent = reaper.GetParentTrack(childTrack)
+                if parent == containerTrack then
+                    reaper.ShowConsoleMsg(string.format("INFO: Removing child track at index %d\n", childTrackIdx))
+                    reaper.DeleteTrack(childTrack)
+                else
+                    reaper.ShowConsoleMsg(string.format("WARNING: Track at index %d is not a child of container\n", childTrackIdx))
+                end
+            end
+        end
+    end
+end
+
+-- Detect configuration changes and handle them appropriately
+function Generation.detectAndHandleConfigurationChanges(container)
+    if not container.channelMode or container.channelMode == 0 then
+        return  -- No multi-channel configuration
+    end
+
+    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+    if not config then return end
+
+    local newChannelCount = config.channels
+
+    -- Try to detect old channel count from existing tracks
+    local oldChannelCount = Generation.getExistingChildTrackCount(container)
+
+    if oldChannelCount and oldChannelCount > newChannelCount then
+        -- Configuration downgrade detected - PROPAGATE TO ALL SIMILAR CONTAINERS
+        reaper.ShowConsoleMsg(string.format("INFO: Propagating downgrade %d→%d to all %s containers\n",
+            oldChannelCount, newChannelCount, config.name or "unknown"))
+
+        Generation.propagateConfigurationDowngrade(oldChannelCount, newChannelCount, container.channelMode)
+
+    elseif oldChannelCount and oldChannelCount < newChannelCount then
+        -- Configuration upgrade detected
+        reaper.ShowConsoleMsg(string.format("INFO: Configuration upgrade detected for '%s': %d→%d channels\n",
+            container.name or "unknown", oldChannelCount, newChannelCount))
+        -- The normal creation process will handle upgrades
+    end
+end
+
+-- Propagate configuration downgrades to ALL containers of the same type
+function Generation.propagateConfigurationDowngrade(oldChannelCount, newChannelCount, channelModeType)
+    local affectedContainers = {}
+
+    -- Find ALL containers with the same channel mode
+    for _, group in ipairs(globals.groups or {}) do
+        for _, container in ipairs(group.containers or {}) do
+            if container.channelMode == channelModeType then
+                local currentChildCount = Generation.getExistingChildTrackCount(container)
+                if currentChildCount and currentChildCount == oldChannelCount then
+                    table.insert(affectedContainers, {
+                        container = container,
+                        group = group,
+                        currentChildCount = currentChildCount
+                    })
+                end
+            end
+        end
+    end
+
+    reaper.ShowConsoleMsg(string.format("INFO: Found %d containers to downgrade\n", #affectedContainers))
+
+    -- Apply downgrade to ALL affected containers
+    for _, info in ipairs(affectedContainers) do
+        Generation.handleConfigurationDowngrade(info.container, oldChannelCount, newChannelCount)
+        reaper.ShowConsoleMsg(string.format("INFO: Downgraded container '%s' in group '%s'\n",
+            info.container.name or "unknown", info.group.name or "unknown"))
+    end
+
+    -- CRITICAL: Set a flag to prevent RoutingValidator from "fixing" during this operation
+    globals.skipRoutingValidation = true
+
+    -- Clear RoutingValidator cache to force fresh validation next time
+    if globals.RoutingValidator and globals.RoutingValidator.clearValidation then
+        globals.RoutingValidator.clearValidation()
+    end
+
+    reaper.ShowConsoleMsg(string.format("INFO: Propagation complete. %d containers processed.\n", #affectedContainers))
+end
+
+-- Get the current number of child tracks for a container
+function Generation.getExistingChildTrackCount(container)
+    -- Find the container track
+    local containerTrack = nil
+    for _, group in ipairs(globals.groups or {}) do
+        if group.containers then
+            for _, cont in ipairs(group.containers) do
+                if cont == container then
+                    containerTrack = Generation.findContainerTrack(group.name, container.name)
+                    break
+                end
+            end
+        end
+        if containerTrack then break end
+    end
+
+    if not containerTrack then return nil end
+
+    -- Count direct children
+    local containerIdx = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+    local childCount = 0
+    local trackIdx = containerIdx + 1
+
+    -- Check folder structure
+    local folderDepth = reaper.GetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH")
+    if folderDepth ~= 1 then
+        return 0  -- Container is not a folder
+    end
+
+    -- Count children until we exit the folder
+    local depth = 1
+    while trackIdx < reaper.CountTracks(0) and depth > 0 do
+        local track = reaper.GetTrack(0, trackIdx)
+        if not track then break end
+
+        local parent = reaper.GetParentTrack(track)
+        if parent == containerTrack then
+            childCount = childCount + 1
+        end
+
+        local trackDepth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+        depth = depth + trackDepth
+        trackIdx = trackIdx + 1
+    end
+
+    return childCount
 end
 
 -- Centralized routing validation and issue resolution

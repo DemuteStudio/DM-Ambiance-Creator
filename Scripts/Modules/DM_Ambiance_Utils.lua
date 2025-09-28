@@ -1739,6 +1739,131 @@ function Utils.ensureParentHasEnoughChannels(childTrack, requiredChannels)
     end
 end
 
+-- ===================================================================
+-- GLOBAL CHANNEL OPTIMIZATION
+-- ===================================================================
+
+-- Optimize the entire project's channel count by removing unused channels
+function Utils.optimizeProjectChannelCount()
+    if not globals.groups or #globals.groups == 0 then
+        return
+    end
+
+    reaper.ShowConsoleMsg("INFO: Starting global channel optimization...\n")
+    reaper.Undo_BeginBlock()
+
+    -- Calculate actual channel usage for the entire project
+    local actualUsage = Utils.calculateActualChannelUsage()
+
+    -- Apply optimizations
+    Utils.applyChannelOptimizations(actualUsage)
+
+    reaper.Undo_EndBlock("Optimize Project Channel Count", -1)
+    reaper.ShowConsoleMsg("INFO: Global channel optimization completed.\n")
+end
+
+-- Calculate actual channel usage across the project
+function Utils.calculateActualChannelUsage()
+    local usage = {
+        containers = {},
+        groups = {},
+        master = 2  -- Minimum stereo
+    }
+
+    -- Analyze each container's actual routing requirements
+    for _, group in ipairs(globals.groups) do
+        local groupMaxChannels = 2
+
+        for _, container in ipairs(group.containers) do
+            if container.channelMode and container.channelMode > 0 then
+                local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+                if config then
+                    local requiredChannels = config.channels
+
+                    -- Apply REAPER even constraint
+                    if requiredChannels % 2 == 1 then
+                        requiredChannels = requiredChannels + 1
+                    end
+
+                    usage.containers[container.name] = {
+                        required = requiredChannels,
+                        logical = config.channels,
+                        container = container,
+                        group = group
+                    }
+
+                    groupMaxChannels = math.max(groupMaxChannels, requiredChannels)
+                end
+            end
+        end
+
+        usage.groups[group.name] = {
+            required = groupMaxChannels,
+            group = group
+        }
+
+        usage.master = math.max(usage.master, groupMaxChannels)
+    end
+
+    return usage
+end
+
+-- Apply channel optimizations based on calculated usage
+function Utils.applyChannelOptimizations(usage)
+    local trackCount = reaper.CountTracks(0)
+
+    -- Optimize container tracks
+    for containerName, info in pairs(usage.containers) do
+        local containerTrack = Utils.findContainerTrackByName(containerName, info.group.name)
+        if containerTrack then
+            local currentChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+            if currentChannels > info.required then
+                reaper.ShowConsoleMsg(string.format("INFO: Optimizing container '%s': %d → %d channels\n",
+                    containerName, currentChannels, info.required))
+                reaper.SetMediaTrackInfo_Value(containerTrack, "I_NCHAN", info.required)
+            end
+        end
+    end
+
+    -- Optimize group tracks
+    for groupName, info in pairs(usage.groups) do
+        local groupTrack = Utils.findGroupTrackByName(groupName)
+        if groupTrack then
+            local currentChannels = reaper.GetMediaTrackInfo_Value(groupTrack, "I_NCHAN")
+            if currentChannels > info.required then
+                reaper.ShowConsoleMsg(string.format("INFO: Optimizing group '%s': %d → %d channels\n",
+                    groupName, currentChannels, info.required))
+                reaper.SetMediaTrackInfo_Value(groupTrack, "I_NCHAN", info.required)
+            end
+        end
+    end
+
+    -- Optimize master track
+    local masterTrack = reaper.GetMasterTrack(0)
+    if masterTrack then
+        local currentChannels = reaper.GetMediaTrackInfo_Value(masterTrack, "I_NCHAN")
+        if currentChannels > usage.master then
+            reaper.ShowConsoleMsg(string.format("INFO: Optimizing master track: %d → %d channels\n",
+                currentChannels, usage.master))
+            reaper.SetMediaTrackInfo_Value(masterTrack, "I_NCHAN", usage.master)
+        end
+    end
+end
+
+-- Find container track by name and group name
+function Utils.findContainerTrackByName(containerName, groupName)
+    local groupTrack, groupIdx = Utils.findGroupByName(groupName)
+    if not groupTrack then return nil end
+
+    return Utils.findContainerGroup(groupIdx, containerName)
+end
+
+-- Find group track by name
+function Utils.findGroupTrackByName(groupName)
+    local groupTrack, _ = Utils.findGroupByName(groupName)
+    return groupTrack
+end
+
 -- Detect routing conflicts between containers
 -- @return table: conflict info or nil if no conflicts
 function Utils.detectRoutingConflicts()
