@@ -44,6 +44,7 @@ function Waveform.initModule(g)
 
     -- Initialize waveform areas/regions
     globals.waveformAreas = {}       -- Store areas/regions: {[itemKey] = {areas}}
+    globals.waveformBounds = {}      -- Store waveform bounds for interaction detection
     globals.waveformAreaDrag = {     -- Track area creation/editing state
         isDragging = false,
         isResizing = false,
@@ -977,8 +978,16 @@ function Waveform.drawWaveform(filePath, width, height, options)
         0, 0, 1
     )
 
-    -- Reserve space
-    imgui.Dummy(ctx, width, height)
+    -- Store waveform bounds for interaction detection
+    globals.waveformBounds[itemKey] = {
+        x = pos_x,
+        y = pos_y,
+        width = width,
+        height = height
+    }
+
+    -- Reserve space and capture interactions with InvisibleButton
+    local buttonPressed = imgui.InvisibleButton(ctx, "WaveformInteraction##" .. itemKey, width, height)
 
     -- Get mouse position for all interactions
     local mouse_x, mouse_y = imgui.GetMousePos(ctx)
@@ -1994,6 +2003,57 @@ function Waveform.getAreaAtPosition(itemKey, position, length)
     end
 
     return nil
+end
+
+-- Check if any waveform manipulation is currently active
+function Waveform.isWaveformBeingManipulated()
+    if not globals.waveformAreaDrag then
+        return false
+    end
+
+    return globals.waveformAreaDrag.isDragging or
+           globals.waveformAreaDrag.isResizing or
+           globals.waveformAreaDrag.isMoving
+end
+
+
+-- Check if mouse is potentially about to interact with waveform
+function Waveform.isMouseAboutToInteractWithWaveform()
+    if not globals.ctx or not globals.imgui then
+        return false
+    end
+
+    -- Check if any waveform manipulation is already active
+    if Waveform.isWaveformBeingManipulated() then
+        return true
+    end
+
+    -- Check for modifier keys that would trigger waveform interactions
+    local keyMods = globals.imgui.GetKeyMods(globals.ctx)
+    local shiftPressed = (keyMods & globals.imgui.Mod_Shift) ~= 0
+    local ctrlPressed = (keyMods & globals.imgui.Mod_Ctrl) ~= 0
+
+    -- If Shift is pressed (for creating areas) or Ctrl is pressed (for deleting)
+    -- and mouse is down, we should prevent window movement
+    if (shiftPressed or ctrlPressed) and globals.imgui.IsMouseDown(globals.ctx, 0) then
+        return true
+    end
+
+    -- Check if mouse is hovering over any waveform area
+    if globals.waveformBounds then
+        local mouse_x, mouse_y = globals.imgui.GetMousePos(globals.ctx)
+        for itemKey, bounds in pairs(globals.waveformBounds) do
+            if bounds and mouse_x >= bounds.x and mouse_x <= bounds.x + bounds.width and
+               mouse_y >= bounds.y and mouse_y <= bounds.y + bounds.height then
+                -- Mouse is over a waveform, check for potential interactions
+                if shiftPressed or ctrlPressed or globals.imgui.IsMouseDown(globals.ctx, 0) then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
 end
 
 return Waveform

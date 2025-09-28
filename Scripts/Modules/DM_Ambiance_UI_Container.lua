@@ -301,19 +301,19 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         imgui.Separator(globals.ctx)
         imgui.Text(globals.ctx, "Waveform Viewer")
 
-        -- Add display options on the same line
+        -- -- Add display options on the same line
+        -- imgui.SameLine(globals.ctx)
+        -- local _, showPeaks = imgui.Checkbox(globals.ctx, "Peaks##waveform",
+        --     globals.waveformShowPeaks ~= false)
+        -- globals.waveformShowPeaks = showPeaks
+        
+        -- imgui.SameLine(globals.ctx)
+        -- local _, showRMS = imgui.Checkbox(globals.ctx, "RMS##waveform",
+        --     globals.waveformShowRMS ~= false)
+        -- globals.waveformShowRMS = showRMS
+        
         imgui.SameLine(globals.ctx)
         imgui.SetCursorPosX(globals.ctx, width * 0.4)
-        local _, showPeaks = imgui.Checkbox(globals.ctx, "Peaks##waveform",
-            globals.waveformShowPeaks ~= false)
-        globals.waveformShowPeaks = showPeaks
-
-        imgui.SameLine(globals.ctx)
-        local _, showRMS = imgui.Checkbox(globals.ctx, "RMS##waveform",
-            globals.waveformShowRMS ~= false)
-        globals.waveformShowRMS = showRMS
-
-        imgui.SameLine(globals.ctx)
         local _, autoPlay = imgui.Checkbox(globals.ctx, "Auto-play##waveform",
             globals.waveformAutoPlayOnSelect ~= false)
         globals.waveformAutoPlayOnSelect = autoPlay

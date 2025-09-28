@@ -884,6 +884,13 @@ end
 -- Main window rendering function
 function UI.ShowMainWindow(open)
     local windowFlags = imgui.WindowFlags_None
+
+    -- Lock window movement during waveform manipulations or when about to interact
+    if globals.Waveform and (globals.Waveform.isWaveformBeingManipulated() or
+                            globals.Waveform.isMouseAboutToInteractWithWaveform()) then
+        windowFlags = windowFlags | imgui.WindowFlags_NoMove
+    end
+
     local visible, open = globals.imgui.Begin(globals.ctx, 'Ambiance Creator', open, windowFlags)
 
     -- CRITICAL: Only call End() if Begin() returned true (visible)
