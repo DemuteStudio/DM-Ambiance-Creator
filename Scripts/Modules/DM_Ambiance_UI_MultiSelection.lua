@@ -385,7 +385,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         }
         
         -- Use the common trigger settings function
-        globals.UI.drawTriggerSettingsSection(dataObj, callbacks, width, "")
+        globals.UI.drawTriggerSettingsSection(dataObj, callbacks, width, "", nil)
     end
 
     -- RANDOMIZATION PARAMETERS SECTION

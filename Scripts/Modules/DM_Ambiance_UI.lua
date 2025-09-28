@@ -217,10 +217,25 @@ end
 -- Draw the trigger settings section (shared by groups and containers)
 -- dataObj must expose: intervalMode, triggerRate, triggerDrift, fadeIn, fadeOut
 -- callbacks must provide setters for each parameter
-function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix)
+function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, autoRegenCallback)
     -- Section separator and title
     imgui.Separator(globals.ctx)
     imgui.Text(globals.ctx, titlePrefix .. "Trigger Settings")
+
+    -- Initialize auto-regen tracking if not exists and callback provided
+    if autoRegenCallback and not globals.autoRegenTracking then
+        globals.autoRegenTracking = {}
+    end
+
+    -- Create unique tracking key for this function call
+    local trackingKey = tostring(dataObj) .. "_" .. (titlePrefix or "")
+
+    -- Helper function for auto-regeneration check
+    local function checkAutoRegen(paramName, paramKey, oldValue, newValue)
+        if autoRegenCallback and oldValue ~= newValue and globals.timeSelectionValid then
+            autoRegenCallback(paramName, oldValue, newValue)
+        end
+    end
 
     -- Layout parameters
     local controlHeight = 20
@@ -286,8 +301,23 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix)
 
         imgui.BeginGroup(globals.ctx)
         imgui.PushItemWidth(globals.ctx, controlWidth)
+
+        local triggerRateKey = trackingKey .. "_triggerRate"
         local rv, newRate = imgui.SliderDouble(globals.ctx, "##TriggerRate", dataObj.triggerRate, rateMin, rateMax, "%.1f")
+
+        -- Store initial value when starting to drag
+        if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[triggerRateKey] then
+            globals.autoRegenTracking[triggerRateKey] = dataObj.triggerRate
+        end
+
         if rv then callbacks.setTriggerRate(newRate) end
+
+        -- Check for auto-regen on release
+        if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[triggerRateKey] then
+            checkAutoRegen("triggerRate", globals.autoRegenTracking[triggerRateKey], dataObj.triggerRate)
+            globals.autoRegenTracking[triggerRateKey] = nil
+        end
+
         imgui.EndGroup(globals.ctx)
 
         imgui.SameLine(globals.ctx, controlWidth + padding)
@@ -296,8 +326,23 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix)
         -- Compact random variation control on same line
         imgui.SameLine(globals.ctx)
         imgui.PushItemWidth(globals.ctx, 60)
+
+        local triggerDriftKey = trackingKey .. "_triggerDrift"
         local rvDrift, newDrift = imgui.DragInt(globals.ctx, "##TriggerDrift", dataObj.triggerDrift, 0.5, 0, 100, "%d%%")
+
+        -- Store initial value when starting to drag
+        if imgui.IsItemActive(globals.ctx) and autoRegenCallback and not globals.autoRegenTracking[triggerDriftKey] then
+            globals.autoRegenTracking[triggerDriftKey] = dataObj.triggerDrift
+        end
+
         if rvDrift then callbacks.setTriggerDrift(newDrift) end
+
+        -- Check for auto-regen on release
+        if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and autoRegenCallback and globals.autoRegenTracking[triggerDriftKey] then
+            checkAutoRegen("triggerDrift", triggerDriftKey, globals.autoRegenTracking[triggerDriftKey], dataObj.triggerDrift)
+            globals.autoRegenTracking[triggerDriftKey] = nil
+        end
+
         imgui.PopItemWidth(globals.ctx)
         imgui.SameLine(globals.ctx)
         imgui.Text(globals.ctx, "Var")
@@ -309,8 +354,23 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix)
         do
             imgui.BeginGroup(globals.ctx)
             imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local chunkDurationKey = trackingKey .. "_chunkDuration"
             local rv, newDuration = imgui.SliderDouble(globals.ctx, "##ChunkDuration", dataObj.chunkDuration, 0.5, 60.0, "%.1f sec")
+
+            -- Store initial value when starting to drag
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkDurationKey] then
+                globals.autoRegenTracking[chunkDurationKey] = dataObj.chunkDuration
+            end
+
             if rv then callbacks.setChunkDuration(newDuration) end
+
+            -- Check for auto-regen on release
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[chunkDurationKey] then
+                checkAutoRegen("chunkDuration", globals.autoRegenTracking[chunkDurationKey], dataObj.chunkDuration)
+                globals.autoRegenTracking[chunkDurationKey] = nil
+            end
+
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
@@ -321,8 +381,23 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix)
             -- Compact variation control on same line
             imgui.SameLine(globals.ctx)
             imgui.PushItemWidth(globals.ctx, 60)
+
+            local chunkDurationVarKey = trackingKey .. "_chunkDurationVar"
             local rv2, newDurationVar = imgui.DragInt(globals.ctx, "##ChunkDurationVar", dataObj.chunkDurationVariation, 0.5, 0, 100, "%d%%")
+
+            -- Store initial value when starting to drag
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkDurationVarKey] then
+                globals.autoRegenTracking[chunkDurationVarKey] = dataObj.chunkDurationVariation
+            end
+
             if rv2 then callbacks.setChunkDurationVariation(newDurationVar) end
+
+            -- Check for auto-regen on release
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[chunkDurationVarKey] then
+                checkAutoRegen("chunkDurationVar", chunkDurationVarKey, globals.autoRegenTracking[chunkDurationVarKey], dataObj.chunkDurationVariation)
+                globals.autoRegenTracking[chunkDurationVarKey] = nil
+            end
+
             imgui.PopItemWidth(globals.ctx)
             imgui.SameLine(globals.ctx)
             imgui.Text(globals.ctx, "Var")
@@ -332,8 +407,23 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix)
         do
             imgui.BeginGroup(globals.ctx)
             imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local chunkSilenceKey = trackingKey .. "_chunkSilence"
             local rv, newSilence = imgui.SliderDouble(globals.ctx, "##ChunkSilence", dataObj.chunkSilence, 0.0, 120.0, "%.1f sec")
+
+            -- Store initial value when starting to drag
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkSilenceKey] then
+                globals.autoRegenTracking[chunkSilenceKey] = dataObj.chunkSilence
+            end
+
             if rv then callbacks.setChunkSilence(newSilence) end
+
+            -- Check for auto-regen on release
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[chunkSilenceKey] then
+                checkAutoRegen("chunkSilence", globals.autoRegenTracking[chunkSilenceKey], dataObj.chunkSilence)
+                globals.autoRegenTracking[chunkSilenceKey] = nil
+            end
+
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
@@ -344,8 +434,23 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix)
             -- Compact variation control on same line
             imgui.SameLine(globals.ctx)
             imgui.PushItemWidth(globals.ctx, 60)
+
+            local chunkSilenceVarKey = trackingKey .. "_chunkSilenceVar"
             local rv2, newSilenceVar = imgui.DragInt(globals.ctx, "##ChunkSilenceVar", dataObj.chunkSilenceVariation, 0.5, 0, 100, "%d%%")
+
+            -- Store initial value when starting to drag
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkSilenceVarKey] then
+                globals.autoRegenTracking[chunkSilenceVarKey] = dataObj.chunkSilenceVariation
+            end
+
             if rv2 then callbacks.setChunkSilenceVariation(newSilenceVar) end
+
+            -- Check for auto-regen on release
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[chunkSilenceVarKey] then
+                checkAutoRegen("chunkSilenceVar", chunkSilenceVarKey, globals.autoRegenTracking[chunkSilenceVarKey], dataObj.chunkSilenceVariation)
+                globals.autoRegenTracking[chunkSilenceVarKey] = nil
+            end
+
             imgui.PopItemWidth(globals.ctx)
             imgui.SameLine(globals.ctx)
             imgui.Text(globals.ctx, "Var")
@@ -359,6 +464,33 @@ end
 function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, containerIndex)
     local titlePrefix = isGroup and "Default " or ""
     local inheritText = isGroup and "These settings will be inherited by containers unless overridden" or ""
+
+    -- Initialize auto-regen tracking if not exists
+    if not globals.autoRegenTracking then
+        globals.autoRegenTracking = {}
+    end
+
+    -- Create a safe tracking key
+    local trackingKey = objId or ""
+    if trackingKey == "" then
+        if isGroup then
+            trackingKey = "group_" .. (groupIndex or "unknown")
+        else
+            trackingKey = "container_" .. (groupIndex or "unknown") .. "_" .. (containerIndex or "unknown")
+        end
+    end
+
+    -- Helper function for auto-regeneration
+    local function checkAutoRegen(paramName, oldValue, newValue)
+        if oldValue ~= newValue and globals.timeSelectionValid then
+            -- Value changed and time selection is valid, trigger auto-regeneration
+            if isGroup then
+                globals.Generation.generateSingleGroup(groupIndex)
+            else
+                globals.Generation.generateSingleContainer(groupIndex, containerIndex)
+            end
+        end
+    end
 
     -- Inheritance info
     if inheritText ~= "" then
@@ -391,7 +523,8 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setChunkSilenceVariation = function(v) obj.chunkSilenceVariation = v; obj.needsRegeneration = true end,
         },
         width,
-        titlePrefix
+        titlePrefix,
+        checkAutoRegen  -- Pass the auto-regen callback
     )
 
     -- Randomization parameters section
