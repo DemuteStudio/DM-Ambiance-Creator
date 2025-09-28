@@ -141,7 +141,14 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
             -- Route to single channel (0-based)
             -- Use custom routing if available (for conflict resolution)
             local routing = container.customRouting or activeConfig.routing
-            local destChannel = routing[i] - 1
+            local destChannel = 0 -- Default to channel 1 (0-based)
+
+            if routing and routing[i] then
+                destChannel = routing[i] - 1
+            else
+                -- Fallback: use channel index as destination
+                destChannel = i - 1
+            end
 
             -- For mono to mono routing in Reaper:
             -- Source: 1024 = mono mode (bit 10 set, channel 1)
@@ -536,71 +543,52 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
         if groupIndex then break end
     end
 
-    -- Determine if we're in multi-channel mode
-    local isMultiChannel = container.channelMode and container.channelMode > 0
-
-    -- Handle multi-channel setup
+    -- Handle multi-channel setup with simplified detection
+    local shouldBeMultiChannel = container.channelMode and container.channelMode > 0
+    local hasChildTracks = reaper.GetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH") == 1
+    local isLastInGroup = (containerIndex == #group.containers)
     local channelTracks = {}
-    if globals.keepExistingTracks then
-        if isMultiChannel then
-            -- Try to find tracks by stored GUIDs first
-            local foundContainer, foundChannelTracks = Generation.findTracksByGUIDs(container)
-            
-            if foundContainer and #foundChannelTracks > 0 then
-                -- Found all tracks by GUID
-                -- Check if this is the last container in the group
-                local isLastInGroup = (containerIndex == #group.containers)
-                
-                -- Restore folder structure with proper closing
-                Generation.adjustFolderClosing(foundContainer, foundChannelTracks, isLastInGroup)
-                channelTracks = foundChannelTracks
-                Generation.clearChannelTracks(channelTracks)
+
+    -- Check if current structure matches expected mode
+    if shouldBeMultiChannel == hasChildTracks then
+        -- Structure matches, use existing tracks
+        channelTracks = Generation.getExistingChannelTracks(containerGroup)
+
+        -- For multi-channel, verify we have the correct number of channels
+        if shouldBeMultiChannel then
+            local expectedChannels = globals.Constants.CHANNEL_CONFIGS[container.channelMode].channels
+
+            if #channelTracks ~= expectedChannels then
+                -- Incorrect number of channels, recreate structure
+                Generation.deleteContainerChildTracks(containerGroup)
+                channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
             else
-                -- GUIDs not found or incomplete, try other methods
-                channelTracks = Generation.getExistingChannelTracks(containerGroup)
-                
-                -- If we don't find child tracks or only find the container itself,
-                -- the folder structure might be lost - try to find tracks by name
-                if #channelTracks == 0 or (#channelTracks == 1 and channelTracks[1] == containerGroup) then
-                    -- Try to find and restore tracks by name pattern
-                    channelTracks = Generation.findChannelTracksByName(containerGroup, container)
-                end
-                
-                -- Check if we have the expected number
-                local expectedChannels = globals.Constants.CHANNEL_CONFIGS[container.channelMode].channels
-                
-                if #channelTracks == expectedChannels then
-                    -- Found existing structure, store GUIDs for next time
-                    Generation.storeTrackGUIDs(container, containerGroup, channelTracks)
-                    Generation.clearChannelTracks(channelTracks)
-                elseif #channelTracks == 0 then
-                    -- No existing structure found, create new one
-                    local isLastInGroup = (containerIndex == #group.containers)
-                    channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
-                else
-                    -- Partial or incorrect structure, recreate
-                    local isLastInGroup = (containerIndex == #group.containers)
-                    Generation.deleteContainerChildTracks(containerGroup)
-                    channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
-                end
+                -- Correct structure, clear items from channel tracks
+                Generation.clearChannelTracks(channelTracks)
+                -- Store/update GUIDs for next time
+                Generation.storeTrackGUIDs(container, containerGroup, channelTracks)
             end
         else
-            -- Default mode: clear items from container itself
+            -- Single track mode, clear items from container
             while reaper.CountTrackMediaItems(containerGroup) > 0 do
                 local item = reaper.GetTrackMediaItem(containerGroup, 0)
                 reaper.DeleteTrackMediaItem(containerGroup, item)
             end
-            channelTracks = {containerGroup}
             -- Store GUID for non-multichannel container
             container.trackGUID = Generation.getTrackGUID(containerGroup)
         end
     else
-        -- Create new structure based on mode
-        if isMultiChannel then
-            -- Check if this is the last container in the group
-            local isLastInGroup = (containerIndex == #group.containers)
+        -- Structure doesn't match, recreate it
+        if hasChildTracks then
+            -- Remove existing child tracks
+            Generation.deleteContainerChildTracks(containerGroup)
+        end
+
+        if shouldBeMultiChannel then
+            -- Create multi-channel structure
             channelTracks = Generation.createMultiChannelTracks(containerGroup, container, isLastInGroup)
         else
+            -- Use single track
             channelTracks = {containerGroup}
             -- Store GUID for non-multichannel container
             container.trackGUID = Generation.getTrackGUID(containerGroup)
@@ -1233,25 +1221,44 @@ function Generation.generateSingleContainer(groupIndex, containerIndex)
     end
 
     if containerGroup then
-        -- Container exists, clear it and regenerate
-        if globals.keepExistingTracks then
-            -- Check if container is supposed to be multi-channel
-            local isMultiChannel = container.channelMode and container.channelMode > 0
-            
-            if isMultiChannel then
-                -- Multi-channel: clear items from channel tracks
-                local channelTracks = Generation.getExistingChannelTracks(containerGroup)
-                Generation.clearChannelTracks(channelTracks)
+        -- Container exists, check if channel mode structure has changed
+        local shouldBeMultiChannel = container.channelMode and container.channelMode > 0
+        local hasChildTracks = reaper.GetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH") == 1
+
+        -- If structure doesn't match the expected mode, clean it completely
+        if shouldBeMultiChannel ~= hasChildTracks then
+            if hasChildTracks then
+                -- Current structure has child tracks but should be single track
+                Generation.deleteContainerChildTracks(containerGroup)
             else
-                -- Default mode: clear items from container itself
+                -- Current structure is single track but should have child tracks
+                -- Clear items from container to prepare for multi-channel structure
                 while reaper.CountTrackMediaItems(containerGroup) > 0 do
                     local item = reaper.GetTrackMediaItem(containerGroup, 0)
                     reaper.DeleteTrackMediaItem(containerGroup, item)
                 end
             end
         else
-            -- Delete all items from container and its children
-            Utils.clearGroupItems(containerGroup)
+            -- Structure matches, just clear items appropriately
+            if globals.keepExistingTracks then
+                -- Check if container is supposed to be multi-channel
+                local isMultiChannel = container.channelMode and container.channelMode > 0
+
+                if isMultiChannel then
+                    -- Multi-channel: clear items from channel tracks
+                    local channelTracks = Generation.getExistingChannelTracks(containerGroup)
+                    Generation.clearChannelTracks(channelTracks)
+                else
+                    -- Default mode: clear items from container itself
+                    while reaper.CountTrackMediaItems(containerGroup) > 0 do
+                        local item = reaper.GetTrackMediaItem(containerGroup, 0)
+                        reaper.DeleteTrackMediaItem(containerGroup, item)
+                    end
+                end
+            else
+                -- Delete all items from container and its children
+                Utils.clearGroupItems(containerGroup)
+            end
         end
 
         -- Apply container track volume
