@@ -123,6 +123,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     local allRandomizeVolume = true
     local anyRandomizePan = false
     local allRandomizePan = true
+    local anyMultiChannel = false  -- Track if any container is multichannel
 
     -- Default values for common parameters
     local commonIntervalMode = nil
@@ -142,6 +143,11 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         local groupIndex = c.groupIndex
         local containerIndex = c.containerIndex
         local container = globals.groups[groupIndex].containers[containerIndex]
+
+        -- Check if this container is multichannel (non-stereo)
+        if container.channelMode and container.channelMode > 0 then
+            anyMultiChannel = true
+        end
 
         -- Randomization settings
         if container.randomizePitch then anyRandomizePitch = true else allRandomizePitch = false end
@@ -532,38 +538,40 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         end
     end
 
-    -- Pan randomization checkbox
-    local panState = allRandomizePan and 1 or (anyRandomizePan and 2 or 0)
-    local panText = "Randomize Pan"
-    if panState == 2 then -- Mixed values
-        panText = panText .. " (Mixed)"
-    end
-
-    -- Custom drawing of the three-state checkbox
-    local randomizePan = false
-    if panState == 1 then
-        randomizePan = true
-    end
-
-    local rv, newRandomizePan = imgui.Checkbox(globals.ctx, panText, randomizePan)
-    if rv then
-        -- Apply to all selected containers
-        for _, c in ipairs(containers) do
-            globals.groups[c.groupIndex].containers[c.containerIndex].randomizePan = newRandomizePan
+    -- Pan randomization controls (only show if no containers are multichannel)
+    if not anyMultiChannel then
+        -- Pan randomization checkbox
+        local panState = allRandomizePan and 1 or (anyRandomizePan and 2 or 0)
+        local panText = "Randomize Pan"
+        if panState == 2 then -- Mixed values
+            panText = panText .. " (Mixed)"
         end
 
-        -- Update state for UI refresh
-        if newRandomizePan then
-            anyRandomizePan = true
-            allRandomizePan = true
-        else
-            anyRandomizePan = false
-            allRandomizePan = false
+        -- Custom drawing of the three-state checkbox
+        local randomizePan = false
+        if panState == 1 then
+            randomizePan = true
         end
-    end
 
-    -- Only show pan range if any container uses pan randomization
-    if anyRandomizePan then
+        local rv, newRandomizePan = imgui.Checkbox(globals.ctx, panText, randomizePan)
+        if rv then
+            -- Apply to all selected containers
+            for _, c in ipairs(containers) do
+                globals.groups[c.groupIndex].containers[c.containerIndex].randomizePan = newRandomizePan
+            end
+
+            -- Update state for UI refresh
+            if newRandomizePan then
+                anyRandomizePan = true
+                allRandomizePan = true
+            else
+                anyRandomizePan = false
+                allRandomizePan = false
+            end
+        end
+
+        -- Only show pan range if any container uses pan randomization
+        if anyRandomizePan then
         if commonPanMin == -999 or commonPanMax == -999 then
             -- Mixed values - show a text indicator and editable field
             imgui.Text(globals.ctx, "Pan Range (-100/+100):")
@@ -603,7 +611,8 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
                 commonPanMax = newPanMax
             end
         end
-    end
+        end  -- End of anyRandomizePan condition
+    end  -- End of anyMultiChannel condition
 end
 
 return UI_MultiSelection

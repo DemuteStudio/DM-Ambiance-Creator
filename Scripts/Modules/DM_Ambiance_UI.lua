@@ -493,50 +493,62 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     imgui.Text(globals.ctx, "Volume (dB)")
     imgui.EndGroup(globals.ctx)
 
-    -- Pan randomization (checkbox + link button + slider on same line)
-    imgui.BeginGroup(globals.ctx)
-    local rv, newRandomizePan = imgui.Checkbox(globals.ctx, "##RandomizePan", obj.randomizePan)
-    if rv then 
-        obj.randomizePan = newRandomizePan 
-        -- Queue randomization update to avoid ImGui conflicts
-        if groupIndex and containerIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
-        elseif groupIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
+    -- Pan randomization (only show for stereo containers - hide for multichannel)
+    local showPanControls = true
+    if groupIndex and containerIndex then
+        -- For containers, check if it's in multichannel mode (non-stereo)
+        local container = globals.groups[groupIndex].containers[containerIndex]
+        if container and container.channelMode and container.channelMode > 0 then
+            showPanControls = false
         end
     end
-    
-    -- Link mode button for pan
-    imgui.SameLine(globals.ctx)
-    -- Ensure link mode is initialized
-    if not obj.panLinkMode then obj.panLinkMode = "mirror" end
-    if globals.Icons.createLinkModeButton(globals.ctx, "panLink" .. objId, obj.panLinkMode, "Link mode: " .. obj.panLinkMode) then
-        obj.panLinkMode = cycleLinkMode(obj.panLinkMode)
-    end
-    
-    imgui.SameLine(globals.ctx)
-    imgui.BeginDisabled(globals.ctx, not obj.randomizePan)
-    imgui.PushItemWidth(globals.ctx, controlWidth)
-    local rv, newPanMin, newPanMax = imgui.DragFloatRange2(globals.ctx, "##PanRange", 
-        obj.panRange.min, obj.panRange.max, 1, -100, 100, "%.0f", "%.0f")
-    if rv then
-        -- Apply linked slider logic
-        local linkedMin, linkedMax = applyLinkedSliderChange(obj, "pan", newPanMin, newPanMax, obj.panLinkMode)
-        obj.panRange.min = linkedMin
-        obj.panRange.max = linkedMax
-        -- Queue randomization update to avoid ImGui conflicts
-        if groupIndex and containerIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
-        elseif groupIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
+
+    if showPanControls then
+        -- Pan randomization (checkbox + link button + slider on same line)
+        imgui.BeginGroup(globals.ctx)
+        local rv, newRandomizePan = imgui.Checkbox(globals.ctx, "##RandomizePan", obj.randomizePan)
+        if rv then
+            obj.randomizePan = newRandomizePan
+            -- Queue randomization update to avoid ImGui conflicts
+            if groupIndex and containerIndex then
+                globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
+            elseif groupIndex then
+                globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
+            end
         end
+
+        -- Link mode button for pan
+        imgui.SameLine(globals.ctx)
+        -- Ensure link mode is initialized
+        if not obj.panLinkMode then obj.panLinkMode = "mirror" end
+        if globals.Icons.createLinkModeButton(globals.ctx, "panLink" .. objId, obj.panLinkMode, "Link mode: " .. obj.panLinkMode) then
+            obj.panLinkMode = cycleLinkMode(obj.panLinkMode)
+        end
+
+        imgui.SameLine(globals.ctx)
+        imgui.BeginDisabled(globals.ctx, not obj.randomizePan)
+        imgui.PushItemWidth(globals.ctx, controlWidth)
+        local rv, newPanMin, newPanMax = imgui.DragFloatRange2(globals.ctx, "##PanRange",
+            obj.panRange.min, obj.panRange.max, 1, -100, 100, "%.0f", "%.0f")
+        if rv then
+            -- Apply linked slider logic
+            local linkedMin, linkedMax = applyLinkedSliderChange(obj, "pan", newPanMin, newPanMax, obj.panLinkMode)
+            obj.panRange.min = linkedMin
+            obj.panRange.max = linkedMax
+            -- Queue randomization update to avoid ImGui conflicts
+            if groupIndex and containerIndex then
+                globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
+            elseif groupIndex then
+                globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
+            end
+        end
+        imgui.PopItemWidth(globals.ctx)
+        imgui.EndDisabled(globals.ctx)
+
+        imgui.SameLine(globals.ctx)
+        imgui.Text(globals.ctx, "Pan (-100/+100)")
+        imgui.EndGroup(globals.ctx)
     end
-    imgui.PopItemWidth(globals.ctx)
-    imgui.EndDisabled(globals.ctx)
-    
-    imgui.SameLine(globals.ctx)
-    imgui.Text(globals.ctx, "Pan (-100/+100)")
-    imgui.EndGroup(globals.ctx)
     
     -- Fade Settings section
     UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, containerIndex)
