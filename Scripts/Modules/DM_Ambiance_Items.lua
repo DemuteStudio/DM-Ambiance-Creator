@@ -229,5 +229,51 @@ function Items.updateTakePanEnvelope(take, newPanValue)
   return true
 end
 
+-- Create item data from file path (for drag and drop from Media Explorer)
+function Items.createItemFromFilePath(filePath)
+  if not filePath or type(filePath) ~= "string" or filePath == "" then
+    return nil
+  end
+
+  -- Check if file exists
+  local file = io.open(filePath, "r")
+  if not file then
+    return nil
+  end
+  file:close()
+
+  -- Extract filename for name
+  local fileName = filePath:match("([^/\\]+)$") or filePath
+  local name = fileName:match("^(.+)%..+$") or fileName -- Remove extension
+
+  -- Create basic item data (similar to getSelectedItems but from file path)
+  local itemData = {
+    name = name,
+    filePath = filePath,
+    source = nil, -- Will be created when needed
+    startOffset = 0,
+    length = nil, -- Will be determined by REAPER when item is used
+    originalPitch = 0,
+    originalVolume = 1.0,
+    originalPan = 0.0
+  }
+
+  return itemData
+end
+
+-- Process dropped files and create items array
+function Items.processDroppedFiles(files)
+  local items = {}
+
+  for _, filePath in ipairs(files) do
+    local item = Items.createItemFromFilePath(filePath)
+    if item then
+      table.insert(items, item)
+    end
+  end
+
+  return items
+end
+
 
 return Items

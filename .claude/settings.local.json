@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(lua:*)"
+      "Bash(lua:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []

@@ -140,29 +140,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     -- Container preset controls (load/save)
     UI_Container.drawContainerPresetControls(groupIndex, containerIndex)
 
-    -- Button to import selected items from REAPER into this container
-    if imgui.Button(globals.ctx, "Import Selected Items##" .. containerId) then
-        local items = globals.Items.getSelectedItems()
-        if #items > 0 then
-            for _, item in ipairs(items) do
-                table.insert(container.items, item)
-                -- Generate peaks for the imported item if needed
-                if item.filePath and item.filePath ~= "" then
-                    local peaksFile = item.filePath .. ".reapeaks"
-                    local exists = io.open(peaksFile, "rb")
-                    if exists then
-                        exists:close()
-                    else
-                        -- Generate peaks in background
-                        globals.Waveform.generateReapeaksFile(item.filePath)
-                    end
-                end
-            end
-            -- reaper.ShowConsoleMsg(string.format("[UI] Imported %d items\n", #items))
-        else
-            reaper.MB("No item selected!", "Error", 0)
-        end
-    end
+    -- Drop zone for importing items from timeline or Media Explorer
+    UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId, width)
     
     -- Button to generate peaks for all items in container
     imgui.SameLine(globals.ctx)
@@ -1080,6 +1059,160 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     if container.overrideParent then
         -- Display the trigger and randomization settings for this container
         globals.UI.displayTriggerSettings(container, containerId, width, false, groupIndex, containerIndex)
+    end
+end
+
+-- Draw import drop zone for importing items from timeline or Media Explorer
+function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId, width)
+    local container = globals.groups[groupIndex].containers[containerIndex]
+    local dropZoneHeight = 60
+    local dropZoneWidth = width * 0.7
+
+    -- Get current cursor position for drawing
+    local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
+    local drawList = imgui.GetWindowDrawList(globals.ctx)
+
+    -- Calculate drop zone bounds
+    local min_x = cursorX
+    local min_y = cursorY
+    local max_x = min_x + dropZoneWidth
+    local max_y = min_y + dropZoneHeight
+
+    -- Colors for the drop zone
+    local backgroundColor = 0x22222222
+    local borderColor = 0x77777777
+    local hoverColor = 0x44444444
+    local hoverBorderColor = 0xAAAAAAAA
+
+    -- Create an invisible button for the drop zone area
+    imgui.SetCursorScreenPos(globals.ctx, min_x, min_y)
+    local isHovered = imgui.InvisibleButton(globals.ctx, "DropZone##" .. containerId, dropZoneWidth, dropZoneHeight)
+
+    -- Check if we're in a drag-drop operation
+    local isDragActive = false
+    local currentBgColor = backgroundColor
+    local currentBorderColor = borderColor
+
+    if isHovered then
+        currentBgColor = hoverColor
+        currentBorderColor = hoverBorderColor
+    end
+
+    -- Draw the drop zone background and border
+    imgui.DrawList_AddRectFilled(drawList, min_x, min_y, max_x, max_y, currentBgColor)
+    imgui.DrawList_AddRect(drawList, min_x, min_y, max_x, max_y, currentBorderColor, 4, 0, 2)
+
+    -- Handle drag and drop
+    if imgui.BeginDragDropTarget(globals.ctx) then
+        isDragActive = true
+        -- Highlight the drop zone when hovering with valid payload
+        imgui.DrawList_AddRectFilled(drawList, min_x, min_y, max_x, max_y, 0x44AA4444)
+        imgui.DrawList_AddRect(drawList, min_x, min_y, max_x, max_y, 0xAAAAAAAA, 4, 0, 3)
+
+        -- Handle external file drops (from Media Explorer, Windows Explorer, etc.)
+        local files = {}
+
+        -- Check if there are files to be dropped
+        local hasFiles = imgui.GetDragDropPayloadFile(globals.ctx, 0)
+
+        -- Only process on actual drop completion (when mouse is released)
+        if hasFiles and imgui.IsMouseReleased(globals.ctx, 0) then
+            reaper.ShowConsoleMsg("[DragDrop] Drop completed, processing files...\n")
+
+            -- Get all dropped files using correct syntax
+            local fileIndex = 0
+            while true do
+                local retval, filePath = imgui.GetDragDropPayloadFile(globals.ctx, fileIndex)
+
+                if not retval or not filePath or filePath == "" then
+                    break
+                end
+
+                reaper.ShowConsoleMsg(string.format("[DragDrop] Adding file: %s\n", filePath))
+                table.insert(files, filePath)
+                fileIndex = fileIndex + 1
+            end
+
+            -- Process dropped files
+            if #files > 0 then
+                reaper.ShowConsoleMsg(string.format("[DragDrop] Processing %d files\n", #files))
+                local items = globals.Items.processDroppedFiles(files)
+                reaper.ShowConsoleMsg(string.format("[DragDrop] Created %d items\n", #items))
+                for _, item in ipairs(items) do
+                    table.insert(container.items, item)
+                    reaper.ShowConsoleMsg(string.format("[DragDrop] Added item: %s\n", item.name))
+                    -- Generate peaks for the imported item if needed
+                    if item.filePath and item.filePath ~= "" then
+                        local peaksFile = item.filePath .. ".reapeaks"
+                        local exists = io.open(peaksFile, "rb")
+                        if exists then
+                            exists:close()
+                        else
+                            -- Generate peaks in background
+                            globals.Waveform.generateReapeaksFile(item.filePath)
+                        end
+                    end
+                end
+            end
+        elseif not hasFiles and imgui.IsMouseReleased(globals.ctx, 0) then
+            -- If no files, check for timeline items on drop completion
+            -- This handles drops from REAPER timeline
+            reaper.ShowConsoleMsg("[DragDrop] Mouse released, checking timeline items\n")
+            local timelineItems = globals.Items.getSelectedItems()
+            reaper.ShowConsoleMsg(string.format("[DragDrop] Found %d timeline items\n", #timelineItems))
+            if #timelineItems > 0 then
+                for _, item in ipairs(timelineItems) do
+                    table.insert(container.items, item)
+                    reaper.ShowConsoleMsg(string.format("[DragDrop] Added timeline item: %s\n", item.name))
+                    -- Generate peaks for the imported item if needed
+                    if item.filePath and item.filePath ~= "" then
+                        local peaksFile = item.filePath .. ".reapeaks"
+                        local exists = io.open(peaksFile, "rb")
+                        if exists then
+                            exists:close()
+                        else
+                            -- Generate peaks in background
+                            globals.Waveform.generateReapeaksFile(item.filePath)
+                        end
+                    end
+                end
+            end
+        end
+
+        imgui.EndDragDropTarget(globals.ctx)
+    end
+
+    -- Add text centered in the drop zone
+    local textLabel = "Drag items here from timeline or Media Explorer"
+    local textSizeX, textSizeY = imgui.CalcTextSize(globals.ctx, textLabel)
+    local textX = min_x + (dropZoneWidth - textSizeX) / 2
+    local textY = min_y + (dropZoneHeight - textSizeY) / 2
+
+    -- Draw the text
+    imgui.DrawList_AddText(drawList, textX, textY, 0xCCCCCCCC, textLabel)
+
+    -- Add fallback button for timeline items
+    imgui.SameLine(globals.ctx)
+    if imgui.Button(globals.ctx, "Import Selected##" .. containerId) then
+        local items = globals.Items.getSelectedItems()
+        if #items > 0 then
+            for _, item in ipairs(items) do
+                table.insert(container.items, item)
+                -- Generate peaks for the imported item if needed
+                if item.filePath and item.filePath ~= "" then
+                    local peaksFile = item.filePath .. ".reapeaks"
+                    local exists = io.open(peaksFile, "rb")
+                    if exists then
+                        exists:close()
+                    else
+                        -- Generate peaks in background
+                        globals.Waveform.generateReapeaksFile(item.filePath)
+                    end
+                end
+            end
+        else
+            reaper.MB("No item selected!", "Error", 0)
+        end
     end
 end
 
