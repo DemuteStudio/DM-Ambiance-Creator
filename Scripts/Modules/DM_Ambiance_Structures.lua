@@ -115,7 +115,27 @@ end
 function Structures.getEffectiveContainerParams(group, container)
     -- If container is set to override parent settings, return its own parameters
     if container.overrideParent then
-        return container
+        -- Create a copy to avoid modifying the original container
+        local containerParams = {}
+        for k, v in pairs(container) do
+            if type(v) ~= "table" then
+                containerParams[k] = v
+            else
+                -- Deep copy for tables (like ranges)
+                containerParams[k] = {}
+                for tk, tv in pairs(v) do
+                    containerParams[k][tk] = tv
+                end
+            end
+        end
+
+        -- Force disable pan randomization for multichannel containers (channelMode > 0)
+        -- This ensures old presets don't apply pan in multichannel mode
+        if containerParams.channelMode and containerParams.channelMode > 0 then
+            containerParams.randomizePan = false
+        end
+
+        return containerParams
     end
     
     -- Create a new table with inherited parameters
@@ -189,7 +209,13 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.volumeLinkMode = group.volumeLinkMode or "mirror"
     effectiveParams.panLinkMode = group.panLinkMode or "mirror"
     effectiveParams.fadeLinkMode = group.fadeLinkMode or "link"
-    
+
+    -- Force disable pan randomization for multichannel containers (channelMode > 0)
+    -- This ensures old presets don't apply pan in multichannel mode
+    if effectiveParams.channelMode and effectiveParams.channelMode > 0 then
+        effectiveParams.randomizePan = false
+    end
+
     return effectiveParams
 end
 

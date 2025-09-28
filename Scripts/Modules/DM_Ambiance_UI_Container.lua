@@ -910,6 +910,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         container.needsRegeneration = true
         -- Reset channel settings when mode changes
         container.channelVolumes = {}
+        -- Force disable pan randomization when switching to multichannel mode
+        if newMode > 0 then
+            container.randomizePan = false
+        end
     end
     imgui.PopItemWidth(globals.ctx)
 

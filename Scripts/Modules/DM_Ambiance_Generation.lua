@@ -748,7 +748,8 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume)
             end
 
-            if effectiveParams.randomizePan then
+            -- Apply pan randomization only for stereo containers (channelMode = 0 or nil)
+            if effectiveParams.randomizePan and (not effectiveParams.channelMode or effectiveParams.channelMode == 0) then
                 local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
                 randomPan = math.max(-1, math.min(1, randomPan))
                 -- Use envelope instead of directly modifying the property
@@ -1497,7 +1498,8 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
             reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume)
         end
 
-        if effectiveParams.randomizePan then
+        -- Apply pan randomization only for stereo containers (channelMode = 0 or nil)
+        if effectiveParams.randomizePan and (not effectiveParams.channelMode or effectiveParams.channelMode == 0) then
             local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
             randomPan = math.max(-1, math.min(1, randomPan))
             -- Use envelope instead of directly modifying the property

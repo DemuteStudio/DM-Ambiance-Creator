@@ -256,6 +256,10 @@ function Presets.loadGroupPreset(name, groupIndex)
     if presetData.containers then
       for _, container in ipairs(presetData.containers) do
         container.needsRegeneration = true
+        -- Force disable pan randomization for multichannel containers from old presets
+        if container.channelMode and container.channelMode > 0 then
+          container.randomizePan = false
+        end
       end
     end
 
@@ -326,6 +330,11 @@ function Presets.loadContainerPreset(name, groupIndex, containerIndex)
 
     -- Set regeneration flag since preset loading changes parameters
     globals.groups[groupIndex].containers[containerIndex].needsRegeneration = true
+
+    -- Force disable pan randomization for multichannel containers from old presets
+    if presetData.channelMode and presetData.channelMode > 0 then
+      globals.groups[groupIndex].containers[containerIndex].randomizePan = false
+    end
 
     -- Apply the container track volume if the container track exists
     if presetData.trackVolume then
