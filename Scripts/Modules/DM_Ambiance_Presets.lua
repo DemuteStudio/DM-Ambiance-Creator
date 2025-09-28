@@ -251,13 +251,21 @@ function Presets.loadGroupPreset(name, groupIndex)
   if success and type(presetData) == "table" then
     globals.groups[groupIndex] = presetData
 
+    -- Set regeneration flag since preset loading changes parameters
+    globals.groups[groupIndex].needsRegeneration = true
+    if presetData.containers then
+      for _, container in ipairs(presetData.containers) do
+        container.needsRegeneration = true
+      end
+    end
+
     -- Areas are now stored directly in items and will be synchronized to waveformAreas by the UI when needed
 
     -- Apply group track volume if it exists
     if presetData.trackVolume then
       globals.Utils.setGroupTrackVolume(groupIndex, presetData.trackVolume)
     end
-    
+
     -- Apply track volumes for all containers in the group if they have tracks
     if presetData.containers then
       for containerIndex, container in ipairs(presetData.containers) do
@@ -266,7 +274,7 @@ function Presets.loadGroupPreset(name, groupIndex)
         end
       end
     end
-    
+
     return true
   else
     reaper.ShowConsoleMsg("Error loading group preset: " .. tostring(presetData) .. "\n")
@@ -315,6 +323,9 @@ function Presets.loadContainerPreset(name, groupIndex, containerIndex)
   if success and type(presetData) == "table" then
     -- Apply the preset data to the container
     globals.groups[groupIndex].containers[containerIndex] = presetData
+
+    -- Set regeneration flag since preset loading changes parameters
+    globals.groups[groupIndex].containers[containerIndex].needsRegeneration = true
 
     -- Apply the container track volume if the container track exists
     if presetData.trackVolume then

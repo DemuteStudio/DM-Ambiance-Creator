@@ -849,7 +849,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     if rv then
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         container.trackVolume = newVolumeDB
-        -- Apply volume to track in real-time
+        -- Apply volume to track in real-time (no regeneration needed)
         globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
     end
     imgui.PopItemWidth(globals.ctx)
@@ -870,6 +870,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
                            math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
         container.trackVolume = manualDB
+        -- Apply volume to track in real-time (no regeneration needed)
         globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, manualDB)
     end
     imgui.PopItemWidth(globals.ctx)
@@ -906,6 +907,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     )
     if rv and newMode ~= container.channelMode then
         container.channelMode = newMode
+        container.needsRegeneration = true
         -- Reset channel settings when mode changes
         container.channelVolumes = {}
     end
@@ -943,6 +945,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             )
             if rv then
                 container.channelVariant = newVariant
+                container.needsRegeneration = true
                 -- Reset channel settings when variant changes
                 container.channelVolumes = {}
             end
@@ -1031,7 +1034,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local rv, newOverrideParent = imgui.Checkbox(globals.ctx, "Override Parent Settings##" .. containerId, overrideParent)
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Enable 'Override Parent Settings' to customize parameters for this container instead of inheriting from the group.")
-    if rv then container.overrideParent = newOverrideParent end
+    if rv then
+        container.overrideParent = newOverrideParent
+        container.needsRegeneration = true
+    end
 
     -- Display trigger/randomization settings or inheritance info
     if container.overrideParent then

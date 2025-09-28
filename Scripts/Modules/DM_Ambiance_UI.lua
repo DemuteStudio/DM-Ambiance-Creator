@@ -379,16 +379,16 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     UI.drawTriggerSettingsSection(
         obj,
         {
-            setIntervalMode = function(v) obj.intervalMode = v end,
-            setTriggerRate = function(v) obj.triggerRate = v end,
-            setTriggerDrift = function(v) obj.triggerDrift = v end,
-            setFadeIn = function(v) obj.fadeIn = math.max(0, v) end,
-            setFadeOut = function(v) obj.fadeOut = math.max(0, v) end,
+            setIntervalMode = function(v) obj.intervalMode = v; obj.needsRegeneration = true end,
+            setTriggerRate = function(v) obj.triggerRate = v; obj.needsRegeneration = true end,
+            setTriggerDrift = function(v) obj.triggerDrift = v; obj.needsRegeneration = true end,
+            setFadeIn = function(v) obj.fadeIn = math.max(0, v); obj.needsRegeneration = true end,
+            setFadeOut = function(v) obj.fadeOut = math.max(0, v); obj.needsRegeneration = true end,
             -- Chunk mode callbacks
-            setChunkDuration = function(v) obj.chunkDuration = v end,
-            setChunkSilence = function(v) obj.chunkSilence = v end,
-            setChunkDurationVariation = function(v) obj.chunkDurationVariation = v end,
-            setChunkSilenceVariation = function(v) obj.chunkSilenceVariation = v end,
+            setChunkDuration = function(v) obj.chunkDuration = v; obj.needsRegeneration = true end,
+            setChunkSilence = function(v) obj.chunkSilence = v; obj.needsRegeneration = true end,
+            setChunkDurationVariation = function(v) obj.chunkDurationVariation = v; obj.needsRegeneration = true end,
+            setChunkSilenceVariation = function(v) obj.chunkSilenceVariation = v; obj.needsRegeneration = true end,
         },
         width,
         titlePrefix
@@ -406,8 +406,9 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     -- Pitch randomization (checkbox + link button + slider on same line)
     imgui.BeginGroup(globals.ctx)
     local rv, newRandomizePitch = imgui.Checkbox(globals.ctx, "##RandomizePitch", obj.randomizePitch)
-    if rv then 
-        obj.randomizePitch = newRandomizePitch 
+    if rv then
+        obj.randomizePitch = newRandomizePitch
+        obj.needsRegeneration = true
         -- Queue randomization update to avoid ImGui conflicts
         if groupIndex and containerIndex then
             globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pitch")
@@ -434,6 +435,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
         local linkedMin, linkedMax = applyLinkedSliderChange(obj, "pitch", newPitchMin, newPitchMax, obj.pitchLinkMode)
         obj.pitchRange.min = linkedMin
         obj.pitchRange.max = linkedMax
+        obj.needsRegeneration = true
         -- Queue randomization update to avoid ImGui conflicts
         if groupIndex and containerIndex then
             globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pitch")
@@ -451,8 +453,9 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     -- Volume randomization (checkbox + link button + slider on same line)
     imgui.BeginGroup(globals.ctx)
     local rv, newRandomizeVolume = imgui.Checkbox(globals.ctx, "##RandomizeVolume", obj.randomizeVolume)
-    if rv then 
-        obj.randomizeVolume = newRandomizeVolume 
+    if rv then
+        obj.randomizeVolume = newRandomizeVolume
+        obj.needsRegeneration = true
         -- Queue randomization update to avoid ImGui conflicts
         if groupIndex and containerIndex then
             globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "volume")
@@ -479,6 +482,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
         local linkedMin, linkedMax = applyLinkedSliderChange(obj, "volume", newVolumeMin, newVolumeMax, obj.volumeLinkMode)
         obj.volumeRange.min = linkedMin
         obj.volumeRange.max = linkedMax
+        obj.needsRegeneration = true
         -- Queue randomization update to avoid ImGui conflicts
         if groupIndex and containerIndex then
             globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "volume")
@@ -509,6 +513,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
         local rv, newRandomizePan = imgui.Checkbox(globals.ctx, "##RandomizePan", obj.randomizePan)
         if rv then
             obj.randomizePan = newRandomizePan
+            obj.needsRegeneration = true
             -- Queue randomization update to avoid ImGui conflicts
             if groupIndex and containerIndex then
                 globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
@@ -535,6 +540,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             local linkedMin, linkedMax = applyLinkedSliderChange(obj, "pan", newPanMin, newPanMax, obj.panLinkMode)
             obj.panRange.min = linkedMin
             obj.panRange.max = linkedMax
+            obj.needsRegeneration = true
             -- Queue randomization update to avoid ImGui conflicts
             if groupIndex and containerIndex then
                 globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")

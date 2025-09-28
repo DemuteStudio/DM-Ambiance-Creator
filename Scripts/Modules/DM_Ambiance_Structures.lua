@@ -54,8 +54,10 @@ function Structures.createGroup(name)
         pitchLinkMode = "mirror", -- "unlink", "link", "mirror"
         volumeLinkMode = "mirror",
         panLinkMode = "mirror",
-        -- Link modes for fade parameters  
-        fadeLinkMode = "link"
+        -- Link modes for fade parameters
+        fadeLinkMode = "link",
+        -- Regeneration tracking
+        needsRegeneration = false
     }
 end
 
@@ -102,8 +104,10 @@ function Structures.createContainer(name)
         pitchLinkMode = "mirror", -- "unlink", "link", "mirror"
         volumeLinkMode = "mirror",
         panLinkMode = "mirror",
-        -- Link modes for fade parameters  
-        fadeLinkMode = "link"
+        -- Link modes for fade parameters
+        fadeLinkMode = "link",
+        -- Regeneration tracking
+        needsRegeneration = false
     }
 end
 

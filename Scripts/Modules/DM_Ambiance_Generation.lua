@@ -997,6 +997,14 @@ function Generation.generateGroups()
     -- Check for routing conflicts after generating all groups
     Generation.checkAndResolveConflicts()
 
+    -- Clear regeneration flags for all groups and containers
+    for _, group in ipairs(globals.groups) do
+        group.needsRegeneration = false
+        for _, container in ipairs(group.containers) do
+            container.needsRegeneration = false
+        end
+    end
+
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
 
@@ -1162,6 +1170,12 @@ function Generation.generateSingleGroup(groupIndex)
     -- Check for routing conflicts after generating single group
     Generation.checkAndResolveConflicts()
 
+    -- Clear regeneration flag for the group and all its containers
+    group.needsRegeneration = false
+    for _, container in ipairs(group.containers) do
+        container.needsRegeneration = false
+    end
+
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
     reaper.Undo_EndBlock("Regenerate group '" .. group.name .. "'", -1)
@@ -1295,6 +1309,9 @@ function Generation.generateSingleContainer(groupIndex, containerIndex)
 
     -- Check for routing conflicts after generating single container
     Generation.checkAndResolveConflicts()
+
+    -- Clear regeneration flag for the container
+    container.needsRegeneration = false
 
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()

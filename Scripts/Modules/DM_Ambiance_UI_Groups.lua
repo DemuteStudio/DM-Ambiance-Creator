@@ -413,8 +413,12 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
             groupFlags = groupFlags + imgui.TreeNodeFlags_Selected
         end
 
-        -- Create tree node for the group
-        local groupOpen = imgui.TreeNodeEx(globals.ctx, groupId, group.name, groupFlags)
+        -- Create tree node for the group with regeneration indicator
+        local groupDisplayName = group.name
+        if group.needsRegeneration then
+            groupDisplayName = "• " .. group.name
+        end
+        local groupOpen = imgui.TreeNodeEx(globals.ctx, groupId, groupDisplayName, groupFlags)
         group.expanded = groupOpen
 
         -- Make group draggable
@@ -502,7 +506,12 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 imgui.Indent(globals.ctx, Constants.UI.CONTAINER_INDENT)
                 local nameWidth = width * 0.45
                 imgui.PushItemWidth(globals.ctx, nameWidth)
-                imgui.TreeNodeEx(globals.ctx, containerId, container.name, containerFlags)
+                -- Add regeneration indicator to container name
+                local containerDisplayName = container.name
+                if container.needsRegeneration then
+                    containerDisplayName = "• " .. container.name
+                end
+                imgui.TreeNodeEx(globals.ctx, containerId, containerDisplayName, containerFlags)
                 imgui.PopItemWidth(globals.ctx)
 
                 -- Make container draggable
