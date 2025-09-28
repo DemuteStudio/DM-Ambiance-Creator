@@ -35,7 +35,7 @@ local Presets = dofile(script_path .. "Modules/DM_Ambiance_Presets.lua")
 local Generation = dofile(script_path .. "Modules/DM_Ambiance_Generation.lua")
 local UI = dofile(script_path .. "Modules/DM_Ambiance_UI.lua")
 local Settings = dofile(script_path .. "Modules/DM_AmbianceCreator_Settings.lua")
-local ConflictResolver = dofile(script_path .. "Modules/DM_Ambiance_ConflictResolver.lua")
+local RoutingValidator = dofile(script_path .. "Modules/DM_Ambiance_RoutingValidator.lua")
 local Waveform = dofile(script_path .. "Modules/DM_Ambiance_Waveform.lua")
 
 -- Global state shared across modules and UI
@@ -80,10 +80,13 @@ local function loop()
         Utils.showDirectoryWarningPopup()
     end
     
-    -- Show conflict resolution modal if needed
-    if globals.showConflictModal then
-        ConflictResolver.renderModal()
+    -- Show routing validation modal if needed
+    if globals.showRoutingModal then
+        RoutingValidator.renderModal()
     end
+
+    -- Show channel order resolution modal if needed
+    RoutingValidator.renderChannelOrderModal()
     
     -- Update waveform playback position if playing
     if globals.Waveform and globals.Waveform.updatePlaybackPosition then
@@ -123,7 +126,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     _G.Generation = Generation
     _G.UI = UI
     _G.Settings = Settings
-    _G.ConflictResolver = ConflictResolver
+    _G.RoutingValidator = RoutingValidator
     _G.Waveform = Waveform
     _G.imgui = imgui
 
@@ -144,7 +147,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.Generation = Generation
     globals.UI = UI
     globals.Settings = Settings
-    globals.ConflictResolver = ConflictResolver
+    globals.RoutingValidator = RoutingValidator
     globals.Waveform = Waveform
 
     -- Initialize all modules with the shared globals table
@@ -155,7 +158,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     Generation.initModule(globals)
     UI.initModule(globals)
     Settings.initModule(globals)
-    ConflictResolver.initModule(globals)
+    RoutingValidator.initModule(globals)
     Waveform.initModule(globals)
     
     -- Initialize backward compatibility for container volumes

@@ -79,6 +79,17 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
     local activeConfig = config
     if config.hasVariants then
         activeConfig = config.variants[container.channelVariant or 0]
+        -- Debug: print what we got
+        if activeConfig then
+            reaper.ShowConsoleMsg(string.format("DEBUG: Using variant %d for %s - routing: %s\n",
+                container.channelVariant or 0,
+                container.name or "unknown",
+                table.concat(activeConfig.routing or {}, ", ")))
+        else
+            reaper.ShowConsoleMsg(string.format("DEBUG: No variant found for %s, variant: %d\n",
+                container.name or "unknown",
+                container.channelVariant or 0))
+        end
     end
 
     local channelTracks = {}
@@ -88,6 +99,12 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
     -- If using custom routing, ensure we have enough channels for the highest channel
     if container.customRouting then
         requiredChannels = math.max(requiredChannels, math.max(table.unpack(container.customRouting)))
+    end
+
+    -- REAPER constraint: channel counts must be even numbers
+    -- Round up to next even number if odd
+    if requiredChannels % 2 == 1 then
+        requiredChannels = requiredChannels + 1
     end
 
     -- Set container track channel count
@@ -140,14 +157,70 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
         if sendIdx >= 0 then
             -- Route to single channel (0-based)
             -- Use custom routing if available (for conflict resolution)
+
+            -- Validate and clean customRouting if corrupted
+            if container.customRouting then
+                local expectedChannels = config.channels
+                local customChannels = #container.customRouting
+
+                -- Check if customRouting has the right number of entries
+                if customChannels ~= expectedChannels then
+                    reaper.ShowConsoleMsg(string.format("WARNING: Corrupted customRouting detected for %s - expected %d channels, got %d. Clearing customRouting.\n",
+                        container.name or "unknown", expectedChannels, customChannels))
+                    container.customRouting = nil
+                end
+
+                -- Check if customRouting has missing or invalid channels
+                if container.customRouting then
+                    local hasInvalidEntries = false
+                    for j = 1, expectedChannels do
+                        if not container.customRouting[j] or container.customRouting[j] <= 0 then
+                            hasInvalidEntries = true
+                            break
+                        end
+                    end
+
+                    if hasInvalidEntries then
+                        reaper.ShowConsoleMsg(string.format("WARNING: Invalid entries in customRouting for %s. Clearing customRouting.\n",
+                            container.name or "unknown"))
+                        container.customRouting = nil
+                    end
+                end
+            end
+
+            -- Debug: check both routing sources (only for first track to avoid spam)
+            if i == 1 then
+                if container.customRouting then
+                    reaper.ShowConsoleMsg(string.format("DEBUG: Found customRouting: %s\n",
+                        table.concat(container.customRouting, ", ")))
+                else
+                    reaper.ShowConsoleMsg("DEBUG: No customRouting found\n")
+                end
+                if activeConfig.routing then
+                    reaper.ShowConsoleMsg(string.format("DEBUG: activeConfig.routing: %s\n",
+                        table.concat(activeConfig.routing, ", ")))
+                else
+                    reaper.ShowConsoleMsg("DEBUG: No activeConfig.routing found\n")
+                end
+            end
+
             local routing = container.customRouting or activeConfig.routing
             local destChannel = 0 -- Default to channel 1 (0-based)
 
+            -- Debug: print routing info
+            reaper.ShowConsoleMsg(string.format("DEBUG: Track %d (%s): routing table = %s\n",
+                i, channelLabel,
+                routing and table.concat(routing, ", ") or "nil"))
+
             if routing and routing[i] then
                 destChannel = routing[i] - 1
+                reaper.ShowConsoleMsg(string.format("DEBUG: Track %d (%s): routing[%d] = %d -> destChannel = %d\n",
+                    i, channelLabel, i, routing[i], destChannel))
             else
                 -- Fallback: use channel index as destination
                 destChannel = i - 1
+                reaper.ShowConsoleMsg(string.format("DEBUG: Track %d (%s): No routing entry, using fallback destChannel = %d\n",
+                    i, channelLabel, destChannel))
             end
 
             -- For mono to mono routing in Reaper:
@@ -156,6 +229,9 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
 
             -- Destination: 1024 + channel number for mono routing
             local dstChannels = 1024 + destChannel
+
+            reaper.ShowConsoleMsg(string.format("DEBUG: Track %d (%s): Final send -> channel %d (REAPER: %d)\n",
+                i, channelLabel, destChannel + 1, dstChannels))
 
             reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "I_SRCCHAN", srcChannels)
             reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "I_DSTCHAN", dstChannels)
@@ -1626,20 +1702,39 @@ function Generation.applyRoutingFixes(suggestions)
     reaper.UpdateArrange()
 end
 
--- Centralized conflict detection and resolution
+-- Centralized routing validation and issue resolution
 -- Call this from any generation function
 function Generation.checkAndResolveConflicts()
-    -- Use the new ConflictResolver module for conflict detection
-    if not globals.ConflictResolver then
+    -- Use the new RoutingValidator module for comprehensive validation
+    if not globals.RoutingValidator then
         return  -- Module not initialized
     end
-    
-    -- Detect conflicts using the new module
-    local conflicts = globals.ConflictResolver.detectConflicts()
-    
-    -- If conflicts found, show the ImGui modal
-    if conflicts then
-        globals.ConflictResolver.showResolutionModal(conflicts)
+
+    -- Validate entire project routing using the new robust system
+    local issues = globals.RoutingValidator.validateProjectRouting()
+
+    -- Handle issues based on auto-fix setting
+    if issues and #issues > 0 then
+        if globals.autoFixRouting then
+            -- Auto-fix mode: apply fixes automatically
+            local suggestions = globals.RoutingValidator.generateFixSuggestions(issues, globals.RoutingValidator.getProjectTrackCache())
+            local success = globals.RoutingValidator.autoFixRouting(issues, suggestions)
+
+            -- If auto-fix succeeded, re-validate to ensure everything is fixed
+            if success then
+                local remainingIssues = globals.RoutingValidator.validateProjectRouting()
+                if remainingIssues and #remainingIssues > 0 then
+                    -- Some issues couldn't be auto-fixed, show modal
+                    globals.RoutingValidator.showValidationModal(remainingIssues)
+                end
+            else
+                -- Auto-fix failed, show modal for manual resolution
+                globals.RoutingValidator.showValidationModal(issues)
+            end
+        else
+            -- Manual mode: show validation modal for user review
+            globals.RoutingValidator.showValidationModal(issues)
+        end
     end
 end
 

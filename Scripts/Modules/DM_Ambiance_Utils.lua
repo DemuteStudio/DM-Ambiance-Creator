@@ -1706,6 +1706,12 @@ function Utils.ensureParentHasEnoughChannels(childTrack, requiredChannels)
         return
     end
 
+    -- REAPER constraint: channel counts must be even numbers
+    -- Round up to next even number if odd
+    if requiredChannels % 2 == 1 then
+        requiredChannels = requiredChannels + 1
+    end
+
     local parentTrack = reaper.GetParentTrack(childTrack)
     if parentTrack then
         local parentChannels = reaper.GetMediaTrackInfo_Value(parentTrack, "I_NCHAN")
@@ -1722,6 +1728,10 @@ function Utils.ensureParentHasEnoughChannels(childTrack, requiredChannels)
             local masterChannels = reaper.GetMediaTrackInfo_Value(masterTrack, "I_NCHAN")
             -- Ensure Master has at least the required channels (minimum 2 for stereo)
             local neededChannels = math.max(2, requiredChannels)
+            -- Apply even number constraint to master as well
+            if neededChannels % 2 == 1 then
+                neededChannels = neededChannels + 1
+            end
             if masterChannels < neededChannels then
                 reaper.SetMediaTrackInfo_Value(masterTrack, "I_NCHAN", neededChannels)
             end
