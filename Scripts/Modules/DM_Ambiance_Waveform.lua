@@ -906,6 +906,28 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 imgui.DrawList_AddText(draw_list, textX, textY, 0xFFFFFFFF, areaName)
             end
 
+            -- Draw area duration in bottom-left corner
+            local areaDuration = area.endPos - area.startPos
+            local durationText = string.format("%.2fs", areaDuration)
+            local durationTextWidth = imgui.CalcTextSize(ctx, durationText)
+
+            -- Position duration text in bottom-left with some padding
+            local durationX = areaStartX + 5
+            local durationY = pos_y + height - 18  -- 18 pixels from bottom
+
+            -- Only draw duration if there's enough space and area is wide enough
+            if areaWidth > 60 and durationX + durationTextWidth < areaEndX - 5 then
+                -- Draw text background for better readability
+                imgui.DrawList_AddRectFilled(draw_list,
+                    durationX - 2, durationY - 1,
+                    durationX + durationTextWidth + 2, durationY + 14,
+                    0x80000000  -- Semi-transparent black background
+                )
+
+                -- Draw duration text in a slightly dimmer color to distinguish from area name
+                imgui.DrawList_AddText(draw_list, durationX, durationY, 0xCCFFFFFF, durationText)
+            end
+
             -- Draw resize handles (subtle, only visible on hover)
             local handleWidth = 4
             local handleHeight = 20
