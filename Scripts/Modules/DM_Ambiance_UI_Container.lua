@@ -209,7 +209,13 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                     -- Make item selectable with limited width
                     imgui.PushItemWidth(globals.ctx, selectableWidth)
-                    if imgui.Selectable(globals.ctx, l .. ". " .. item.name, isSelected, imgui.SelectableFlags_None, selectableWidth, 0) then
+                    -- Add visual indicator for currently playing item
+                    local playingIndicator = ""
+                    if globals.audioPreview and globals.audioPreview.isPlaying and
+                       globals.audioPreview.currentFile == item.filePath then
+                        playingIndicator = "▶ "
+                    end
+                    if imgui.Selectable(globals.ctx, playingIndicator .. l .. ". " .. item.name, isSelected, imgui.SelectableFlags_None, selectableWidth, 0) then
                         -- Store the previously selected item
                         local previouslySelectedIndex = globals.selectedItemIndex[selectionKey]
 
@@ -287,6 +293,38 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 -- Clear any related cached data for the deleted item
                 if globals.Waveform and itemToDeleteData and itemToDeleteData.filePath then
                     globals.Waveform.clearFileCache(itemToDeleteData.filePath)
+                end
+            end
+
+            -- Handle spacebar for play/pause (outside edit mode)
+            if not isEditMode and globals.selectedItemIndex and globals.selectedItemIndex[selectionKey] and
+               globals.selectedItemIndex[selectionKey] > 0 and
+               globals.selectedItemIndex[selectionKey] <= #container.items then
+
+                local selectedItem = container.items[globals.selectedItemIndex[selectionKey]]
+                if selectedItem and selectedItem.filePath and selectedItem.filePath ~= "" then
+                    local spaceKey = globals.imgui.Key_Space or 32
+                    if globals.imgui.IsKeyPressed(globals.ctx, spaceKey) then
+                        -- Check if this window has focus
+                        local focusFlag = globals.imgui.FocusedFlags_RootAndChildWindows or 3
+                        if globals.imgui.IsWindowFocused(globals.ctx, focusFlag) then
+                            if globals.audioPreview and globals.audioPreview.isPlaying and
+                               globals.audioPreview.currentFile == selectedItem.filePath then
+                                -- Stop if playing the same item
+                                globals.Waveform.stopPlayback()
+                            else
+                                -- Start playback if not playing or playing different item
+                                if globals.Settings.getSetting("waveformAutoPlayOnSelect") then
+                                    globals.Waveform.startPlayback(
+                                        selectedItem.filePath,
+                                        selectedItem.startOffset or 0,
+                                        selectedItem.length,
+                                        0 -- Start from beginning
+                                    )
+                                end
+                            end
+                        end
+                    end
                 end
             end
         end
@@ -1255,6 +1293,10 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
 
     imgui.PushStyleColor(globals.ctx, imgui.Col_Button, buttonColor)
     if imgui.Button(globals.ctx, buttonLabel) then
+        -- If we're exiting edit mode (going from true to false), stop any playing audio
+        if isEditMode then
+            globals.Waveform.stopPlayback()
+        end
         globals.containerEditModes[editModeKey] = not isEditMode
     end
     imgui.PopStyleColor(globals.ctx, 1)

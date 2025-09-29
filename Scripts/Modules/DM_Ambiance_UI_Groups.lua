@@ -543,6 +543,10 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                         selectContainerRange(globals.shiftAnchorGroupIndex, globals.shiftAnchorContainerIndex, i, j)
                     else
                         clearContainerSelections()
+                        -- Stop any playing audio when selecting a different container
+                        if globals.Waveform then
+                            globals.Waveform.stopPlayback()
+                        end
                         toggleContainerSelection(i, j)
                         globals.inMultiSelectMode = false
                         globals.shiftAnchorGroupIndex = i
