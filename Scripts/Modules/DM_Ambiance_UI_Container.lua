@@ -226,12 +226,13 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                             globals.Waveform.clearFileCache(item.filePath)
                         end
 
+                        -- Stop any current playback when changing selection (regardless of autoplay setting)
+                        if previouslySelectedIndex ~= l and globals.Waveform then
+                            globals.Waveform.stopPlayback()
+                        end
+
                         -- Auto-play if enabled and we actually changed selection
                         if globals.Settings.getSetting("waveformAutoPlayOnSelect") and previouslySelectedIndex ~= l then
-                            -- Stop any current playback first
-                            if globals.Waveform then
-                                globals.Waveform.stopPlayback()
-                            end
 
                             -- Clear any saved position marker when auto-playing
                             if globals.audioPreview then
@@ -314,14 +315,13 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                                 globals.Waveform.stopPlayback()
                             else
                                 -- Start playback if not playing or playing different item
-                                if globals.Settings.getSetting("waveformAutoPlayOnSelect") then
-                                    globals.Waveform.startPlayback(
-                                        selectedItem.filePath,
-                                        selectedItem.startOffset or 0,
-                                        selectedItem.length,
-                                        0 -- Start from beginning
-                                    )
-                                end
+                                -- Spacebar should always allow play/pause, regardless of autoplay setting
+                                globals.Waveform.startPlayback(
+                                    selectedItem.filePath,
+                                    selectedItem.startOffset or 0,
+                                    selectedItem.length,
+                                    0 -- Start from beginning
+                                )
                             end
                         end
                     end
