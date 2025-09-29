@@ -1402,8 +1402,24 @@ function Utils.applyRandomizationSettingsToContainerItems(groupIndex, containerI
         return
     end
     
-    local itemCount = reaper.GetTrackNumMediaItems(containerTrack)
-    if itemCount == 0 then
+    -- Determine which tracks to process based on channel mode
+    local tracksToProcess = {}
+    if container.channelMode and container.channelMode > 0 then
+        -- Multi-channel mode: get child tracks where items are actually placed
+        local Generation = require("DM_Ambiance_Generation")
+        tracksToProcess = Generation.getExistingChannelTracks(containerTrack)
+    else
+        -- Default mode: items are on the container track itself
+        tracksToProcess = {containerTrack}
+    end
+
+    -- Count total items across all tracks
+    local totalItemCount = 0
+    for _, track in ipairs(tracksToProcess) do
+        totalItemCount = totalItemCount + reaper.GetTrackNumMediaItems(track)
+    end
+
+    if totalItemCount == 0 then
         return
     end
     
@@ -1419,14 +1435,17 @@ function Utils.applyRandomizationSettingsToContainerItems(groupIndex, containerI
             originalSelection[i + 1] = reaper.GetSelectedMediaItem(0, i)
         end
         
-        -- Select ALL items in the container
+        -- Select ALL items across all tracks (container + children)
         reaper.SelectAllMediaItems(0, false)
         local allContainerItems = {}
-        for i = 0, itemCount - 1 do
-            local item = reaper.GetTrackMediaItem(containerTrack, i)
-            if item then
-                reaper.SetMediaItemSelected(item, true)
-                allContainerItems[i + 1] = item
+        for _, track in ipairs(tracksToProcess) do
+            local trackItemCount = reaper.GetTrackNumMediaItems(track)
+            for i = 0, trackItemCount - 1 do
+                local item = reaper.GetTrackMediaItem(track, i)
+                if item then
+                    reaper.SetMediaItemSelected(item, true)
+                    table.insert(allContainerItems, item)
+                end
             end
         end
         
@@ -1481,28 +1500,31 @@ function Utils.applyRandomizationSettingsToContainerItems(groupIndex, containerI
         end
     end
     
-    -- Now apply individual randomization values
-    for i = 0, itemCount - 1 do
-        local item = reaper.GetTrackMediaItem(containerTrack, i)
-        if item then
-            local take = reaper.GetActiveTake(item)
-            if take then
-                -- Get original values from item data
-                local itemData = nil
-                local retval, takeName = reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)
-                if not retval then
-                    takeName = "unknown"
-                end
-                
-                for _, containerData in ipairs(container.items) do
-                    if takeName == containerData.name then
-                        itemData = containerData
-                        break
+    -- Now apply individual randomization values across all tracks
+    for _, track in ipairs(tracksToProcess) do
+        local trackItemCount = reaper.GetTrackNumMediaItems(track)
+        for i = 0, trackItemCount - 1 do
+            local item = reaper.GetTrackMediaItem(track, i)
+            if item then
+                local take = reaper.GetActiveTake(item)
+                if take then
+                    -- Get original values from item data
+                    local itemData = nil
+                    local retval, takeName = reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)
+                    if not retval then
+                        takeName = "unknown"
                     end
-                end
-                
-                if itemData then
-                    Utils.applyRandomizationToItem(item, take, itemData, effectiveParams, modifiedParam)
+
+                    for _, containerData in ipairs(container.items) do
+                        if takeName == containerData.name then
+                            itemData = containerData
+                            break
+                        end
+                    end
+
+                    if itemData then
+                        Utils.applyRandomizationToItem(item, take, itemData, effectiveParams, modifiedParam)
+                    end
                 end
             end
         end

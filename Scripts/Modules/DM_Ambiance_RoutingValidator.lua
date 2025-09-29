@@ -2012,9 +2012,10 @@ function RoutingValidator.fixSingleIssue(issue)
     local suggestion = RoutingValidator.generateFixSuggestion(issue, globals.pendingValidationData)
     if suggestion then
         RoutingValidator.applySingleFix(suggestion)
-        -- Re-validate
+        -- Re-validate and refresh modal automatically
         projectTrackCache = nil
-        RoutingValidator.validateProjectRouting()
+        local newIssues = RoutingValidator.validateProjectRouting()
+        RoutingValidator.showValidationModal(newIssues, fixSuggestions)
     end
 end
 

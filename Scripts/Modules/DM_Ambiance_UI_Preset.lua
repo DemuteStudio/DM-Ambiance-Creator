@@ -81,13 +81,13 @@ function UI_Preset.drawPresetControls()
     
     -- Button to open the conflict resolver
     imgui.SameLine(globals.ctx)
-    if globals.Icons.createConflictButton(globals.ctx, "conflictResolver", "Open Channel Routing Conflict Resolver") then
-        -- Check for conflicts
-        local conflicts = globals.ConflictResolver.detectConflicts()
-        if conflicts then
-            globals.ConflictResolver.showResolutionModal(conflicts)
+    if globals.Icons.createConflictButton(globals.ctx, "conflictResolver", "Open Routing Validator") then
+        -- Validate project routing using the new system
+        local issues = globals.RoutingValidator.validateProjectRouting()
+        if issues and #issues > 0 then
+            globals.RoutingValidator.showValidationModal(issues)
         else
-            reaper.ShowMessageBox("No channel routing conflicts detected.", "Conflict Resolver", 0)
+            reaper.ShowMessageBox("No routing issues detected.", "Routing Validator", 0)
         end
     end
     
