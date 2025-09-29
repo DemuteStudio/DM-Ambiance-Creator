@@ -200,10 +200,16 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             if imgui.BeginChild(globals.ctx, "ItemsList" .. containerId, width * 0.95, 100) then
                 -- List all imported items as selectable items
                 for l, item in ipairs(container.items) do
+                    imgui.PushID(globals.ctx, "item_" .. l)
+
                     local isSelected = (globals.selectedItemIndex[selectionKey] == l)
-                    
-                    -- Make item selectable
-                    if imgui.Selectable(globals.ctx, l .. ". " .. item.name .. "##item" .. l, isSelected) then
+
+                    -- Calculate width for selectable to leave space for delete button
+                    local selectableWidth = width * 0.80
+
+                    -- Make item selectable with limited width
+                    imgui.PushItemWidth(globals.ctx, selectableWidth)
+                    if imgui.Selectable(globals.ctx, l .. ". " .. item.name, isSelected, imgui.SelectableFlags_None, selectableWidth, 0) then
                         -- Store the previously selected item
                         local previouslySelectedIndex = globals.selectedItemIndex[selectionKey]
 
@@ -244,14 +250,17 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                             end
                         end
                     end
-                    
-                    -- Delete button on same line
-                    imgui.SameLine(globals.ctx, width * 0.85)
+                    imgui.PopItemWidth(globals.ctx)
+
+                    -- Delete button on same line with proper spacing
+                    imgui.SameLine(globals.ctx, 0, 5)
                     imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF)
-                    if imgui.SmallButton(globals.ctx, "X##delete" .. l) then
+                    if imgui.SmallButton(globals.ctx, "X") then
                         itemToDelete = l
                     end
                     imgui.PopStyleColor(globals.ctx, 1)
+
+                    imgui.PopID(globals.ctx)
                 end
                 
                 imgui.EndChild(globals.ctx)
@@ -259,14 +268,25 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             
             -- Remove the item if the delete button was pressed
             if itemToDelete then
-                table.remove(container.items, itemToDelete)
+                -- Get the item data before deletion for cache clearing
+                local itemToDeleteData = globals.groups[groupIndex].containers[containerIndex].items[itemToDelete]
+
+                -- Directly modify the global container reference to ensure persistence
+                table.remove(globals.groups[groupIndex].containers[containerIndex].items, itemToDelete)
+
                 -- Keep the header expanded after deletion
                 globals.containerExpandedStates[expandedStateKey] = true
+
                 -- Reset selection if deleted item was selected
                 if globals.selectedItemIndex[selectionKey] == itemToDelete then
                     globals.selectedItemIndex[selectionKey] = -1
                 elseif globals.selectedItemIndex[selectionKey] > itemToDelete then
                     globals.selectedItemIndex[selectionKey] = globals.selectedItemIndex[selectionKey] - 1
+                end
+
+                -- Clear any related cached data for the deleted item
+                if globals.Waveform and itemToDeleteData and itemToDeleteData.filePath then
+                    globals.Waveform.clearFileCache(itemToDeleteData.filePath)
                 end
             end
         end
