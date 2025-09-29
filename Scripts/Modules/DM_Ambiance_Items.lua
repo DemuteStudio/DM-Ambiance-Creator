@@ -246,13 +246,21 @@ function Items.createItemFromFilePath(filePath)
   local fileName = filePath:match("([^/\\]+)$") or filePath
   local name = fileName:match("^(.+)%..+$") or fileName -- Remove extension
 
+  -- Get audio file length using REAPER's PCM_Source
+  local length = nil
+  local source = reaper.PCM_Source_CreateFromFile(filePath)
+  if source then
+    length = reaper.GetMediaSourceLength(source, nil)
+    reaper.PCM_Source_Destroy(source)
+  end
+
   -- Create basic item data (similar to getSelectedItems but from file path)
   local itemData = {
     name = name,
     filePath = filePath,
     source = nil, -- Will be created when needed
     startOffset = 0,
-    length = nil, -- Will be determined by REAPER when item is used
+    length = length, -- Now properly calculated from the audio file
     originalPitch = 0,
     originalVolume = 1.0,
     originalPan = 0.0
