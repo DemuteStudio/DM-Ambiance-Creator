@@ -203,15 +203,25 @@ end
 -- Apply linked fade changes
 local function applyLinkedFadeChange(obj, fadeType, newValue, linkMode)
     if linkMode == "unlink" then
-        -- Independent fades - just apply the new value
-        return newValue, obj[fadeType == "In" and "fadeOutDuration" or "fadeInDuration"]
+        -- Independent fades - keep the other fade unchanged
+        if fadeType == "In" then
+            -- Modifying fadeIn, keep fadeOut unchanged
+            return newValue, obj.fadeOutDuration
+        else
+            -- Modifying fadeOut, keep fadeIn unchanged
+            return obj.fadeInDuration, newValue
+        end
     elseif linkMode == "link" then
         -- Linked fades - maintain same value for both
         return newValue, newValue
     end
-    
+
     -- Fallback to unlink behavior
-    return newValue, obj[fadeType == "In" and "fadeOutDuration" or "fadeInDuration"]
+    if fadeType == "In" then
+        return newValue, obj.fadeOutDuration
+    else
+        return obj.fadeInDuration, newValue
+    end
 end
 
 -- Draw the trigger settings section (shared by groups and containers)
