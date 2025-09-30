@@ -14,6 +14,29 @@ function Generation.initModule(g)
     globals = g
 end
 
+-- Map a channel label (L, R, C, LS, RS, etc.) to a channel number
+-- Handles both ITU/Dolby and SMPTE variants
+function Generation.labelToChannelNumber(label, config, channelVariant)
+    -- ITU/Dolby by default: L R C LS RS LB RB
+    local labelToChannel = {
+        ["L"] = 1, ["R"] = 2, ["C"] = 3, ["LS"] = 4, ["RS"] = 5,
+        ["LFE"] = 4, ["LB"] = 6, ["RB"] = 7
+    }
+
+    -- SMPTE variant: L C R LS RS LB RB
+    if config and config.hasVariants and channelVariant == 1 then
+        labelToChannel["L"] = 1
+        labelToChannel["C"] = 2
+        labelToChannel["R"] = 3
+        labelToChannel["LS"] = 4
+        labelToChannel["RS"] = 5
+        labelToChannel["LB"] = 6
+        labelToChannel["RB"] = 7
+    end
+
+    return labelToChannel[label]
+end
+
 -- Function to delete existing groups with same names before generating
 function Generation.deleteExistingGroups()
   -- Create a map of group names we're about to create
@@ -102,11 +125,30 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
     local channelTracks = {}
     local numTracksToCreate = trackStructure.numTracks
 
-    -- Update container track to handle multi-channel
-    local requiredChannels = config.totalChannels or config.channels
+    -- NEW ARCHITECTURE: Use trackStructure to determine required channels on parent
+    -- The parent track must have enough channels to receive all child sends
+    local requiredChannels = trackStructure.numTracks -- At minimum, need as many channels as tracks
+
+    -- If we have labels, calculate the maximum channel number needed
+    if trackStructure.trackLabels then
+        local maxChannel = 0
+        for i, label in ipairs(trackStructure.trackLabels) do
+            local channelNum = Generation.labelToChannelNumber(label, config, container.channelVariant) or i
+            maxChannel = math.max(maxChannel, channelNum)
+        end
+        requiredChannels = math.max(requiredChannels, maxChannel)
+    else
+        -- Fallback: use config channels if available
+        requiredChannels = config.totalChannels or config.channels or numTracksToCreate
+    end
+
     -- If using custom routing, ensure we have enough channels for the highest channel
     if container.customRouting then
-        requiredChannels = math.max(requiredChannels, math.max(table.unpack(container.customRouting)))
+        local maxCustomChannel = 0
+        for _, ch in ipairs(container.customRouting) do
+            maxCustomChannel = math.max(maxCustomChannel, ch)
+        end
+        requiredChannels = math.max(requiredChannels, maxCustomChannel)
     end
 
     -- REAPER constraint: channel counts must be even numbers
@@ -197,22 +239,43 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
                 end
             end
 
-            local routing = container.customRouting or activeConfig.routing
+            -- NEW ARCHITECTURE: Use trackStructure to determine routing
             local destChannel = 0 -- Default to channel 1 (0-based)
 
-            if routing and routing[i] then
-                destChannel = routing[i] - 1
+            if container.customRouting and container.customRouting[i] then
+                -- Use custom routing if available (from conflict resolution)
+                destChannel = container.customRouting[i] - 1
+            elseif trackStructure.trackLabels and trackStructure.trackLabels[i] then
+                -- Use trackStructure labels to determine proper channel routing
+                local label = trackStructure.trackLabels[i]
+                local channelNum = Generation.labelToChannelNumber(label, config, container.channelVariant) or i
+                destChannel = channelNum - 1
             else
-                -- Fallback: use channel index as destination
+                -- Fallback: sequential routing (track 1 → ch 1, track 2 → ch 2, etc.)
                 destChannel = i - 1
             end
 
-            -- For mono to mono routing in Reaper:
-            -- Source: 1024 = mono mode (bit 10 set, channel 1)
-            local srcChannels = 1024
+            -- Determine source and destination channel configuration based on track type
+            local srcChannels, dstChannels
 
-            -- Destination: 1024 + channel number for mono routing
-            local dstChannels = 1024 + destChannel
+            if trackChannelCount == 2 and trackStructure.trackType == "stereo" then
+                -- STEREO → STEREO routing
+                -- For stereo pairs, we route all channels from source to a stereo pair on destination
+                -- srcChannels: 0 = stereo (channels 1-2 from source)
+                -- dstChannels: destChannel (0-based, no +1024 for stereo pairs)
+                --   0 = channels 1-2 (L/R)
+                --   2 = channels 3-4 (LS/RS)
+                --   4 = channels 5-6, etc.
+                srcChannels = 0  -- Stereo from source
+                dstChannels = destChannel  -- Stereo pair starting at destChannel (0-based)
+            else
+                -- MONO → MONO routing
+                -- For mono tracks routing to single channels
+                -- srcChannels: 1024 = mono mode (bit 10 set, channel 1)
+                -- dstChannels: 1024 + channel number for mono routing
+                srcChannels = 1024
+                dstChannels = 1024 + destChannel
+            end
 
             reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "I_SRCCHAN", srcChannels)
             reaper.SetTrackSendInfo_Value(channelTrack, 0, sendIdx, "I_DSTCHAN", dstChannels)
@@ -2593,11 +2656,22 @@ end
 function Generation.checkAndResolveConflicts()
     -- Use the new RoutingValidator module for comprehensive validation
     if not globals.RoutingValidator then
+        reaper.ShowConsoleMsg("WARNING: RoutingValidator module not initialized\n")
         return  -- Module not initialized
     end
 
     -- Validate entire project routing using the new robust system
     local issues = globals.RoutingValidator.validateProjectRouting()
+
+    -- DEBUG: Log validation results
+    if issues then
+        reaper.ShowConsoleMsg(string.format("Routing Validator: Found %d issues\n", #issues))
+        for i, issue in ipairs(issues) do
+            reaper.ShowConsoleMsg(string.format("  Issue %d: %s - %s\n", i, issue.type, issue.description or "no description"))
+        end
+    else
+        reaper.ShowConsoleMsg("Routing Validator: No issues found (issues = nil)\n")
+    end
 
     -- Handle issues based on auto-fix setting
     if issues and #issues > 0 then

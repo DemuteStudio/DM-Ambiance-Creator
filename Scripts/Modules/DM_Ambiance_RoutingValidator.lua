@@ -560,13 +560,18 @@ function RoutingValidator.getTrackRequiredChannels(trackInfo)
 end
 
 -- Parse REAPER's destination channel format
+-- Returns the HIGHEST channel number used by this send (1-based)
 function RoutingValidator.parseDstChannel(dstChan)
     if dstChan >= 1024 then
         -- Mono routing: 1024 + channel (0-based) = channel number (1-based)
         return (dstChan - 1024) + 1
     elseif dstChan >= 0 then
-        -- Stereo pair routing: channel pair * 2 = starting channel (0-based)
-        return math.floor(dstChan / 2) + 1
+        -- Stereo pair routing: dstChan is the starting channel (0-based)
+        -- A stereo pair uses 2 consecutive channels
+        -- dstChan = 0 → channels 1-2 → highest = 2
+        -- dstChan = 2 → channels 3-4 → highest = 4
+        -- dstChan = 4 → channels 5-6 → highest = 6
+        return dstChan + 2
     else
         return 1  -- Default
     end
