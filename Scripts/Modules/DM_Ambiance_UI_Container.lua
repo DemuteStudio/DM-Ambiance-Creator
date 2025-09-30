@@ -1207,6 +1207,37 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.PopTextWrapPos(globals.ctx)
         end
 
+        -- Show Source Format dropdown if needed (for 5.0/7.0 items without known center position)
+        if trackStructure.needsSourceVariant then
+            imgui.Spacing(globals.ctx)
+            imgui.Text(globals.ctx, "Source Format:")
+
+            local sourceFormatItems = "Unknown (use Ch1 only)\0ITU/Dolby (C at ch 3)\0SMPTE (C at ch 2)\0"
+            local currentIndex = 0
+            if container.sourceChannelVariant == nil then
+                currentIndex = 0
+            elseif container.sourceChannelVariant == 0 then
+                currentIndex = 1
+            elseif container.sourceChannelVariant == 1 then
+                currentIndex = 2
+            end
+
+            imgui.PushItemWidth(globals.ctx, width * 0.5)
+            local rv, newIndex = imgui.Combo(globals.ctx, "##SourceFormat_" .. containerId, currentIndex, sourceFormatItems)
+            imgui.PopItemWidth(globals.ctx)
+
+            if rv then
+                if newIndex == 0 then
+                    container.sourceChannelVariant = nil
+                elseif newIndex == 1 then
+                    container.sourceChannelVariant = 0
+                elseif newIndex == 2 then
+                    container.sourceChannelVariant = 1
+                end
+                container.needsRegeneration = true
+            end
+        end
+
         -- Show distribution info if applicable
         if trackStructure.useDistribution then
             local distModeText = {"Round-robin", "Random", "All tracks"}

@@ -82,7 +82,8 @@ function Structures.createContainer(name)
         trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT, -- Container track volume in dB
         -- Multi-channel support
         channelMode = Constants.CHANNEL_MODES.DEFAULT,  -- Default to stereo
-        channelVariant = 0,  -- Channel variant (0=ITU/Dolby, 1=SMPTE)
+        channelVariant = 0,  -- Channel variant (0=ITU/Dolby, 1=SMPTE) for OUTPUT
+        sourceChannelVariant = nil,  -- Source format for items (nil=unknown, 0=ITU, 1=SMPTE) - for smart routing
         channelVolumes = {},  -- Volume per channel in dB
         -- Item routing and distribution
         itemDistributionMode = 0,  -- 0=Round-robin, 1=Random, 2=All tracks (for mono items)

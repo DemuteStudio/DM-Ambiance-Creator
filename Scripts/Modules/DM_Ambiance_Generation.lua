@@ -762,6 +762,9 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 if trackStructure.numTracks == 1 then
                     -- Single track: place item there
                     targetTracks = {channelTracks[1]}
+                elseif trackStructure.useSmartRouting then
+                    -- Smart routing: place on all tracks (each will extract different channel)
+                    targetTracks = channelTracks
                 elseif trackStructure.useDistribution then
                     -- Mono items or items that need distribution: distribute across tracks
                     local distributionMode = container.itemDistributionMode or 0
@@ -851,7 +854,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
 
                 -- Apply channel selection if needed
                 if needsChannelSelection then
-                    Generation.applyChannelSelection(newItem, container, itemChannels, channelSelectionMode, trackStructure)
+                    Generation.applyChannelSelection(newItem, container, itemChannels, channelSelectionMode, trackStructure, trackIdx)
                 end
 
                 -- Trim item so it never exceeds the selection end
@@ -2616,7 +2619,8 @@ end
 -- @param itemChannels number: Number of channels in the item
 -- @param channelSelectionMode string: "none", "stereo", or "mono"
 -- @param trackStructure table: Track structure (optional, for auto-forced values)
-function Generation.applyChannelSelection(item, container, itemChannels, channelSelectionMode, trackStructure)
+-- @param trackIdx number: Track index (1-based) for smart routing
+function Generation.applyChannelSelection(item, container, itemChannels, channelSelectionMode, trackStructure, trackIdx)
     if not item or not container then return end
 
     -- Select the item for applying actions
@@ -2644,30 +2648,85 @@ function Generation.applyChannelSelection(item, container, itemChannels, channel
         -- Priority: trackStructure value (auto-forced) > container value (user choice)
         local monoChannelSelection = (trackStructure and trackStructure.monoChannelSelection) or container.monoChannelSelection or itemChannels
 
-        -- Check if random mode (index >= itemChannels means Random)
-        local selectedChannel = monoChannelSelection
-        if selectedChannel >= itemChannels then
-            -- Random: choose random channel (0-based)
-            selectedChannel = math.random(0, itemChannels - 1)
-        end
+        -- Special case: Smart routing for surround items with known center position
+        if trackStructure and trackStructure.useSmartRouting then
+            -- Smart routing: Extract specific channel based on track index and source variant
+            -- For 5.0: L R C LS RS (ITU) or L C R LS RS (SMPTE)
+            -- For 7.0: L R C LS RS LB RB (ITU) or L C R LS RS LB RB (SMPTE)
+            -- Target: 4 tracks = L, R, LS, RS (skip center)
 
-        -- Apply mono channel selection action based on channel index (0-based)
-        if selectedChannel == 0 then
-            reaper.Main_OnCommand(40179, 0) -- Mono channel 1 (left)
-        elseif selectedChannel == 1 then
-            reaper.Main_OnCommand(40180, 0) -- Mono channel 2 (right)
-        elseif selectedChannel == 2 then
-            reaper.Main_OnCommand(41388, 0) -- Mono channel 3
-        elseif selectedChannel == 3 then
-            reaper.Main_OnCommand(41389, 0) -- Mono channel 4
-        elseif selectedChannel == 4 then
-            reaper.Main_OnCommand(41390, 0) -- Mono channel 5
-        elseif selectedChannel == 5 then
-            reaper.Main_OnCommand(41391, 0) -- Mono channel 6
-        elseif selectedChannel == 6 then
-            reaper.Main_OnCommand(41392, 0) -- Mono channel 7
-        elseif selectedChannel == 7 then
-            reaper.Main_OnCommand(41393, 0) -- Mono channel 8
+            local sourceChannelVariant = trackStructure.sourceChannelVariant or container.sourceChannelVariant or 0
+            local sourceChannel = 0  -- 0-based channel index
+
+            if itemChannels == 5 then
+                -- 5.0 surround
+                if sourceChannelVariant == 0 then
+                    -- ITU/Dolby: L(0) R(1) C(2) LS(3) RS(4)
+                    local channelMap = {0, 1, 3, 4}  -- L, R, LS, RS (skip C at index 2)
+                    sourceChannel = channelMap[trackIdx] or 0
+                else
+                    -- SMPTE: L(0) C(1) R(2) LS(3) RS(4)
+                    local channelMap = {0, 2, 3, 4}  -- L, R, LS, RS (skip C at index 1)
+                    sourceChannel = channelMap[trackIdx] or 0
+                end
+            elseif itemChannels == 7 then
+                -- 7.0 surround
+                if sourceChannelVariant == 0 then
+                    -- ITU/Dolby: L(0) R(1) C(2) LS(3) RS(4) LB(5) RB(6)
+                    local channelMap = {0, 1, 3, 4}  -- L, R, LS, RS (skip C, LB, RB)
+                    sourceChannel = channelMap[trackIdx] or 0
+                else
+                    -- SMPTE: L(0) C(1) R(2) LS(3) RS(4) LB(5) RB(6)
+                    local channelMap = {0, 2, 3, 4}  -- L, R, LS, RS (skip C, LB, RB)
+                    sourceChannel = channelMap[trackIdx] or 0
+                end
+            end
+
+            -- Apply mono channel selection action based on source channel (0-based)
+            if sourceChannel == 0 then
+                reaper.Main_OnCommand(40179, 0) -- Mono channel 1 (left)
+            elseif sourceChannel == 1 then
+                reaper.Main_OnCommand(40180, 0) -- Mono channel 2 (right)
+            elseif sourceChannel == 2 then
+                reaper.Main_OnCommand(41388, 0) -- Mono channel 3
+            elseif sourceChannel == 3 then
+                reaper.Main_OnCommand(41389, 0) -- Mono channel 4
+            elseif sourceChannel == 4 then
+                reaper.Main_OnCommand(41390, 0) -- Mono channel 5
+            elseif sourceChannel == 5 then
+                reaper.Main_OnCommand(41391, 0) -- Mono channel 6
+            elseif sourceChannel == 6 then
+                reaper.Main_OnCommand(41392, 0) -- Mono channel 7
+            elseif sourceChannel == 7 then
+                reaper.Main_OnCommand(41393, 0) -- Mono channel 8
+            end
+        else
+            -- Normal mono channel selection
+            -- Check if random mode (index >= itemChannels means Random)
+            local selectedChannel = monoChannelSelection
+            if selectedChannel >= itemChannels then
+                -- Random: choose random channel (0-based)
+                selectedChannel = math.random(0, itemChannels - 1)
+            end
+
+            -- Apply mono channel selection action based on channel index (0-based)
+            if selectedChannel == 0 then
+                reaper.Main_OnCommand(40179, 0) -- Mono channel 1 (left)
+            elseif selectedChannel == 1 then
+                reaper.Main_OnCommand(40180, 0) -- Mono channel 2 (right)
+            elseif selectedChannel == 2 then
+                reaper.Main_OnCommand(41388, 0) -- Mono channel 3
+            elseif selectedChannel == 3 then
+                reaper.Main_OnCommand(41389, 0) -- Mono channel 4
+            elseif selectedChannel == 4 then
+                reaper.Main_OnCommand(41390, 0) -- Mono channel 5
+            elseif selectedChannel == 5 then
+                reaper.Main_OnCommand(41391, 0) -- Mono channel 6
+            elseif selectedChannel == 6 then
+                reaper.Main_OnCommand(41392, 0) -- Mono channel 7
+            elseif selectedChannel == 7 then
+                reaper.Main_OnCommand(41393, 0) -- Mono channel 8
+            end
         end
     end
 
@@ -2823,9 +2882,63 @@ function Generation.determineAutoOptimization(container, itemsAnalysis, outputCh
     -- CAS C : Items > Output → Auto downmix intelligent
     -- ──────────────────────────────────────────────────────────
     if itemCh > outputChannels then
-        -- Cas spécial : Items multichannel pairs dans container Stereo
+        -- Cas spécial : 5.0/7.0 items avec source variant connu → Smart routing vers 4.0/Stereo
+        if (itemCh == 5 or itemCh == 7) and container.sourceChannelVariant ~= nil then
+            -- L'utilisateur a spécifié où est le center, on peut faire du routing intelligent
+            if outputChannels == 4 then
+                -- 5.0/7.0 → 4.0 : Map L/R/LS/RS (skip center)
+                return {
+                    strategy = "surround-to-quad-skip-center",
+                    numTracks = 4,
+                    trackType = "mono",
+                    trackChannels = 1,
+                    trackLabels = {"L", "R", "LS", "RS"},
+                    needsChannelSelection = true,
+                    channelSelectionMode = "mono",
+                    useSmartRouting = true,
+                    sourceChannelVariant = container.sourceChannelVariant,
+                    warning = string.format(
+                        "Items have %d channels, mapping to 4.0 (skipping center channel).",
+                        itemCh
+                    )
+                }
+            elseif outputChannels == 2 then
+                -- 5.0/7.0 → Stereo : Downmix L/R only (skip center + surrounds)
+                return {
+                    strategy = "surround-to-stereo-front-only",
+                    numTracks = 1,
+                    trackType = "stereo",
+                    trackChannels = 2,
+                    needsChannelSelection = true,
+                    channelSelectionMode = "stereo",
+                    stereoPairSelection = 0,  -- Force Ch1-2 (L/R front)
+                    warning = string.format(
+                        "Items have %d channels, using front L/R only (skipping center and surrounds).",
+                        itemCh
+                    )
+                }
+            end
+        end
+
+        -- Cas spécial : 4.0 items → Stereo/4.0 (pairs)
+        if itemCh == 4 and outputChannels == 2 then
+            -- 4.0 → Stereo : Downmix automatique vers Ch1-2
+            return {
+                strategy = "auto-downmix-stereo",
+                numTracks = 1,
+                trackType = "stereo",
+                trackChannels = 2,
+                needsChannelSelection = true,
+                channelSelectionMode = "stereo",
+                stereoPairSelection = 0,  -- Force Ch1-2 (L/R)
+                itemsGoDirectly = true,
+                warning = "Items have 4 channels but output is stereo. Auto-downmixing to channels 1-2 (L/R)."
+            }
+        end
+
+        -- Cas spécial : Items pairs (6, 8) → Stereo
         if outputChannels == 2 and itemCh % 2 == 0 then
-            -- Items avec channels pairs (4, 6, 8) → Downmix stereo automatique vers Ch1-2
+            -- Items avec channels pairs → Downmix stereo automatique vers Ch1-2
             return {
                 strategy = "auto-downmix-stereo",
                 numTracks = 1,
@@ -2839,6 +2952,26 @@ function Generation.determineAutoOptimization(container, itemsAnalysis, outputCh
                     "Items have %d channels but output is stereo. Auto-downmixing to channels 1-2 (L/R).",
                     itemCh
                 )
+            }
+        end
+
+        -- Cas général : 5.0/7.0 sans variant connu → Downmix mono avec warning
+        if (itemCh == 5 or itemCh == 7) and container.sourceChannelVariant == nil then
+            local targetChannels = outputChannels == 2 and "stereo" or (outputChannels .. ".0")
+            return {
+                strategy = "surround-unknown-format",
+                numTracks = 1,
+                trackType = "multi",
+                trackChannels = outputChannels,
+                needsChannelSelection = true,
+                channelSelectionMode = "mono",
+                monoChannelSelection = 0,  -- Force channel 1
+                warning = string.format(
+                    "Items have %d channels but output is %s. Using channel 1 only.\n" ..
+                    "To enable smart routing (skip center), specify the source format below.",
+                    itemCh, targetChannels
+                ),
+                needsSourceVariant = true  -- Flag to show source format dropdown
             }
         end
 
