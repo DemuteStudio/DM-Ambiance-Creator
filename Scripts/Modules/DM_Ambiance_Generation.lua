@@ -716,6 +716,22 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
         local itemsAnalysis = Generation.analyzeContainerItems(container)
         local trackStructure = Generation.determineTrackStructure(container, itemsAnalysis)
 
+        -- SPECIAL CASE: Independent generation for "All Tracks" mode
+        -- Must be checked BEFORE entering the main loop
+        local distributionMode = container.itemDistributionMode or 0
+        if trackStructure.useDistribution and distributionMode == 2 then
+            -- All Tracks mode - generate independently for each track
+            local needsChannelSelection = trackStructure.needsChannelSelection
+            local channelSelectionMode = trackStructure.channelSelectionMode or container.channelSelectionMode or "none"
+
+            for trackIdx, targetTrack in ipairs(channelTracks) do
+                Generation.generateIndependentTrack(targetTrack, trackIdx, container, effectiveParams, channelTracks, trackStructure, needsChannelSelection, channelSelectionMode)
+            end
+
+            -- Exit completely - independent generation is done
+            return
+        end
+
         -- Reset for generation
         local lastItemRef = nil
         local isFirstItem = true
@@ -758,6 +774,8 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             end
 
             -- If no custom routing, use automatic distribution
+            local distributionMode = container.itemDistributionMode or 0
+
             if not useCustomRouting then
                 if trackStructure.numTracks == 1 then
                     -- Single track: place item there
@@ -767,7 +785,6 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                     targetTracks = channelTracks
                 elseif trackStructure.useDistribution then
                     -- Mono items or items that need distribution: distribute across tracks
-                    local distributionMode = container.itemDistributionMode or 0
 
                     if distributionMode == 0 then
                         -- Round-robin
@@ -781,9 +798,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                         -- Random
                         local targetChannel = math.random(1, #channelTracks)
                         targetTracks = {channelTracks[targetChannel]}
-                    elseif distributionMode == 2 then
-                        -- All tracks
-                        targetTracks = channelTracks
+                    -- distributionMode == 2 (All tracks) is handled BEFORE the main loop
                     end
                 else
                     -- All other cases: use all tracks or first track
@@ -2606,6 +2621,229 @@ function Generation.checkAndResolveConflicts()
             -- Manual mode: show validation modal for user review
             globals.RoutingValidator.showValidationModal(issues)
         end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- INDEPENDENT TRACK GENERATION (for "All Tracks" distribution mode)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Apply randomization (pitch, volume, pan) to an item
+function Generation.applyRandomization(newItem, newTake, effectiveParams, itemData, trackStructure)
+    -- Apply pitch randomization
+    if effectiveParams.randomizePitch then
+        local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+    else
+        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+    end
+
+    -- Apply volume randomization
+    if effectiveParams.randomizeVolume then
+        local randomVolume = itemData.originalVolume * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
+        reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", randomVolume)
+    else
+        reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume)
+    end
+
+    -- Apply pan randomization (only for stereo contexts)
+    local canUsePan = false
+    if not effectiveParams.channelMode or effectiveParams.channelMode == 0 then
+        -- Stereo container
+        canUsePan = true
+    elseif trackStructure and trackStructure.trackType == "stereo" and trackStructure.trackChannels == 2 then
+        -- Stereo items on stereo tracks in multichannel
+        canUsePan = true
+    end
+
+    if effectiveParams.randomizePan and canUsePan then
+        local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+        randomPan = math.max(-1, math.min(1, randomPan))
+        -- Use envelope instead of directly modifying the property
+        Items.createTakePanEnvelope(newTake, randomPan)
+    end
+end
+
+-- Apply fade in/out to an item
+function Generation.applyFades(newItem, effectiveParams, actualLen)
+    -- Apply fade in if enabled
+    if effectiveParams.fadeInEnabled then
+        local fadeInDuration = effectiveParams.fadeInDuration or 0.1
+        -- Convert percentage to seconds if using percentage mode
+        if effectiveParams.fadeInUsePercentage then
+            fadeInDuration = (fadeInDuration / 100) * actualLen
+        end
+        -- Ensure fade doesn't exceed item length
+        fadeInDuration = math.min(fadeInDuration, actualLen)
+
+        reaper.SetMediaItemInfo_Value(newItem, "D_FADEINLEN", fadeInDuration)
+        reaper.SetMediaItemInfo_Value(newItem, "C_FADEINSHAPE", effectiveParams.fadeInShape or 0)
+        reaper.SetMediaItemInfo_Value(newItem, "D_FADEINDIR", effectiveParams.fadeInCurve or 0.0)
+    end
+
+    -- Apply fade out if enabled
+    if effectiveParams.fadeOutEnabled then
+        local fadeOutDuration = effectiveParams.fadeOutDuration or 0.1
+        -- Convert percentage to seconds if using percentage mode
+        if effectiveParams.fadeOutUsePercentage then
+            fadeOutDuration = (fadeOutDuration / 100) * actualLen
+        end
+        -- Ensure fade doesn't exceed item length
+        fadeOutDuration = math.min(fadeOutDuration, actualLen)
+
+        reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", fadeOutDuration)
+        reaper.SetMediaItemInfo_Value(newItem, "C_FADEOUTSHAPE", effectiveParams.fadeOutShape or 0)
+        reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
+    end
+end
+
+-- Calculate interval based on the selected mode
+function Generation.calculateInterval(effectiveParams)
+    local interval = effectiveParams.triggerRate -- Default (Absolute mode)
+
+    if effectiveParams.intervalMode == 1 then
+        -- Relative mode: Interval is a percentage of time selection length
+        interval = (globals.timeSelectionLength * effectiveParams.triggerRate) / 100
+    elseif effectiveParams.intervalMode == 2 then
+        -- Coverage mode: Calculate interval based on average item length and desired coverage
+        local totalItemLength = 0
+        local itemCount = #effectiveParams.items
+
+        if itemCount > 0 then
+            for _, item in ipairs(effectiveParams.items) do
+                totalItemLength = totalItemLength + item.length
+            end
+
+            local averageItemLength = totalItemLength / itemCount
+            local desiredCoverage = effectiveParams.triggerRate / 100 -- Convert percentage to ratio
+            local totalNumberOfItems = (globals.timeSelectionLength * desiredCoverage) / averageItemLength
+
+            if totalNumberOfItems > 0 then
+                interval = globals.timeSelectionLength / totalNumberOfItems
+            else
+                interval = globals.timeSelectionLength -- Fallback
+            end
+        end
+    end
+
+    return interval
+end
+
+-- Generate items independently for a single track in "All Tracks" mode
+-- Each track gets its own timeline with independent intervals, drift, and randomization
+function Generation.generateIndependentTrack(targetTrack, trackIdx, container, effectiveParams, channelTracks, trackStructure, needsChannelSelection, channelSelectionMode)
+    if not container.items or #container.items == 0 then
+        return
+    end
+
+    local interval = Generation.calculateInterval(effectiveParams)
+    local lastItemEnd = globals.startTime
+    local isFirstItem = true
+    local itemCount = 0
+    local maxItems = 10000  -- Safety limit to prevent infinite loops
+
+    -- Independent generation loop for this track
+    while lastItemEnd < globals.endTime and itemCount < maxItems do
+        itemCount = itemCount + 1
+        -- Select a random item from the container
+        local randomItemIndex = math.random(1, #effectiveParams.items)
+        local originalItemData = effectiveParams.items[randomItemIndex]
+
+        -- Select area if available, or use full item
+        local itemData = Utils.selectRandomAreaOrFullItem(originalItemData)
+        local itemChannels = itemData.numChannels or 2
+
+        -- Vérification pour les intervalles négatifs
+        if interval < 0 then
+            local requiredLength = math.abs(interval)
+            if itemData.length < requiredLength then
+                -- Item trop court, avancer légèrement
+                lastItemEnd = lastItemEnd + 0.1
+                goto continue_independent_loop
+            end
+        end
+
+        local position
+        local maxDrift
+        local drift
+
+        -- Placement spécial pour le premier item avec intervalle > 0
+        if isFirstItem and interval > 0 then
+            -- Placer directement entre startTime et startTime+interval
+            position = globals.startTime + math.random() * interval
+            isFirstItem = false
+        else
+            -- Calcul standard de position pour les items suivants
+            if effectiveParams.intervalMode == 0 and interval < 0 then
+                -- Negative spacing creates overlap with the last item
+                maxDrift = math.abs(interval) * (effectiveParams.triggerDrift / 100)
+                drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
+                position = lastItemEnd + interval + drift
+            else
+                -- Regular spacing from the end of the last item
+                maxDrift = interval * (effectiveParams.triggerDrift / 100)
+                drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
+                position = lastItemEnd + interval + drift
+            end
+
+            -- Ensure no item starts before time selection
+            if position < globals.startTime then
+                position = globals.startTime
+            end
+        end
+
+        -- Stop if the item would start beyond the end of the time selection
+        if position >= globals.endTime then
+            break
+        end
+
+        -- Create and configure the new item on this track
+        local newItem = reaper.AddMediaItemToTrack(targetTrack)
+        local newTake = reaper.AddTakeToMediaItem(newItem)
+
+        -- Configure the item
+        local PCM_source = reaper.PCM_Source_CreateFromFile(itemData.filePath)
+        reaper.SetMediaItemTake_Source(newTake, PCM_source)
+        reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
+
+        -- Apply channel selection if needed
+        if needsChannelSelection then
+            Generation.applyChannelSelection(newItem, container, itemChannels, channelSelectionMode, trackStructure, trackIdx)
+        end
+
+        -- Trim item so it never exceeds the selection end
+        local maxLen = globals.endTime - position
+        local actualLen = math.min(itemData.length, maxLen)
+
+        reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
+        reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
+        reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
+
+        -- Apply randomization (pitch, volume, pan)
+        Generation.applyRandomization(newItem, newTake, effectiveParams, itemData, trackStructure)
+
+        -- Apply fades if enabled
+        if effectiveParams.fadeInEnabled or effectiveParams.fadeOutEnabled then
+            Generation.applyFades(newItem, effectiveParams, actualLen)
+        end
+
+        -- Update end time for next item
+        lastItemEnd = position + actualLen
+
+        -- Safety: ensure minimum progression to prevent infinite loops
+        if actualLen <= 0 then
+            lastItemEnd = lastItemEnd + 0.01
+        end
+
+        -- Recalculate interval for next iteration
+        interval = Generation.calculateInterval(effectiveParams)
+
+        ::continue_independent_loop::
+    end
+
+    -- Debug warning if we hit the safety limit
+    if itemCount >= maxItems then
+        reaper.ShowConsoleMsg("WARNING: Independent track generation hit safety limit of " .. maxItems .. " items\n")
     end
 end
 
