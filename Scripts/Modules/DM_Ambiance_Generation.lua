@@ -75,13 +75,14 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
         return {containerTrack}
     end
 
-    -- STEP 1: Detect container format based on items
-    local formatInfo = Generation.detectContainerFormat(container)
+    -- STEP 1: Analyze items and determine track structure
+    local itemsAnalysis = Generation.analyzeContainerItems(container)
+    local trackStructure = Generation.determineTrackStructure(container, itemsAnalysis)
 
     -- If only 1 track needed, return container track without creating children
-    if formatInfo.numTracks == 1 then
-        -- Set container track channel count to match item
-        local requiredChannels = formatInfo.itemChannelCount
+    if trackStructure.numTracks == 1 then
+        -- Set container track channel count to match requirements
+        local requiredChannels = trackStructure.trackChannels
         if requiredChannels % 2 == 1 then
             requiredChannels = requiredChannels + 1
         end
@@ -99,7 +100,7 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
     end
 
     local channelTracks = {}
-    local numTracksToCreate = formatInfo.numTracks
+    local numTracksToCreate = trackStructure.numTracks
 
     -- Update container track to handle multi-channel
     local requiredChannels = config.totalChannels or config.channels
@@ -149,15 +150,12 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
         local channelTrack = reaper.GetTrack(0, containerIdx + i)
 
         -- Name the track
-        local channelLabel = formatInfo.trackLabels and formatInfo.trackLabels[i] or ("Channel " .. i)
+        local channelLabel = trackStructure.trackLabels and trackStructure.trackLabels[i] or ("Channel " .. i)
         local trackName = container.name .. " - " .. channelLabel
         reaper.GetSetMediaTrackInfo_String(channelTrack, "P_NAME", trackName, true)
 
-        -- Determine track channel count based on format
-        local trackChannelCount = 1  -- Default mono
-        if formatInfo.itemChannelCount == 2 and not formatInfo.needsDownmix then
-            trackChannelCount = 2  -- Stereo items on stereo tracks
-        end
+        -- Determine track channel count based on track structure
+        local trackChannelCount = trackStructure.trackChannels or 1
         reaper.SetMediaTrackInfo_Value(channelTrack, "I_NCHAN", trackChannelCount)
 
         -- Disable master send
@@ -526,302 +524,9 @@ function Generation.clearChannelTracks(tracks)
     end
 end
 
--- Analyze container items and determine track structure to create
--- @param container table: The container with imported items
--- @return table: { numTracks, trackLabels, needsDownmix, allItemsSameChannels, itemChannelCount }
-function Generation.detectContainerFormat(container)
-    -- Stereo mode: check if items need downmix
-    if not container.channelMode or container.channelMode == 0 then
-        -- Analyze items to see if downmix needed
-        local maxItemChannels = 2
-        if container.items and #container.items > 0 then
-            for _, item in ipairs(container.items) do
-                local ch = item.numChannels or 2
-                if ch > maxItemChannels then
-                    maxItemChannels = ch
-                end
-            end
-        end
-
-        -- If items have more than 2 channels, need downmix
-        local needsDownmix = maxItemChannels > 2
-
-        return {
-            numTracks = 1,
-            trackLabels = nil,
-            needsDownmix = needsDownmix,
-            allItemsSameChannels = true,
-            itemChannelCount = maxItemChannels
-        }
-    end
-
-    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
-    if not config then
-        return { numTracks = 1, trackLabels = nil, needsDownmix = false, allItemsSameChannels = true, itemChannelCount = 2 }
-    end
-
-    local containerChannels = config.channels
-
-    -- Get active config with variant
-    local activeConfig = config
-    if config.hasVariants and container.channelVariant then
-        activeConfig = config.variants[container.channelVariant or 0]
-    end
-
-    -- If no items yet, default to full split
-    if not container.items or #container.items == 0 then
-        return {
-            numTracks = containerChannels,
-            trackLabels = activeConfig.labels,
-            needsDownmix = false,
-            allItemsSameChannels = true,
-            itemChannelCount = 1
-        }
-    end
-
-    -- Analyze item channels
-    local channelCounts = {}
-    for _, item in ipairs(container.items) do
-        local ch = item.numChannels or 2
-        channelCounts[ch] = (channelCounts[ch] or 0) + 1
-    end
-
-    -- Determine dominant channel count
-    local uniqueChannels = {}
-    for ch, _ in pairs(channelCounts) do
-        table.insert(uniqueChannels, ch)
-    end
-
-    local allSame = (#uniqueChannels == 1)
-    local dominantChannels = uniqueChannels[1] or 2
-
-    -- Mixed channel counts → downmix all to mono and split
-    if not allSame then
-        return {
-            numTracks = containerChannels,
-            trackLabels = activeConfig.labels,
-            needsDownmix = true,
-            allItemsSameChannels = false,
-            itemChannelCount = 1  -- After downmix
-        }
-    end
-
-    -- All items have same channel count
-    -- Match exact → check if user wants to downmix anyway
-    if dominantChannels == containerChannels then
-        local downmixMode = container.downmixMode or 0  -- 0=None, 1=Stereo, 2=Mono
-
-        if downmixMode == 0 then
-            -- No downmix: single track with full multichannel item
-            return {
-                numTracks = 1,
-                trackLabels = nil,
-                needsDownmix = false,
-                allItemsSameChannels = true,
-                itemChannelCount = dominantChannels
-            }
-        elseif downmixMode == 1 then
-            -- Stereo downmix: create stereo track pairs
-            if containerChannels == 4 then
-                -- 4.0 → 2 stereo tracks (L+R / LS+RS)
-                return {
-                    numTracks = 2,
-                    trackLabels = {"L+R", "LS+RS"},
-                    needsDownmix = true,
-                    allItemsSameChannels = true,
-                    itemChannelCount = 2
-                }
-            elseif containerChannels == 5 then
-                -- 5.0 → Can't do stereo pairs cleanly, fallback to mono
-                return {
-                    numTracks = containerChannels,
-                    trackLabels = activeConfig.labels,
-                    needsDownmix = true,
-                    allItemsSameChannels = true,
-                    itemChannelCount = 1
-                }
-            elseif containerChannels == 7 then
-                -- 7.0 → Can't do stereo pairs cleanly, fallback to mono
-                return {
-                    numTracks = containerChannels,
-                    trackLabels = activeConfig.labels,
-                    needsDownmix = true,
-                    allItemsSameChannels = true,
-                    itemChannelCount = 1
-                }
-            end
-        elseif downmixMode == 2 then
-            -- Mono downmix: split to all channels
-            return {
-                numTracks = containerChannels,
-                trackLabels = activeConfig.labels,
-                needsDownmix = true,
-                allItemsSameChannels = true,
-                itemChannelCount = 1
-            }
-        end
-    end
-
-    -- All mono → split to all channels
-    if dominantChannels == 1 then
-        return {
-            numTracks = containerChannels,
-            trackLabels = activeConfig.labels,
-            needsDownmix = false,
-            allItemsSameChannels = true,
-            itemChannelCount = 1
-        }
-    end
-
-    -- All stereo in multichannel
-    if dominantChannels == 2 then
-        -- Check if user wants downmix
-        local downmixMode = container.downmixMode or 0  -- 0=None, 1=Stereo, 2=Mono
-
-        if downmixMode == 2 then
-            -- User chose mono downmix: downmix to mono and split to all channels
-            return {
-                numTracks = containerChannels,
-                trackLabels = activeConfig.labels,
-                needsDownmix = true,
-                allItemsSameChannels = true,
-                itemChannelCount = 1  -- After downmix
-            }
-        elseif downmixMode == 1 or (downmixMode == 0 and container.channelMode == 1) then
-            -- Stereo downmix OR no downmix for 4.0 (stereo items fit in 4.0)
-            if container.channelMode == 1 then
-                -- 4.0: Create 2 tracks (LR / LSRS)
-                return {
-                    numTracks = 2,
-                    trackLabels = {"L+R", "LS+RS"},
-                    needsDownmix = false,
-                    allItemsSameChannels = true,
-                    itemChannelCount = 2
-                }
-            else
-                -- 5.0/7.0: Must downmix to mono and split (stereo doesn't fit naturally)
-                return {
-                    numTracks = containerChannels,
-                    trackLabels = activeConfig.labels,
-                    needsDownmix = true,
-                    allItemsSameChannels = true,
-                    itemChannelCount = 1  -- After downmix
-                }
-            end
-        else
-            -- downmixMode == 0 (None) for 5.0/7.0: force downmix to mono anyway
-            return {
-                numTracks = containerChannels,
-                trackLabels = activeConfig.labels,
-                needsDownmix = true,
-                allItemsSameChannels = true,
-                itemChannelCount = 1  -- After downmix
-            }
-        end
-    end
-
-    -- 4.0 items in 5.0 container → match L R LS RS
-    if dominantChannels == 4 and container.channelMode == 2 then
-        return {
-            numTracks = 4,
-            trackLabels = {"L", "R", "LS", "RS"},
-            needsDownmix = false,
-            allItemsSameChannels = true,
-            itemChannelCount = 4
-        }
-    end
-
-    -- Items with more channels than container → must downmix
-    if dominantChannels > containerChannels then
-        local downmixMode = container.downmixMode or 0  -- 0=None, 1=Stereo, 2=Mono
-
-        if downmixMode == 0 then
-            -- None: no downmix, use first pair/channel
-            downmixMode = 1  -- Default to stereo if user didn't specify
-        end
-
-        return {
-            numTracks = containerChannels,
-            trackLabels = activeConfig.labels,
-            needsDownmix = true,
-            allItemsSameChannels = true,
-            itemChannelCount = (downmixMode == 2) and 1 or 2  -- Mono or Stereo after downmix
-        }
-    end
-
-    -- Default: downmix and split
-    return {
-        numTracks = containerChannels,
-        trackLabels = activeConfig.labels,
-        needsDownmix = true,
-        allItemsSameChannels = true,
-        itemChannelCount = 1
-    }
-end
-
--- Calculate how to distribute an item across channel tracks based on channel counts
--- @param itemChannels number: Number of channels in the audio item
--- @param containerChannelMode number: Container channel mode (0=stereo, 1=4.0, 2=5.0, 3=7.0)
--- @return table: { targetTrackIndices = {}, downmixStrategy = "none"/"first"/"custom" }
-function Generation.calculateTrackMultiplier(itemChannels, containerChannelMode)
-    -- Default mode (stereo) - always use single track
-    if not containerChannelMode or containerChannelMode == 0 then
-        return { targetTrackIndices = {1}, downmixStrategy = "none" }
-    end
-
-    local config = globals.Constants.CHANNEL_CONFIGS[containerChannelMode]
-    if not config then
-        return { targetTrackIndices = {1}, downmixStrategy = "none" }
-    end
-
-    local containerChannels = config.channels
-
-    -- Item has same channel count as container - direct mapping
-    if itemChannels == containerChannels then
-        return { targetTrackIndices = {1}, downmixStrategy = "none" }
-    end
-
-    -- Mono item - place on ALL container tracks
-    if itemChannels == 1 then
-        local indices = {}
-        for i = 1, containerChannels do
-            table.insert(indices, i)
-        end
-        return { targetTrackIndices = indices, downmixStrategy = "none" }
-    end
-
-    -- Stereo item in multichannel container
-    if itemChannels == 2 then
-        if containerChannelMode == 1 then
-            -- 4.0: Stereo goes to Front (L/R) and Rear (LS/RS)
-            return { targetTrackIndices = {1, 2}, downmixStrategy = "none" }
-        elseif containerChannelMode == 2 then
-            -- 5.0: Stereo goes to Front (L/R) and Rear (LS/RS)
-            return { targetTrackIndices = {1, 2}, downmixStrategy = "none" }
-        elseif containerChannelMode == 3 then
-            -- 7.0: Stereo goes to Front (L/R) and Rear (LS/RS)
-            return { targetTrackIndices = {1, 2}, downmixStrategy = "none" }
-        end
-    end
-
-    -- Item has MORE channels than container - downmix to first channel only
-    if itemChannels > containerChannels then
-        return { targetTrackIndices = {1}, downmixStrategy = "first" }
-    end
-
-    -- 4.0 item in 5.0 or 7.0 container - map to L, R, LS, RS (skip center)
-    if itemChannels == 4 and (containerChannelMode == 2 or containerChannelMode == 3) then
-        return { targetTrackIndices = {1}, downmixStrategy = "first" }
-    end
-
-    -- 5.0 item in 7.0 container - downmix to first channel
-    if itemChannels == 5 and containerChannelMode == 3 then
-        return { targetTrackIndices = {1}, downmixStrategy = "first" }
-    end
-
-    -- Default fallback - use first track only
-    return { targetTrackIndices = {1}, downmixStrategy = "first" }
-end
+-- LEGACY FUNCTIONS REMOVED:
+-- - detectContainerFormat() → Replaced by analyzeContainerItems() + determineTrackStructure()
+-- - calculateTrackMultiplier() → Replaced by new system with determineTargetTracks()
 
 -- Get tracks for container in a unified way
 -- @param container table: The container configuration
@@ -899,8 +604,10 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
         if groupIndex then break end
     end
 
-    -- Detect required track structure based on items
-    local formatInfo = Generation.detectContainerFormat(container)
+    -- Analyze items and determine track structure
+    local itemsAnalysis = Generation.analyzeContainerItems(container)
+    local trackStructure = Generation.determineTrackStructure(container, itemsAnalysis)
+
     local hasChildTracks = reaper.GetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH") == 1
     local isLastInGroup = (containerIndex == #group.containers)
     local channelTracks = {}
@@ -912,13 +619,13 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
     -- Check if structure needs to be recreated
     local needsRecreate = false
 
-    if formatInfo.numTracks == 1 and hasChildTracks then
+    if trackStructure.numTracks == 1 and hasChildTracks then
         -- Need single track but have children
         needsRecreate = true
-    elseif formatInfo.numTracks > 1 and not hasChildTracks then
+    elseif trackStructure.numTracks > 1 and not hasChildTracks then
         -- Need multiple tracks but don't have children
         needsRecreate = true
-    elseif formatInfo.numTracks > 1 and numExistingTracks ~= formatInfo.numTracks then
+    elseif trackStructure.numTracks > 1 and numExistingTracks ~= trackStructure.numTracks then
         -- Wrong number of child tracks
         needsRecreate = true
     end
@@ -950,7 +657,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
         channelTracks = existingTracks
 
         -- Store/update GUIDs
-        if formatInfo.numTracks > 1 then
+        if trackStructure.numTracks > 1 then
             Generation.storeTrackGUIDs(container, containerGroup, channelTracks)
         else
             container.trackGUID = Generation.getTrackGUID(containerGroup)
@@ -1005,6 +712,10 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
         -- For multichannel containers, we need to intelligently distribute items
         local isMultiChannel = container.channelMode and container.channelMode > 0
 
+        -- Analyze items and determine track structure for placement logic
+        local itemsAnalysis = Generation.analyzeContainerItems(container)
+        local trackStructure = Generation.determineTrackStructure(container, itemsAnalysis)
+
         -- Reset for generation
         local lastItemRef = nil
         local isFirstItem = true
@@ -1021,8 +732,9 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             -- Determine which tracks to place this item on
             local targetTracks = {channelTracks[1]} -- Default
             local itemChannels = itemData.numChannels or 2
-            local needsDownmix = formatInfo.needsDownmix
-            local downmixMode = container.downmixMode or 0
+            local needsChannelSelection = trackStructure.needsChannelSelection
+            -- Use the mode from trackStructure if it was overridden by auto-optimization
+            local channelSelectionMode = trackStructure.channelSelectionMode or container.channelSelectionMode or "none"
 
             -- Check for custom routing matrix first
             local useCustomRouting = false
@@ -1047,11 +759,11 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
 
             -- If no custom routing, use automatic distribution
             if not useCustomRouting then
-                if formatInfo.numTracks == 1 then
+                if trackStructure.numTracks == 1 then
                     -- Single track: place item there
                     targetTracks = {channelTracks[1]}
-                elseif formatInfo.itemChannelCount == 1 and not formatInfo.needsDownmix then
-                    -- Mono items: distribute across tracks
+                elseif trackStructure.useDistribution then
+                    -- Mono items or items that need distribution: distribute across tracks
                     local distributionMode = container.itemDistributionMode or 0
 
                     if distributionMode == 0 then
@@ -1065,26 +777,6 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                     elseif distributionMode == 1 then
                         -- Random
                         local targetChannel = math.random(1, #channelTracks)
-                        targetTracks = {channelTracks[targetChannel]}
-                    elseif distributionMode == 2 then
-                        -- All tracks
-                        targetTracks = channelTracks
-                    end
-                elseif formatInfo.itemChannelCount == 2 and #channelTracks == 2 then
-                    -- Stereo items on 2 stereo tracks: distribute
-                    local distributionMode = container.itemDistributionMode or 0
-
-                    if distributionMode == 0 then
-                        -- Round-robin
-                        if not container.distributionCounter then
-                            container.distributionCounter = 0
-                        end
-                        container.distributionCounter = container.distributionCounter + 1
-                        local targetChannel = ((container.distributionCounter - 1) % 2) + 1
-                        targetTracks = {channelTracks[targetChannel]}
-                    elseif distributionMode == 1 then
-                        -- Random
-                        local targetChannel = math.random(1, 2)
                         targetTracks = {channelTracks[targetChannel]}
                     elseif distributionMode == 2 then
                         -- All tracks
@@ -1157,73 +849,9 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 reaper.SetMediaItemTake_Source(newTake, PCM_source)
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
 
-                -- Apply downmix if needed AND if user chose a downmix mode
-                if needsDownmix and downmixMode > 0 then
-                    -- Select the item to apply the action
-                    reaper.SelectAllMediaItems(0, false) -- Deselect all first
-                    reaper.SetMediaItemSelected(newItem, true)
-
-                    if downmixMode == 1 then
-                        -- Stereo downmix: select stereo pair
-                        local downmixChannel = container.downmixChannel or 0
-
-                        if downmixChannel == 0 then
-                            -- Channels 1-2 (L/R)
-                            reaper.Main_OnCommand(41450, 0)
-                        elseif downmixChannel == 1 then
-                            -- Channels 3-4 (LS/RS)
-                            reaper.Main_OnCommand(41452, 0)
-                        elseif downmixChannel == 2 then
-                            -- Channels 5-6
-                            reaper.Main_OnCommand(41454, 0)
-                        elseif downmixChannel == 3 then
-                            -- Channels 7-8
-                            reaper.Main_OnCommand(41456, 0)
-                        end
-
-                    elseif downmixMode == 2 then
-                        -- Mono downmix with channel selection
-                        local downmixChannel = container.downmixChannel or 0
-
-                        -- Check if random mode (last option in dropdown)
-                        -- For 4.0: indices 0-3 are channels, 4 is random
-                        -- For 8.0: indices 0-7 are channels, 8 is random
-                        local isRandom = false
-                        if itemChannels == 2 and downmixChannel >= 2 then
-                            isRandom = true
-                        elseif itemChannels == 4 and downmixChannel >= 4 then
-                            isRandom = true
-                        elseif itemChannels >= 5 and downmixChannel >= itemChannels then
-                            isRandom = true
-                        end
-
-                        if isRandom then
-                            -- Random: choose random channel
-                            downmixChannel = math.random(0, itemChannels - 1)
-                        end
-
-                        -- Apply mono downmix action
-                        if downmixChannel == 0 then
-                            reaper.Main_OnCommand(40179, 0) -- Mono channel 1 (left)
-                        elseif downmixChannel == 1 then
-                            reaper.Main_OnCommand(40180, 0) -- Mono channel 2 (right)
-                        elseif downmixChannel == 2 then
-                            reaper.Main_OnCommand(41388, 0) -- Mono channel 3
-                        elseif downmixChannel == 3 then
-                            reaper.Main_OnCommand(41389, 0) -- Mono channel 4
-                        elseif downmixChannel == 4 then
-                            reaper.Main_OnCommand(41390, 0) -- Mono channel 5
-                        elseif downmixChannel == 5 then
-                            reaper.Main_OnCommand(41391, 0) -- Mono channel 6
-                        elseif downmixChannel == 6 then
-                            reaper.Main_OnCommand(41392, 0) -- Mono channel 7
-                        elseif downmixChannel == 7 then
-                            reaper.Main_OnCommand(41393, 0) -- Mono channel 8
-                        end
-                    end
-
-                    -- Deselect the item
-                    reaper.SetMediaItemSelected(newItem, false)
+                -- Apply channel selection if needed
+                if needsChannelSelection then
+                    Generation.applyChannelSelection(newItem, container, itemChannels, channelSelectionMode, trackStructure)
                 end
 
                 -- Trim item so it never exceeds the selection end
@@ -1250,12 +878,12 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 end
 
                 -- Apply pan randomization for stereo items
-                -- Enable for: stereo containers, OR stereo items in multichannel (on stereo tracks)
+                -- Enable for: stereo containers, OR stereo items on stereo tracks
                 local canUsePan = false
                 if not effectiveParams.channelMode or effectiveParams.channelMode == 0 then
                     -- Stereo container
                     canUsePan = true
-                elseif formatInfo.itemChannelCount == 2 and #channelTracks == 2 then
+                elseif trackStructure.trackType == "stereo" and trackStructure.trackChannels == 2 then
                     -- Stereo items on stereo tracks in multichannel
                     canUsePan = true
                 end
@@ -2976,6 +2604,444 @@ function Generation.checkAndResolveConflicts()
             globals.RoutingValidator.showValidationModal(issues)
         end
     end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- NEW MULTICHANNEL SYSTEM - Analysis, Decision & Execution Functions
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Apply channel selection (downmix/split) to an item via REAPER actions
+-- @param item userdata: The media item to apply channel selection to
+-- @param container table: Container configuration
+-- @param itemChannels number: Number of channels in the item
+-- @param channelSelectionMode string: "none", "stereo", or "mono"
+-- @param trackStructure table: Track structure (optional, for auto-forced values)
+function Generation.applyChannelSelection(item, container, itemChannels, channelSelectionMode, trackStructure)
+    if not item or not container then return end
+
+    -- Select the item for applying actions
+    reaper.SelectAllMediaItems(0, false)
+    reaper.SetMediaItemSelected(item, true)
+
+    if channelSelectionMode == "stereo" then
+        -- Stereo pair selection
+        -- Priority: trackStructure value (auto-forced) > container value (user choice)
+        local stereoPairSelection = (trackStructure and trackStructure.stereoPairSelection) or container.stereoPairSelection or 0
+
+        -- Apply stereo downmix action based on pair index
+        if stereoPairSelection == 0 then
+            reaper.Main_OnCommand(41450, 0) -- Channels 1-2 (L/R)
+        elseif stereoPairSelection == 1 then
+            reaper.Main_OnCommand(41452, 0) -- Channels 3-4 (LS/RS or C/LFE)
+        elseif stereoPairSelection == 2 then
+            reaper.Main_OnCommand(41454, 0) -- Channels 5-6
+        elseif stereoPairSelection == 3 then
+            reaper.Main_OnCommand(41456, 0) -- Channels 7-8
+        end
+
+    elseif channelSelectionMode == "mono" then
+        -- Mono channel selection
+        -- Priority: trackStructure value (auto-forced) > container value (user choice)
+        local monoChannelSelection = (trackStructure and trackStructure.monoChannelSelection) or container.monoChannelSelection or itemChannels
+
+        -- Check if random mode (index >= itemChannels means Random)
+        local selectedChannel = monoChannelSelection
+        if selectedChannel >= itemChannels then
+            -- Random: choose random channel (0-based)
+            selectedChannel = math.random(0, itemChannels - 1)
+        end
+
+        -- Apply mono channel selection action based on channel index (0-based)
+        if selectedChannel == 0 then
+            reaper.Main_OnCommand(40179, 0) -- Mono channel 1 (left)
+        elseif selectedChannel == 1 then
+            reaper.Main_OnCommand(40180, 0) -- Mono channel 2 (right)
+        elseif selectedChannel == 2 then
+            reaper.Main_OnCommand(41388, 0) -- Mono channel 3
+        elseif selectedChannel == 3 then
+            reaper.Main_OnCommand(41389, 0) -- Mono channel 4
+        elseif selectedChannel == 4 then
+            reaper.Main_OnCommand(41390, 0) -- Mono channel 5
+        elseif selectedChannel == 5 then
+            reaper.Main_OnCommand(41391, 0) -- Mono channel 6
+        elseif selectedChannel == 6 then
+            reaper.Main_OnCommand(41392, 0) -- Mono channel 7
+        elseif selectedChannel == 7 then
+            reaper.Main_OnCommand(41393, 0) -- Mono channel 8
+        end
+    end
+
+    -- Deselect the item
+    reaper.SetMediaItemSelected(item, false)
+end
+
+-- Get output channel count from channel mode
+-- @param channelMode number: Channel mode (0=Stereo, 1=Quad, 2=5.0, 3=7.0)
+-- @return number: Number of output channels
+function Generation.getOutputChannelCount(channelMode)
+    if not channelMode or channelMode == 0 then
+        return 2  -- Stereo
+    end
+
+    local config = globals.Constants.CHANNEL_CONFIGS[channelMode]
+    if not config then
+        return 2  -- Fallback to stereo
+    end
+
+    return config.channels or 2
+end
+
+-- Analyze container items to understand channel configuration
+-- Pure function with no side effects
+-- @param container table: The container to analyze
+-- @return table: Analysis result with channel information
+function Generation.analyzeContainerItems(container)
+    -- Default result for empty container
+    if not container.items or #container.items == 0 then
+        return {
+            isEmpty = true,
+            isHomogeneous = true,
+            dominantChannelCount = 2,
+            uniqueChannelCounts = {},
+            totalItems = 0
+        }
+    end
+
+    -- Count channel occurrences
+    local channelCounts = {}
+    for _, item in ipairs(container.items) do
+        local ch = item.numChannels or 2
+        channelCounts[ch] = (channelCounts[ch] or 0) + 1
+    end
+
+    -- Get unique channel counts
+    local uniqueChannels = {}
+    for ch, _ in pairs(channelCounts) do
+        table.insert(uniqueChannels, ch)
+    end
+
+    -- Sort for consistency
+    table.sort(uniqueChannels)
+
+    -- Find dominant channel count (most frequent)
+    local dominantChannel = uniqueChannels[1]
+    local maxCount = 0
+    for ch, count in pairs(channelCounts) do
+        if count > maxCount then
+            maxCount = count
+            dominantChannel = ch
+        end
+    end
+
+    return {
+        isEmpty = false,
+        isHomogeneous = (#uniqueChannels == 1),
+        dominantChannelCount = dominantChannel,
+        uniqueChannelCounts = uniqueChannels,
+        totalItems = #container.items,
+        channelCounts = channelCounts
+    }
+end
+
+-- Generate stereo pair labels based on item channels
+-- @param itemChannels number: Number of channels in items
+-- @param numPairs number: Number of stereo pairs to generate
+-- @return table: Array of label strings
+function Generation.generateStereoPairLabels(itemChannels, numPairs)
+    local labels = {}
+
+    if itemChannels == 4 and numPairs == 2 then
+        return {"L+R", "LS+RS"}
+    elseif itemChannels == 6 and numPairs == 3 then
+        return {"L+R", "C+LFE", "LS+RS"}
+    elseif itemChannels == 8 and numPairs == 4 then
+        return {"L+R", "C+LFE", "LS+RS", "LB+RB"}
+    else
+        -- Generic labels
+        for i = 1, numPairs do
+            local ch1 = (i-1)*2 + 1
+            local ch2 = i*2
+            labels[i] = "Ch" .. ch1 .. "+" .. ch2
+        end
+    end
+
+    return labels
+end
+
+-- Auto-optimization logic when channelSelectionMode = "none"
+-- @param container table: Container configuration
+-- @param itemsAnalysis table: Result from analyzeContainerItems
+-- @param outputChannels number: Target output channel count
+-- @return table: Track structure description
+function Generation.determineAutoOptimization(container, itemsAnalysis, outputChannels)
+    local itemCh = itemsAnalysis.dominantChannelCount
+
+    -- ──────────────────────────────────────────────────────────
+    -- CAS A : Stereo items (2ch) dans Quad/5.0/7.0
+    -- ──────────────────────────────────────────────────────────
+    if itemCh == 2 and outputChannels >= 4 then
+        if outputChannels == 4 then
+            return {
+                strategy = "auto-stereo-pairs-quad",
+                numTracks = 2,
+                trackType = "stereo",
+                trackChannels = 2,
+                trackLabels = {"L+R", "LS+RS"},
+                needsChannelSelection = false,
+                useDistribution = true
+            }
+        else  -- 5.0 or 7.0
+            return {
+                strategy = "auto-stereo-pairs-surround",
+                numTracks = 2,
+                trackType = "stereo",
+                trackChannels = 2,
+                trackLabels = {"L+R", "LS+RS"},
+                needsChannelSelection = false,
+                useDistribution = true
+            }
+        end
+    end
+
+    -- ──────────────────────────────────────────────────────────
+    -- CAS B : 4.0 items dans 5.0/7.0
+    -- ──────────────────────────────────────────────────────────
+    if itemCh == 4 and outputChannels >= 5 then
+        return {
+            strategy = "auto-4ch-in-surround",
+            numTracks = 4,
+            trackType = "mono",
+            trackChannels = 1,
+            trackLabels = {"L", "R", "LS", "RS"},
+            needsChannelSelection = false,
+            needsRouting = true,
+            routingMap = {1, 2, 4, 5},  -- Skip center (channel 3)
+        }
+    end
+
+    -- ──────────────────────────────────────────────────────────
+    -- CAS C : Items > Output → Auto downmix intelligent
+    -- ──────────────────────────────────────────────────────────
+    if itemCh > outputChannels then
+        -- Cas spécial : Items multichannel pairs dans container Stereo
+        if outputChannels == 2 and itemCh % 2 == 0 then
+            -- Items avec channels pairs (4, 6, 8) → Downmix stereo automatique vers Ch1-2
+            return {
+                strategy = "auto-downmix-stereo",
+                numTracks = 1,
+                trackType = "stereo",
+                trackChannels = 2,
+                needsChannelSelection = true,
+                channelSelectionMode = "stereo",
+                stereoPairSelection = 0,  -- Force Ch1-2 (L/R)
+                itemsGoDirectly = true,
+                warning = string.format(
+                    "Items have %d channels but output is stereo. Auto-downmixing to channels 1-2 (L/R).",
+                    itemCh
+                )
+            }
+        end
+
+        -- Cas général : Downmix vers channel 1
+        return {
+            strategy = "auto-downmix-to-first",
+            numTracks = 1,
+            trackType = "multi",
+            trackChannels = outputChannels,
+            needsChannelSelection = true,
+            channelSelectionMode = "mono",
+            monoChannelSelection = 0,  -- Force channel 1
+            warning = string.format(
+                "Items have %d channels but output is %d channels. Using channel 1 only. " ..
+                "Consider using 'Channel Selection: Mono' or 'Channel Selection: Stereo' for more control.",
+                itemCh, outputChannels
+            )
+        }
+    end
+
+    -- ──────────────────────────────────────────────────────────
+    -- CAS D : Autres cas → Structure multi-channel standard
+    -- ──────────────────────────────────────────────────────────
+    return {
+        strategy = "auto-default",
+        numTracks = outputChannels,
+        trackType = "mono",
+        trackChannels = 1,
+        needsChannelSelection = (itemCh > 1),
+        channelSelectionMode = "mono",
+        monoChannelSelection = 0,  -- Channel 1
+        useDistribution = true
+    }
+end
+
+-- Determine track structure based on container configuration and items
+-- Pure function that applies decision rules
+-- @param container table: Container configuration
+-- @param itemsAnalysis table: Result from analyzeContainerItems
+-- @return table: Track structure description
+function Generation.determineTrackStructure(container, itemsAnalysis)
+    local outputChannels = Generation.getOutputChannelCount(container.channelMode)
+    local itemCh = itemsAnalysis.dominantChannelCount
+
+    -- ═══════════════════════════════════════════════════════════
+    -- RÈGLE 0 : Items mixtes → FORCE MONO
+    -- ═══════════════════════════════════════════════════════════
+    if not itemsAnalysis.isHomogeneous then
+        return {
+            strategy = "mixed-items-forced-mono",
+            numTracks = outputChannels,
+            trackType = "mono",
+            trackChannels = 1,
+            needsChannelSelection = true,
+            channelSelectionMode = "mono",
+            useDistribution = true,
+            warning = "Mixed channel items detected - forcing mono channel selection"
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    -- RÈGLE 1 : Container vide → Structure par défaut
+    -- ═══════════════════════════════════════════════════════════
+    if itemsAnalysis.isEmpty then
+        return {
+            strategy = "empty-default",
+            numTracks = 1,
+            trackType = "multi",
+            trackChannels = outputChannels,
+            needsChannelSelection = false
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    -- RÈGLE 2 : Match parfait → Passthrough (1 track)
+    -- ═══════════════════════════════════════════════════════════
+    if itemCh == outputChannels then
+        return {
+            strategy = "perfect-match-passthrough",
+            numTracks = 1,
+            trackType = "multi",
+            trackChannels = outputChannels,
+            needsChannelSelection = false,
+            itemsGoDirectly = true
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    -- RÈGLE 3 : Items MONO → Distribution sur N tracks mono
+    -- ═══════════════════════════════════════════════════════════
+    if itemCh == 1 then
+        return {
+            strategy = "mono-distribution",
+            numTracks = outputChannels,
+            trackType = "mono",
+            trackChannels = 1,
+            needsChannelSelection = false,
+            useDistribution = true
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    -- À partir d'ici : itemCh > 1 et itemCh != outputChannels
+    -- → Besoin de Channel Selection (downmix/split)
+    -- ═══════════════════════════════════════════════════════════
+
+    local channelSelectionMode = container.channelSelectionMode or "none"
+
+    -- ═══════════════════════════════════════════════════════════
+    -- RÈGLE 4 : Channel Selection = STEREO
+    -- ═══════════════════════════════════════════════════════════
+    if channelSelectionMode == "stereo" then
+        -- Vérifier que les items ont un nombre pair de channels
+        if itemCh % 2 ~= 0 then
+            return {
+                strategy = "invalid-stereo-fallback-mono",
+                numTracks = outputChannels,
+                trackType = "mono",
+                trackChannels = 1,
+                needsChannelSelection = true,
+                channelSelectionMode = "mono",
+                useDistribution = true,
+                warning = "Cannot split odd-channel items into stereo pairs - using mono"
+            }
+        end
+
+        local numStereoPairs = itemCh / 2
+
+        -- Cas : Container Stereo avec items multi-channel pairs
+        if outputChannels == 2 then
+            return {
+                strategy = "stereo-pair-selection",
+                numTracks = 1,
+                trackType = "stereo",
+                trackChannels = 2,
+                needsChannelSelection = true,
+                channelSelectionMode = "stereo",
+                availableStereoPairs = numStereoPairs,
+            }
+        end
+
+        -- Cas : Container Quad/5.0/7.0 avec items stereo
+        if itemCh == 2 and outputChannels >= 4 then
+            if outputChannels == 4 then
+                return {
+                    strategy = "stereo-pairs-quad",
+                    numTracks = 2,
+                    trackType = "stereo",
+                    trackChannels = 2,
+                    trackLabels = {"L+R", "LS+RS"},
+                    needsChannelSelection = false,
+                    useDistribution = true
+                }
+            elseif outputChannels >= 5 then
+                return {
+                    strategy = "stereo-pairs-surround",
+                    numTracks = 2,
+                    trackType = "stereo",
+                    trackChannels = 2,
+                    trackLabels = {"L+R", "LS+RS"},
+                    needsChannelSelection = false,
+                    useDistribution = true
+                }
+            end
+        end
+
+        -- Cas : Container multi avec items 4ch+
+        if outputChannels >= 4 and numStereoPairs >= 2 then
+            local targetPairs = math.min(numStereoPairs, math.floor(outputChannels / 2))
+            return {
+                strategy = "split-stereo-pairs",
+                numTracks = targetPairs,
+                trackType = "stereo",
+                trackChannels = 2,
+                needsChannelSelection = true,
+                channelSelectionMode = "split-stereo",
+                trackLabels = Generation.generateStereoPairLabels(itemCh, targetPairs),
+            }
+        end
+
+        -- Fallback
+        return Generation.determineAutoOptimization(container, itemsAnalysis, outputChannels)
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    -- RÈGLE 5 : Channel Selection = MONO
+    -- ═══════════════════════════════════════════════════════════
+    if channelSelectionMode == "mono" then
+        return {
+            strategy = "split-to-mono",
+            numTracks = outputChannels,
+            trackType = "mono",
+            trackChannels = 1,
+            needsChannelSelection = true,
+            channelSelectionMode = "mono",
+            useDistribution = true,
+        }
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    -- RÈGLE 6 : Channel Selection = NONE (Auto-optimization)
+    -- ═══════════════════════════════════════════════════════════
+    return Generation.determineAutoOptimization(container, itemsAnalysis, outputChannels)
 end
 
 return Generation
