@@ -966,52 +966,103 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     imgui.Text(globals.ctx, "Multi-Channel Configuration")
     imgui.Separator(globals.ctx)
 
-    imgui.Text(globals.ctx, "Channel Mode")
-    imgui.SameLine(globals.ctx)
-    globals.Utils.HelpMarker("Select channel configuration. Creates multiple child tracks for surround output.")
+    -- Initialize values if needed
+    if container.channelMode == nil then container.channelMode = 0 end
+    if container.itemDistributionMode == nil then container.itemDistributionMode = 0 end
+    if container.downmixMode == nil then container.downmixMode = 0 end
 
-    -- Build dropdown items
+    -- Build channel mode items
     local channelModeItems = ""
-    for i = 0, 3 do  -- Channel modes: Default, Quad, 5.0, 7.0
+    for i = 0, 3 do
         local config = globals.Constants.CHANNEL_CONFIGS[i]
         if config then
             channelModeItems = channelModeItems .. config.name .. "\0"
         end
     end
 
-    -- Initialize if needed
-    if container.channelMode == nil then
-        container.channelMode = 0
-    end
+    -- Use table for perfect alignment
+    local comboWidth = (width - 20) / 4  -- Divide space for 4 combos
 
-    imgui.PushItemWidth(globals.ctx, width * 0.95)  -- Use 95% of width for better visual alignment
-    local rv, newMode = imgui.Combo(
-        globals.ctx,
-        "##ChannelMode_" .. containerId,
-        container.channelMode,
-        channelModeItems
-    )
-    if rv and newMode ~= container.channelMode then
-        container.channelMode = newMode
-        container.needsRegeneration = true
-        -- Reset channel settings when mode changes
-        container.channelVolumes = {}
-        -- Force disable pan randomization when switching to multichannel mode
-        if newMode > 0 then
-            container.randomizePan = false
-        end
-    end
-    imgui.PopItemWidth(globals.ctx)
+    if imgui.BeginTable(globals.ctx, "MultiChannelConfig", 4, imgui.TableFlags_SizingFixedFit) then
+        imgui.TableSetupColumn(globals.ctx, "ChannelMode", imgui.TableColumnFlags_WidthFixed, comboWidth)
+        imgui.TableSetupColumn(globals.ctx, "Distribution", imgui.TableColumnFlags_WidthFixed, comboWidth)
+        imgui.TableSetupColumn(globals.ctx, "Downmix", imgui.TableColumnFlags_WidthFixed, comboWidth)
+        imgui.TableSetupColumn(globals.ctx, "ChannelOrder", imgui.TableColumnFlags_WidthFixed, comboWidth)
 
-    -- Show channel-specific controls for multi-channel modes
-    if container.channelMode > 0 then
-        local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+        -- Header row with labels
+        imgui.TableNextRow(globals.ctx)
 
-        -- Show variant dropdown if the mode has variants
-        if config.hasVariants then
-            imgui.Text(globals.ctx, "Channel Order")
+        imgui.TableNextColumn(globals.ctx)
+        imgui.Text(globals.ctx, "Channel Mode")
+        imgui.SameLine(globals.ctx)
+        globals.Utils.HelpMarker("Select channel configuration")
+
+        imgui.TableNextColumn(globals.ctx)
+        if container.channelMode > 0 then
+            imgui.Text(globals.ctx, "Distribution")
             imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Select channel order standard (ITU/Dolby or SMPTE)")
+            globals.Utils.HelpMarker("How mono items are distributed")
+        end
+
+        imgui.TableNextColumn(globals.ctx)
+        imgui.Text(globals.ctx, "Downmix")
+        imgui.SameLine(globals.ctx)
+        globals.Utils.HelpMarker("When item > container channels")
+
+        imgui.TableNextColumn(globals.ctx)
+        if container.channelMode > 0 then
+            local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+            if config and config.hasVariants then
+                imgui.Text(globals.ctx, "Channel Order")
+                imgui.SameLine(globals.ctx)
+                globals.Utils.HelpMarker("ITU/Dolby or SMPTE")
+            end
+        end
+
+        -- Combo row
+        imgui.TableNextRow(globals.ctx)
+
+        -- Channel Mode
+        imgui.TableNextColumn(globals.ctx)
+        imgui.PushItemWidth(globals.ctx, comboWidth - 10)
+        local rv, newMode = imgui.Combo(globals.ctx, "##ChannelMode_" .. containerId, container.channelMode, channelModeItems)
+        if rv and newMode ~= container.channelMode then
+            container.channelMode = newMode
+            container.needsRegeneration = true
+            container.channelVolumes = {}
+            if newMode > 0 then
+                container.randomizePan = false
+            end
+        end
+        imgui.PopItemWidth(globals.ctx)
+
+        -- Item Distribution (only if multichannel)
+        imgui.TableNextColumn(globals.ctx)
+        if container.channelMode > 0 then
+            imgui.PushItemWidth(globals.ctx, comboWidth - 10)
+            local distChanged, newDist = imgui.Combo(globals.ctx, "##ItemDistribution_" .. containerId, container.itemDistributionMode, "Round-robin\0Random\0All tracks\0")
+            if distChanged then
+                container.itemDistributionMode = newDist
+                container.needsRegeneration = true
+            end
+            imgui.PopItemWidth(globals.ctx)
+        end
+
+        -- Downmix Mode
+        imgui.TableNextColumn(globals.ctx)
+        imgui.PushItemWidth(globals.ctx, comboWidth - 10)
+        local downmixChanged, newDownmix = imgui.Combo(globals.ctx, "##DownmixMode_" .. containerId, container.downmixMode, "None\0Stereo\0Mono\0")
+        if downmixChanged then
+            container.downmixMode = newDownmix
+            container.needsRegeneration = true
+        end
+        imgui.PopItemWidth(globals.ctx)
+
+        -- Channel Order (only if multichannel with variants)
+        imgui.TableNextColumn(globals.ctx)
+        if container.channelMode > 0 then
+            local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+            if config and config.hasVariants then
 
             -- Build variant dropdown items
             local variantItems = ""
@@ -1040,24 +1091,126 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 container.channelVolumes = {}
             end
             imgui.PopItemWidth(globals.ctx)
+            end
+        end
+        imgui.EndTable(globals.ctx)
+    end -- End of BeginTable
+
+    -- Downmix Channel Selection (visible for Stereo or Mono downmix)
+    if container.downmixMode > 0 then
+        -- Determine max item channels in container
+        local maxItemChannels = 2
+        if container.items and #container.items > 0 then
+            for _, item in ipairs(container.items) do
+                local ch = item.numChannels or 2
+                if ch > maxItemChannels then
+                    maxItemChannels = ch
+                end
+            end
         end
 
-        -- Get the active configuration (with variant if applicable)
+        imgui.Spacing(globals.ctx)
+
+        if container.downmixChannel == nil then
+            container.downmixChannel = 0
+        end
+
+        if container.downmixMode == 1 then
+            -- Stereo downmix: show channel pairs
+            imgui.Text(globals.ctx, "Downmix Channels:")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Select which stereo pair to use")
+
+            -- Build list of available stereo pairs based on item channels
+            local stereoPairs = "1-2 (L/R)\0"
+            if maxItemChannels >= 4 then
+                stereoPairs = stereoPairs .. "3-4 (LS/RS)\0"
+            end
+            if maxItemChannels >= 6 then
+                stereoPairs = stereoPairs .. "5-6\0"
+            end
+            if maxItemChannels >= 8 then
+                stereoPairs = stereoPairs .. "7-8\0"
+            end
+
+            imgui.PushItemWidth(globals.ctx, width * 0.3)
+            local downmixChChanged, newDownmixCh = imgui.Combo(
+                globals.ctx,
+                "##DownmixChannel_" .. containerId,
+                container.downmixChannel,
+                stereoPairs
+            )
+            if downmixChChanged then
+                container.downmixChannel = newDownmixCh
+                container.needsRegeneration = true
+            end
+            imgui.PopItemWidth(globals.ctx)
+
+        elseif container.downmixMode == 2 then
+            -- Mono downmix: show individual channels
+            imgui.Text(globals.ctx, "Downmix Channel:")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Select which channel to use for mono downmix")
+
+            -- Build list of available channels based on item channels
+            local monoChannels = "1 (L)\0002 (R)\0"
+            if maxItemChannels >= 4 then
+                monoChannels = monoChannels .. "3 (LS)\0004 (RS)\0"
+            end
+            if maxItemChannels >= 5 then
+                monoChannels = monoChannels .. "5 (C)\0"
+            end
+            if maxItemChannels >= 6 then
+                monoChannels = monoChannels .. "6\0"
+            end
+            if maxItemChannels >= 7 then
+                monoChannels = monoChannels .. "7\0"
+            end
+            if maxItemChannels >= 8 then
+                monoChannels = monoChannels .. "8\0"
+            end
+            monoChannels = monoChannels .. "Random\0"
+
+            imgui.PushItemWidth(globals.ctx, width * 0.3)
+            local downmixChChanged, newDownmixCh = imgui.Combo(
+                globals.ctx,
+                "##DownmixChannel_" .. containerId,
+                container.downmixChannel,
+                monoChannels
+            )
+            if downmixChChanged then
+                container.downmixChannel = newDownmixCh
+                container.needsRegeneration = true
+            end
+            imgui.PopItemWidth(globals.ctx)
+        end
+    end
+
+    -- Get the active configuration (with variant if applicable)
+    if container.channelMode > 0 then
+        local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
         local activeConfig = config
         if config.hasVariants then
             activeConfig = config.variants[container.channelVariant or 0]
         end
 
-        -- Channel-specific controls
-        imgui.Text(globals.ctx, "Channel Settings:")
+        -- Detect how many tracks will actually be created
+        local formatInfo = globals.Generation.detectContainerFormat(container)
+        local numTracks = formatInfo.numTracks
+        local trackLabels = formatInfo.trackLabels or activeConfig.labels
 
-        -- Calculate optimal layout for 100% width usage
-        local labelWidth = 80            -- Fixed width for labels
-        local inputWidth = 85            -- Fixed width for dB input
-        local sliderWidth = width - labelWidth - inputWidth - 16  -- Remaining space minus spacing
+        -- Only show channel settings if multiple tracks will be created
+        if numTracks > 1 then
+            -- Channel-specific controls
+            imgui.Text(globals.ctx, "Channel Settings:")
 
-        for i = 1, config.channels do
-            local label = activeConfig.labels and activeConfig.labels[i] or ("Channel " .. i)
+            -- Calculate optimal layout for 100% width usage
+            local labelWidth = 80            -- Fixed width for labels
+            local inputWidth = 85            -- Fixed width for dB input
+            local sliderWidth = width - labelWidth - inputWidth - 16  -- Remaining space minus spacing
+
+            for i = 1, numTracks do
+                local label = trackLabels and trackLabels[i] or ("Channel " .. i)
 
             imgui.PushID(globals.ctx, "channel_" .. i .. "_" .. containerId)
 
@@ -1114,8 +1267,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.PopItemWidth(globals.ctx)
 
             imgui.PopID(globals.ctx)
-        end
-    end
+            end
+        end -- End of if numTracks > 1
+    end -- End of if container.channelMode > 0 for channel settings
 
     imgui.Separator(globals.ctx)
 
@@ -1374,11 +1528,18 @@ function UI_Container.showRoutingMatrixPopup(groupIndex, containerIndex, contain
         globals.routingPopupOpened = true
     end
 
-    -- Modal popup with flags to prevent closing by clicking outside
+    -- Modal popup with flags to keep it always on top
     local modalFlags = imgui.WindowFlags_AlwaysAutoResize |
                        imgui.WindowFlags_NoMove |
                        imgui.WindowFlags_NoCollapse
-    if imgui.BeginPopupModal(globals.ctx, "RoutingMatrixPopup", nil, modalFlags) then
+    local popupVisible = imgui.BeginPopupModal(globals.ctx, "RoutingMatrixPopup", nil, modalFlags)
+
+    if popupVisible then
+        -- Force popup to stay focused (prevent main window from stealing focus)
+        if not imgui.IsWindowFocused(globals.ctx, imgui.FocusedFlags_RootWindow) then
+            imgui.SetWindowFocus(globals.ctx)
+        end
+
         -- Get channel config
         local containerChannelMode = container.channelMode or 0
         local containerModeName = "Stereo"
@@ -1489,8 +1650,11 @@ function UI_Container.showRoutingMatrixPopup(groupIndex, containerIndex, contain
         end
 
         imgui.EndPopup(globals.ctx)
-    else
-        -- Popup was closed externally
+    end
+
+    -- IMPORTANT: Check if popup was closed externally (clicked outside or ESC)
+    -- If we have routing data but popup is not visible, clean up
+    if not popupVisible and globals.routingPopupItemIndex then
         globals.routingPopupItemIndex = nil
         globals.routingPopupGroupIndex = nil
         globals.routingPopupContainerIndex = nil
