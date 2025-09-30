@@ -1851,7 +1851,23 @@ end
 -- Stop audio playback
 function Waveform.stopPlayback()
     if globals.audioPreview.isPlaying then
+        -- Save current playback position before stopping, so we can resume from there
+        local currentPosition = globals.audioPreview.position or 0
+        local startOffset = globals.audioPreview.startOffset or 0
+
+        -- Convert absolute position to relative position (within the edited item range)
+        local relativePosition = currentPosition - startOffset
+        if relativePosition < 0 then relativePosition = 0 end
+
         if globals.audioPreview.cfPreview then
+            -- Get the current playback position before stopping
+            local pos = reaper.CF_Preview_GetValue(globals.audioPreview.cfPreview, 'D_POSITION')
+            if pos and type(pos) == "number" then
+                currentPosition = pos
+                relativePosition = currentPosition - startOffset
+                if relativePosition < 0 then relativePosition = 0 end
+            end
+
             reaper.CF_Preview_Stop(globals.audioPreview.cfPreview)
 
             if globals.audioPreview.cfSource then
@@ -1865,9 +1881,9 @@ function Waveform.stopPlayback()
         globals.audioPreview.isPlaying = false
         -- KEEP currentFile so the marker stays visible for the correct file
         -- globals.audioPreview.currentFile = nil  -- DON'T clear this or the marker will disappear
-        globals.audioPreview.position = globals.audioPreview.startOffset or 0  -- Reset to start instead of 0
-        -- KEEP clickedPosition so the marker stays visible and we can resume from there
-        -- globals.audioPreview.clickedPosition = nil  -- DON'T clear the click marker
+        globals.audioPreview.position = currentPosition
+        -- Save the current position as clickedPosition so we can resume from there with spacebar
+        globals.audioPreview.clickedPosition = relativePosition
         globals.audioPreview.playbackStartPosition = nil  -- Clear the start position
     end
 end
