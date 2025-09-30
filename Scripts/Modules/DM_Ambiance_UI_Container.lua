@@ -323,38 +323,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 end
             end
 
-            -- Handle spacebar for play/pause (outside edit mode)
-            if not isEditMode and globals.selectedItemIndex and globals.selectedItemIndex[selectionKey] and
-               globals.selectedItemIndex[selectionKey] > 0 and
-               globals.selectedItemIndex[selectionKey] <= #container.items then
-
-                local selectedItem = container.items[globals.selectedItemIndex[selectionKey]]
-                if selectedItem and selectedItem.filePath and selectedItem.filePath ~= "" then
-                    local spaceKey = globals.imgui.Key_Space or 32
-                    if globals.imgui.IsKeyPressed(globals.ctx, spaceKey) then
-                        -- Check if this window has focus
-                        local focusFlag = globals.imgui.FocusedFlags_RootAndChildWindows or 3
-                        if globals.imgui.IsWindowFocused(globals.ctx, focusFlag) then
-                            if globals.audioPreview and globals.audioPreview.isPlaying and
-                               globals.audioPreview.currentFile == selectedItem.filePath then
-                                -- Stop if playing the same item
-                                globals.Waveform.stopPlayback()
-                            else
-                                -- Start playback if not playing or playing different item
-                                -- Spacebar should always allow play/pause, regardless of autoplay setting
-                                globals.Waveform.startPlayback(
-                                    selectedItem.filePath,
-                                    selectedItem.startOffset or 0,
-                                    selectedItem.length,
-                                    0 -- Start from beginning
-                                )
-                            end
-                        end
-                    end
-                end
-            end
         end
-        
+
         imgui.PopID(globals.ctx)
     end
 
@@ -362,6 +332,48 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local selectionKey = groupIndex .. "_" .. containerIndex
     local editModeKey = groupIndex .. "_" .. containerIndex
     local isEditMode = globals.containerEditModes and globals.containerEditModes[editModeKey]
+
+    -- Handle spacebar for play/pause when NOT in edit mode (in the item list)
+    if not isEditMode and globals.selectedItemIndex and globals.selectedItemIndex[selectionKey] and
+       globals.selectedItemIndex[selectionKey] > 0 and
+       globals.selectedItemIndex[selectionKey] <= #container.items then
+
+        local selectedItem = container.items[globals.selectedItemIndex[selectionKey]]
+        if selectedItem and selectedItem.filePath and selectedItem.filePath ~= "" then
+            local spaceKey = globals.imgui.Key_Space or 32
+            if globals.imgui.IsKeyPressed(globals.ctx, spaceKey) then
+                -- Check if this window has focus
+                local focusFlag = globals.imgui.FocusedFlags_RootAndChildWindows or 3
+                if globals.imgui.IsWindowFocused(globals.ctx, focusFlag) then
+                    -- Check if currently playing
+                    local isCurrentlyPlaying = globals.audioPreview and
+                                              globals.audioPreview.isPlaying and
+                                              globals.audioPreview.currentFile == selectedItem.filePath
+
+                    if isCurrentlyPlaying then
+                        -- Currently playing this file - stop it
+                        globals.Waveform.stopPlayback()
+                    else
+                        -- Not playing - start playback
+                        -- Use the saved clicked position if it exists, otherwise start from beginning
+                        local startPosition = 0  -- Default to beginning
+                        if globals.audioPreview and
+                           globals.audioPreview.clickedPosition and
+                           globals.audioPreview.currentFile == selectedItem.filePath then
+                            startPosition = globals.audioPreview.clickedPosition
+                        end
+
+                        globals.Waveform.startPlayback(
+                            selectedItem.filePath,
+                            selectedItem.startOffset or 0,
+                            selectedItem.length,
+                            startPosition
+                        )
+                    end
+                end
+            end
+        end
+    end
 
     if isEditMode and globals.selectedItemIndex and globals.selectedItemIndex[selectionKey] and
        globals.selectedItemIndex[selectionKey] > 0 and
@@ -879,15 +891,20 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 -- Check if this window has focus (use RootAndChildWindows flag if available)
                 local focusFlag = globals.imgui.FocusedFlags_RootAndChildWindows or 3
                 if globals.imgui.IsWindowFocused(globals.ctx, focusFlag) then
-                    if globals.audioPreview and globals.audioPreview.isPlaying and
-                       globals.audioPreview.currentFile == selectedItem.filePath then
+                    -- Check if currently playing
+                    local isCurrentlyPlaying = globals.audioPreview and
+                                              globals.audioPreview.isPlaying and
+                                              globals.audioPreview.currentFile == selectedItem.filePath
+
+                    if isCurrentlyPlaying then
                         -- Currently playing this file - stop it
                         globals.Waveform.stopPlayback()
                     else
                         -- Not playing - start playback
-                        -- Use the saved clicked position if it exists
-                        local startPosition = nil
-                        if globals.audioPreview and globals.audioPreview.clickedPosition and
+                        -- Use the saved clicked position if it exists, otherwise start from beginning
+                        local startPosition = 0  -- Default to beginning
+                        if globals.audioPreview and
+                           globals.audioPreview.clickedPosition and
                            globals.audioPreview.currentFile == selectedItem.filePath then
                             startPosition = globals.audioPreview.clickedPosition
                         end
@@ -896,7 +913,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                             selectedItem.filePath,
                             selectedItem.startOffset or 0,
                             selectedItem.length,
-                            startPosition  -- Use saved position if available
+                            startPosition
                         )
                     end
                 end

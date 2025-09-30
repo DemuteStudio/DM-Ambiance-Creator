@@ -215,57 +215,115 @@ end
 -- CHANNEL ORDER CONFLICT DETECTION
 -- ===================================================================
 
--- Detect channel order conflicts across containers
+-- Detect channel order conflicts across containers (OUTPUT + SOURCE variants)
 function RoutingValidator.detectChannelOrderConflicts(projectTree)
     local conflicts = {}
-    local channelOrders = {}  -- [channelMode] = {variant, containers}
+    local outputVariants = {}  -- [channelMode] = {variant, containers} for OUTPUT (channelVariant)
+    local sourceVariants = {}  -- [channelMode] = {variant, containers} for SOURCE (sourceChannelVariant)
 
-    -- First, scan all groups/containers directly from globals.groups for accurate data
+    -- Scan all groups/containers for OUTPUT and SOURCE variant conflicts
     for _, group in ipairs(globals.groups or {}) do
         for _, container in ipairs(group.containers or {}) do
             if container.channelMode and container.channelMode > 0 then
                 local config = Constants.CHANNEL_CONFIGS[container.channelMode]
                 if config and config.hasVariants then
                     local channelMode = config.channels  -- 5 or 7
-                    local variant = container.channelVariant or 0
 
-                    if not channelOrders[channelMode] then
-                        channelOrders[channelMode] = {
-                            variant = variant,
+                    -- CHECK 1: OUTPUT variant conflicts (channelVariant)
+                    local outputVariant = container.channelVariant or 0
+
+                    if not outputVariants[channelMode] then
+                        outputVariants[channelMode] = {
+                            variant = outputVariant,
                             containers = {container},
                             group = group
                         }
                     else
-                        -- Check if there's a conflict
-                        if channelOrders[channelMode].variant ~= variant then
-                            -- CONFLICT DETECTED!
-                            local existingInfo = channelOrders[channelMode]
+                        if outputVariants[channelMode].variant ~= outputVariant then
+                            -- OUTPUT CONFLICT DETECTED!
+                            local existingInfo = outputVariants[channelMode]
                             local existingVariantName = RoutingValidator.getVariantName(channelMode, existingInfo.variant)
-                            local newVariantName = RoutingValidator.getVariantName(channelMode, variant)
+                            local newVariantName = RoutingValidator.getVariantName(channelMode, outputVariant)
 
                             table.insert(conflicts, {
                                 type = ISSUE_TYPES.CHANNEL_ORDER_CONFLICT,
                                 severity = SEVERITY.ERROR,
-                                description = string.format("Channel order conflict for %s.0: '%s' vs '%s'",
+                                description = string.format("Output channel order conflict for %s.0: '%s' vs '%s'",
                                     channelMode, existingVariantName, newVariantName),
                                 conflictData = {
+                                    conflictType = "output",
                                     channelMode = channelMode,
                                     container1 = existingInfo.containers[1],
                                     variant1 = existingInfo.variant,
                                     variantName1 = existingVariantName,
                                     container2 = container,
-                                    variant2 = variant,
+                                    variant2 = outputVariant,
                                     variantName2 = newVariantName,
                                     allContainersWithVariant1 = existingInfo.containers,
                                     allContainersWithVariant2 = {container}
                                 }
                             })
 
-                            -- Don't create duplicate conflicts for the same channel mode
-                            return conflicts  -- Return immediately on first conflict
+                            return conflicts  -- Return immediately - critical error
                         else
-                            -- Same variant, add to list
-                            table.insert(channelOrders[channelMode].containers, container)
+                            table.insert(outputVariants[channelMode].containers, container)
+                        end
+                    end
+                end
+
+                -- CHECK 2: SOURCE variant conflicts (sourceChannelVariant) - ONLY if specified
+                -- This applies to containers with items that are 5.0/7.0
+                if container.sourceChannelVariant ~= nil and container.items and #container.items > 0 then
+                    -- Determine if items are 5.0 or 7.0
+                    local itemChannelMode = nil
+                    for _, item in ipairs(container.items) do
+                        local numCh = item.numChannels or 2
+                        if numCh == 5 or numCh == 7 then
+                            itemChannelMode = numCh
+                            break
+                        end
+                    end
+
+                    if itemChannelMode then
+                        local sourceVariant = container.sourceChannelVariant
+
+                        if not sourceVariants[itemChannelMode] then
+                            sourceVariants[itemChannelMode] = {
+                                variant = sourceVariant,
+                                containers = {container},
+                                group = group
+                            }
+                        else
+                            if sourceVariants[itemChannelMode].variant ~= sourceVariant then
+                                -- SOURCE CONFLICT DETECTED! (CRITICAL)
+                                local existingInfo = sourceVariants[itemChannelMode]
+                                local existingVariantName = RoutingValidator.getVariantName(itemChannelMode, existingInfo.variant)
+                                local newVariantName = RoutingValidator.getVariantName(itemChannelMode, sourceVariant)
+
+                                table.insert(conflicts, {
+                                    type = ISSUE_TYPES.CHANNEL_ORDER_CONFLICT,
+                                    severity = SEVERITY.ERROR,
+                                    description = string.format("CRITICAL: Source format conflict for %s.0 items: '%s' vs '%s' - Cannot be resolved!",
+                                        itemChannelMode, existingVariantName, newVariantName),
+                                    conflictData = {
+                                        conflictType = "source",
+                                        channelMode = itemChannelMode,
+                                        container1 = existingInfo.containers[1],
+                                        variant1 = existingInfo.variant,
+                                        variantName1 = existingVariantName,
+                                        container2 = container,
+                                        variant2 = sourceVariant,
+                                        variantName2 = newVariantName,
+                                        allContainersWithVariant1 = existingInfo.containers,
+                                        allContainersWithVariant2 = {container},
+                                        isCritical = true  -- Flag as unresolvable
+                                    }
+                                })
+
+                                return conflicts  -- Return immediately - critical error
+                            else
+                                table.insert(sourceVariants[itemChannelMode].containers, container)
+                            end
                         end
                     end
                 end
@@ -408,15 +466,28 @@ function RoutingValidator.validateChannelConsistency(projectTree)
 end
 
 -- Calculate maximum required channels for the entire project
+-- NEW ARCHITECTURE: Uses trackStructure.numTracks as the source of truth
 function RoutingValidator.calculateMaxRequiredChannels(projectTree)
     local maxChannels = 2  -- Minimum stereo
 
-    -- Check tool tracks first
+    if not globals.Generation then
+        return maxChannels
+    end
+
+    -- Check tool tracks using NEW ARCHITECTURE
     for _, trackInfo in ipairs(projectTree.toolTracks) do
         if trackInfo.isFromTool then
-            -- For container tracks, check their configuration
-            local requiredChannels = RoutingValidator.getTrackRequiredChannels(trackInfo)
-            maxChannels = math.max(maxChannels, requiredChannels)
+            local container = RoutingValidator.findContainerByTrackName(trackInfo.name)
+
+            if container then
+                -- Use trackStructure to determine required channels
+                local itemsAnalysis = globals.Generation.analyzeContainerItems(container)
+                local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
+
+                if trackStructure and trackStructure.numTracks then
+                    maxChannels = math.max(maxChannels, trackStructure.numTracks)
+                end
+            end
         end
     end
 
@@ -567,18 +638,20 @@ function RoutingValidator.detectRoutingIssues(projectTree)
         table.insert(allIssues, orphan)
     end
 
-    -- PRIORITY 5: Detect downmix errors
-    local downmixErrors = RoutingValidator.detectDownmixErrors(projectTree)
-    for _, error in ipairs(downmixErrors) do
-        table.insert(allIssues, error)
-    end
+    -- PRIORITY 5: Downmix error detection REMOVED - Now handled by auto-optimization
+    -- The new trackStructure system automatically handles downmix via Channel Selection modes
 
     return allIssues
 end
 
 -- Detect channel conflicts between different containers using master format logic
+-- NEW ARCHITECTURE: Understands trackStructure strategies
 function RoutingValidator.detectChannelConflicts(projectTree)
     local conflicts = {}
+
+    if not globals.Generation then
+        return conflicts
+    end
 
     -- Step 1: Find the master format (highest channel count)
     local masterFormat = RoutingValidator.findMasterFormat(projectTree)
@@ -593,14 +666,33 @@ function RoutingValidator.detectChannelConflicts(projectTree)
     for _, trackInfo in ipairs(projectTree.toolTracks) do
         if trackInfo.isFromTool then
             local channelInfo = RoutingValidator.getTrackChannelInfo(trackInfo)
-            if channelInfo then
+            if channelInfo and channelInfo.trackStructure then
+                local trackStructure = channelInfo.trackStructure
+
+                -- NEW: Skip validation for certain strategies that are INTENTIONAL
+                local skipStrategies = {
+                    ["perfect-match-passthrough"] = true,  -- No routing needed
+                    ["surround-to-quad-skip-center"] = true,  -- Intentionally skips center
+                    ["surround-to-stereo-front-only"] = true,  -- Intentionally uses L/R only
+                    ["surround-unknown-format"] = true,  -- User hasn't specified format yet
+                    ["mono-distribution"] = true,  -- Mono items distributed across tracks
+                    ["mixed-items-forced-mono"] = true  -- Mixed items, forced to mono
+                }
+
+                if skipStrategies[trackStructure.strategy] then
+                    -- These strategies are intentional, not conflicts
+                    goto continue_channel_check
+                end
+
+                -- Calculate expected routing based on master format
                 local expectedRouting = RoutingValidator.calculateExpectedRouting(channelInfo, referenceRouting)
                 local actualRouting = channelInfo.routing
 
                 -- Compare expected vs actual routing
                 for i, expectedChannel in ipairs(expectedRouting) do
-                    local actualChannel = actualRouting[i] or 0  -- Default to 0 if nil
-                    local label = channelInfo.labels[i] or ("Channel " .. i)  -- Fallback label
+                    local actualChannel = actualRouting[i] or 0
+                    local label = channelInfo.labels[i] or ("Channel " .. i)
+
                     if actualChannel ~= expectedChannel then
                         -- Conflict detected!
                         table.insert(conflicts, {
@@ -614,12 +706,15 @@ function RoutingValidator.detectChannelConflicts(projectTree)
                                 channelInfo = channelInfo,
                                 expectedRouting = expectedRouting,
                                 actualRouting = actualRouting,
-                                masterFormat = masterFormat
+                                masterFormat = masterFormat,
+                                strategy = trackStructure.strategy
                             }
                         })
                         break  -- One conflict per container is enough
                     end
                 end
+
+                ::continue_channel_check::
             end
         end
     end
@@ -628,64 +723,66 @@ function RoutingValidator.detectChannelConflicts(projectTree)
 end
 
 -- Find the master format (configuration with the most channels)
--- CRITICAL: This now uses REAL tracks, not theoretical configuration
+-- NEW ARCHITECTURE: Uses trackStructure.numTracks instead of real child count
 function RoutingValidator.findMasterFormat(projectTree)
     local masterFormat = nil
     local maxChannels = 0
 
-    -- Scan actual tracks to find the real channel usage
+    if not globals.Generation then
+        return nil
+    end
+
+    -- Scan tool tracks and use trackStructure to determine required channels
     for _, trackInfo in ipairs(projectTree.toolTracks or {}) do
         if trackInfo.isFromTool then
-            -- Get the REAL number of child tracks for this container
-            local realChildCount = RoutingValidator.getRealChildTrackCount(trackInfo)
+            local container = RoutingValidator.findContainerByTrackName(trackInfo.name)
 
-            if realChildCount > maxChannels then
-                maxChannels = realChildCount
+            if container then
+                -- NEW ARCHITECTURE: Use trackStructure to determine channel count
+                local itemsAnalysis = globals.Generation.analyzeContainerItems(container)
+                local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
 
-                -- Find the corresponding container configuration
-                local container = RoutingValidator.findContainerByTrackName(trackInfo.name)
-                if container and container.channelMode and container.channelMode > 0 then
-                    local config = Constants.CHANNEL_CONFIGS[container.channelMode]
-                    if config then
-                        local activeConfig = config
+                if trackStructure and trackStructure.numTracks then
+                    local requiredChannels = trackStructure.numTracks
 
-                        -- Handle variants
-                        if config.hasVariants then
-                            local variant = container.channelVariant or 0
-                            if config.variants and config.variants[variant] then
-                                activeConfig = config.variants[variant]
-                                activeConfig.channels = realChildCount  -- Use REAL count
-                                activeConfig.name = config.name
+                    if requiredChannels > maxChannels then
+                        maxChannels = requiredChannels
+
+                        -- Build labels based on trackStructure
+                        local labels = trackStructure.trackLabels or {}
+
+                        -- Fallback to config labels if trackStructure doesn't have them
+                        if #labels == 0 and container.channelMode and container.channelMode > 0 then
+                            local config = Constants.CHANNEL_CONFIGS[container.channelMode]
+                            if config then
+                                local activeConfig = config
+                                if config.hasVariants then
+                                    activeConfig = config.variants[container.channelVariant or 0]
+                                end
+                                labels = activeConfig.labels or {}
                             end
-                        else
-                            -- Override with real channel count
-                            activeConfig = {
-                                name = config.name,
-                                channels = realChildCount,
-                                routing = RoutingValidator.generateSequentialRouting(realChildCount),
-                                labels = RoutingValidator.generateLabelsForChannelCount(realChildCount, config)
-                            }
+                        end
+
+                        -- Final fallback: generic labels
+                        if #labels == 0 then
+                            for i = 1, requiredChannels do
+                                table.insert(labels, "Ch" .. i)
+                            end
                         end
 
                         masterFormat = {
-                            config = activeConfig,
-                            routing = RoutingValidator.generateSequentialRouting(realChildCount),
-                            labels = RoutingValidator.generateLabelsForChannelCount(realChildCount, config),
+                            trackStructure = trackStructure,
+                            routing = RoutingValidator.generateSequentialRouting(requiredChannels),
+                            labels = labels,
                             container = container,
                             group = RoutingValidator.findGroupByContainer(container),
-                            realChannelCount = realChildCount
+                            realChannelCount = requiredChannels,
+                            strategy = trackStructure.strategy
                         }
                     end
                 end
             end
         end
-    end
-
-    if masterFormat then
-        -- reaper.ShowConsoleMsg(string.format("INFO: Master format detected: %d real channels (container: %s)\n",
-        --     maxChannels, masterFormat.container.name or "unknown"))
-    else
-        -- reaper.ShowConsoleMsg("INFO: No master format detected, using stereo default\n")
     end
 
     return masterFormat
@@ -821,41 +918,75 @@ function RoutingValidator.calculateExpectedRouting(channelInfo, referenceRouting
     return expectedRouting
 end
 
--- Get channel information for a track (labels and routing)
+-- Get channel information for a track (labels and routing) using NEW ARCHITECTURE
 function RoutingValidator.getTrackChannelInfo(trackInfo)
     -- Find corresponding container configuration
     for _, group in ipairs(globals.groups or {}) do
         for _, container in ipairs(group.containers or {}) do
-            if trackInfo.name == container.name and container.channelMode and container.channelMode > 0 then
-                local config = Constants.CHANNEL_CONFIGS[container.channelMode]
-                if config then
-                    local activeConfig = config
-                    if config.hasVariants then
-                        activeConfig = config.variants[container.channelVariant or 0]
-                        activeConfig.channels = config.channels
-                        activeConfig.name = config.name
-                    end
-
-                    local routing = container.customRouting or activeConfig.routing
-                    local labels = activeConfig.labels
-
-                    local channelInfo = {
-                        config = activeConfig,
-                        routing = routing,
-                        labels = labels,
-                        channels = {}
-                    }
-
-                    for i, channelNum in ipairs(routing) do
-                        table.insert(channelInfo.channels, {
-                            channelNum = channelNum,
-                            label = labels[i],
-                            index = i
-                        })
-                    end
-
-                    return channelInfo
+            if trackInfo.name == container.name then
+                -- Use NEW ARCHITECTURE: Analyze items and determine track structure
+                if not globals.Generation then
+                    return nil
                 end
+
+                local itemsAnalysis = globals.Generation.analyzeContainerItems(container)
+                local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
+
+                if not trackStructure then
+                    return nil
+                end
+
+                -- Build routing and labels based on trackStructure
+                local routing = {}
+                local labels = {}
+
+                if trackStructure.trackLabels then
+                    -- Use track labels from structure
+                    labels = trackStructure.trackLabels
+                    -- Generate sequential routing based on number of tracks
+                    for i = 1, trackStructure.numTracks do
+                        table.insert(routing, i)
+                    end
+                else
+                    -- Fallback: use output format configuration
+                    local outputChannels = globals.Generation.getOutputChannelCount(container.channelMode)
+                    local config = Constants.CHANNEL_CONFIGS[container.channelMode]
+
+                    if config then
+                        local activeConfig = config
+                        if config.hasVariants then
+                            activeConfig = config.variants[container.channelVariant or 0]
+                        end
+
+                        labels = activeConfig.labels or {}
+                        routing = activeConfig.routing or {}
+                    else
+                        -- Generic fallback
+                        for i = 1, trackStructure.numTracks do
+                            table.insert(routing, i)
+                            table.insert(labels, "Ch" .. i)
+                        end
+                    end
+                end
+
+                local channelInfo = {
+                    trackStructure = trackStructure,
+                    routing = routing,
+                    labels = labels,
+                    channels = {},
+                    container = container,
+                    group = group
+                }
+
+                for i, channelNum in ipairs(routing) do
+                    table.insert(channelInfo.channels, {
+                        channelNum = channelNum,
+                        label = labels[i] or ("Ch" .. i),
+                        index = i
+                    })
+                end
+
+                return channelInfo
             end
         end
     end
@@ -900,43 +1031,9 @@ function RoutingValidator.detectOrphanSends(projectTree)
     return orphans
 end
 
--- Detect downmix errors (e.g., 5.0 to 4.0 incorrectly routed)
-function RoutingValidator.detectDownmixErrors(projectTree)
-    local errors = {}
-
-    -- This would detect cases where a multi-channel format is incorrectly downmixed
-    -- For example, 5.0 (L R C LS RS) being mapped to 4.0 (L R LS RS) without proper center channel handling
-
-    for _, trackInfo in ipairs(projectTree.toolTracks) do
-        if trackInfo.isFromTool then
-            local channelInfo = RoutingValidator.getTrackChannelInfo(trackInfo)
-            if channelInfo and channelInfo.config then
-                -- Check if this looks like a problematic downmix
-                local hasCenter = false
-                local hasLFE = false
-
-                for _, channel in ipairs(channelInfo.channels) do
-                    if channel.label == "C" then hasCenter = true end
-                    if channel.label == "LFE" then hasLFE = true end
-                end
-
-                -- If it's a 5+ channel format missing expected channels, flag as potential downmix error
-                if channelInfo.config.channels >= 5 and not hasCenter then
-                    table.insert(errors, {
-                        type = ISSUE_TYPES.DOWNMIX_ERROR,
-                        severity = SEVERITY.WARNING,
-                        description = string.format("Track '%s' appears to be a %s configuration but missing center channel - possible downmix error",
-                            trackInfo.name, channelInfo.config.name or "multi-channel"),
-                        track = trackInfo,
-                        channelInfo = channelInfo
-                    })
-                end
-            end
-        end
-    end
-
-    return errors
-end
+-- OBSOLETE: detectDownmixErrors() removed
+-- Downmix is now handled automatically by the new trackStructure system
+-- via Channel Selection modes (Auto/Stereo Pairs/Mono Split) and smart routing
 
 -- ===================================================================
 -- AUTOMATIC FIXING AND SUGGESTIONS
@@ -966,8 +1063,7 @@ function RoutingValidator.generateFixSuggestion(issue, projectTree)
         return issue.suggestedFix  -- Already included in issue
     elseif issue.type == ISSUE_TYPES.ORPHAN_SEND then
         return RoutingValidator.suggestOrphanSendFix(issue, projectTree)
-    elseif issue.type == ISSUE_TYPES.DOWNMIX_ERROR then
-        return RoutingValidator.suggestDownmixFix(issue, projectTree)
+    -- DOWNMIX_ERROR removed - handled by auto-optimization
     end
 
     return nil
