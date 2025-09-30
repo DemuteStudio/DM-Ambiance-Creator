@@ -1259,16 +1259,9 @@ function RoutingValidator.applySingleFix(suggestion, autoMode)
             channels = channels + 1
         end
 
-        local _, trackName = reaper.GetTrackName(suggestion.track)
-        local oldChannels = reaper.GetMediaTrackInfo_Value(suggestion.track, "I_NCHAN")
-        reaper.ShowConsoleMsg(string.format("[FIX] set_channel_count: Track '%s' from %d to %d channels\n", trackName or "unknown", oldChannels, channels))
-
-        local success = reaper.SetMediaTrackInfo_Value(suggestion.track, "I_NCHAN", channels)
+        reaper.SetMediaTrackInfo_Value(suggestion.track, "I_NCHAN", channels)
         reaper.UpdateArrange()
-
-        local newChannels = reaper.GetMediaTrackInfo_Value(suggestion.track, "I_NCHAN")
-        reaper.ShowConsoleMsg(string.format("[FIX] Verification: Track '%s' now has %d channels (success=%s)\n", trackName or "unknown", newChannels, tostring(success)))
-        return success
+        return true
 
     elseif suggestion.action == "reroute_container" then
         return RoutingValidator.applyNewRouting(suggestion.track, suggestion.newRouting)
@@ -1280,16 +1273,9 @@ function RoutingValidator.applySingleFix(suggestion, autoMode)
             channels = channels + 1
         end
 
-        local _, trackName = reaper.GetTrackName(suggestion.track)
-        local oldChannels = reaper.GetMediaTrackInfo_Value(suggestion.track, "I_NCHAN")
-        reaper.ShowConsoleMsg(string.format("[FIX] increase_parent_channels: Track '%s' from %d to %d channels\n", trackName or "unknown", oldChannels, channels))
-
-        local success = reaper.SetMediaTrackInfo_Value(suggestion.track, "I_NCHAN", channels)
+        reaper.SetMediaTrackInfo_Value(suggestion.track, "I_NCHAN", channels)
         reaper.UpdateArrange()
-
-        local newChannels = reaper.GetMediaTrackInfo_Value(suggestion.track, "I_NCHAN")
-        reaper.ShowConsoleMsg(string.format("[FIX] Verification: Track '%s' now has %d channels (success=%s)\n", trackName or "unknown", newChannels, tostring(success)))
-        return success
+        return true
 
     elseif suggestion.action == "apply_proper_downmix" then
         return RoutingValidator.applyNewRouting(suggestion.track, suggestion.newRouting)

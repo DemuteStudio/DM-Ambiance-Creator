@@ -2699,51 +2699,27 @@ function Generation.checkAndResolveConflicts()
 
     -- Handle issues based on auto-fix setting
     if issues and #issues > 0 then
-        reaper.ShowConsoleMsg(string.format("[DEBUG] Found %d routing issues after generation\n", #issues))
-        for i, issue in ipairs(issues) do
-            reaper.ShowConsoleMsg(string.format("[DEBUG]   Issue %d: %s - %s\n", i, issue.type, issue.description))
-        end
-        reaper.ShowConsoleMsg(string.format("[DEBUG] autoFixRouting = %s\n", tostring(globals.autoFixRouting)))
-
         if globals.autoFixRouting then
             -- Auto-fix mode: apply fixes automatically
-            reaper.ShowConsoleMsg("[DEBUG] Auto-fix mode enabled, generating suggestions...\n")
             local suggestions = globals.RoutingValidator.generateFixSuggestions(issues, globals.RoutingValidator.getProjectTrackCache())
-            reaper.ShowConsoleMsg(string.format("[DEBUG] Generated %d fix suggestions\n", suggestions and #suggestions or 0))
-            for i, suggestion in ipairs(suggestions or {}) do
-                reaper.ShowConsoleMsg(string.format("[DEBUG]   Suggestion %d: %s\n", i, suggestion.action))
-            end
-
             local success = globals.RoutingValidator.autoFixRouting(issues, suggestions)
-            reaper.ShowConsoleMsg(string.format("[DEBUG] Auto-fix result: %s\n", tostring(success)))
 
             -- If auto-fix succeeded, re-validate to ensure everything is fixed
             if success then
-                reaper.ShowConsoleMsg("[DEBUG] Re-validating after auto-fix...\n")
                 globals.RoutingValidator.clearCache()  -- Force fresh scan
                 local remainingIssues = globals.RoutingValidator.validateProjectRouting()
                 if remainingIssues and #remainingIssues > 0 then
-                    reaper.ShowConsoleMsg(string.format("[DEBUG] %d issues remain after auto-fix:\n", #remainingIssues))
-                    for i, issue in ipairs(remainingIssues) do
-                        reaper.ShowConsoleMsg(string.format("[DEBUG]   Remaining Issue %d: %s - %s\n", i, issue.type, issue.description))
-                    end
                     -- Some issues couldn't be auto-fixed, show modal
                     globals.RoutingValidator.showValidationModal(remainingIssues)
-                else
-                    reaper.ShowConsoleMsg("[DEBUG] All issues fixed successfully!\n")
                 end
             else
-                reaper.ShowConsoleMsg("[DEBUG] Auto-fix failed, showing modal\n")
                 -- Auto-fix failed, show modal for manual resolution
                 globals.RoutingValidator.showValidationModal(issues)
             end
         else
-            reaper.ShowConsoleMsg("[DEBUG] Manual mode, showing validation modal\n")
             -- Manual mode: show validation modal for user review
             globals.RoutingValidator.showValidationModal(issues)
         end
-    else
-        reaper.ShowConsoleMsg("[DEBUG] No routing issues found\n")
     end
 end
 
