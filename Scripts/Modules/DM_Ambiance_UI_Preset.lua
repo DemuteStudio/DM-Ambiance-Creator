@@ -84,11 +84,8 @@ function UI_Preset.drawPresetControls()
     if globals.Icons.createConflictButton(globals.ctx, "conflictResolver", "Open Routing Validator") then
         -- Validate project routing using the new system
         local issues = globals.RoutingValidator.validateProjectRouting()
-        if issues and #issues > 0 then
-            globals.RoutingValidator.showValidationModal(issues)
-        else
-            reaper.ShowMessageBox("No routing issues detected.", "Routing Validator", 0)
-        end
+        -- Always show modal, even if no issues (issues can be empty array)
+        globals.RoutingValidator.showValidationModal(issues or {})
     end
     
     -- Handle the save preset popup modal window

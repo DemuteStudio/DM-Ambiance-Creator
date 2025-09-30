@@ -17,13 +17,12 @@ local showModal = false
 local validationData = nil
 local issuesList = nil
 local fixSuggestions = nil
-local modalFirstOpen = true
 local autoFixEnabled = false
+local shouldOpenModal = false
 
 -- Channel order resolution modal state
-local showChannelOrderModal = false
 local channelOrderConflictData = nil
-local channelOrderModalFirstOpen = true
+local shouldOpenChannelOrderModal = false
 
 -- Cache for performance
 local projectTrackCache = nil
@@ -37,7 +36,6 @@ function RoutingValidator.initModule(g)
     globals = g
 
     -- Initialize state
-    globals.showRoutingModal = false
     globals.pendingValidationData = nil
     globals.pendingIssuesList = nil
     globals.autoFixRouting = false  -- Default: manual validation
@@ -1215,7 +1213,7 @@ function RoutingValidator.autoFixRouting(issuesList, fixSuggestions)
     local allSuccess = true
 
     for _, suggestion in ipairs(fixSuggestions) do
-        local success = RoutingValidator.applySingleFix(suggestion)
+        local success = RoutingValidator.applySingleFix(suggestion, true)  -- Pass autoMode = true
         if not success then
             allSuccess = false
         end
@@ -1230,11 +1228,20 @@ function RoutingValidator.autoFixRouting(issuesList, fixSuggestions)
 end
 
 -- Apply a single fix suggestion
-function RoutingValidator.applySingleFix(suggestion)
+function RoutingValidator.applySingleFix(suggestion, autoMode)
     if suggestion.action == "resolve_channel_order_conflict" then
-        -- Channel order conflicts require special handling - show modal for user choice
-        RoutingValidator.showChannelOrderResolutionModal(suggestion)
-        return false  -- Return false because user needs to choose
+        if autoMode then
+            -- In auto-fix mode, automatically choose the first variant
+            local firstOption = suggestion.options and suggestion.options[1]
+            if firstOption then
+                return RoutingValidator.applyChannelOrderChoice(firstOption.variant, suggestion.conflictData.channelMode)
+            end
+            return false
+        else
+            -- In manual mode, show modal for user choice
+            RoutingValidator.showChannelOrderResolutionModal(suggestion)
+            return false  -- Return false because user needs to choose
+        end
 
     elseif suggestion.action == "apply_channel_order_choice" then
         return RoutingValidator.applyChannelOrderChoice(suggestion)
@@ -1728,9 +1735,8 @@ function RoutingValidator.showValidationModal(issuesList, fixSuggestions)
     globals.pendingIssuesList = issuesList
     fixSuggestions = fixSuggestions or RoutingValidator.generateFixSuggestions(issuesList, validationData)
 
-    globals.showRoutingModal = true
     globals.pendingValidationData = validationData
-    modalFirstOpen = true
+    shouldOpenModal = true
 end
 
 -- Render the routing validation modal
@@ -1738,19 +1744,17 @@ function RoutingValidator.renderModal()
     local ctx = globals.ctx
     local imgui = globals.imgui
 
-    if not globals.showRoutingModal then return end
-
-    -- Set initial window size
-    if modalFirstOpen then
-        imgui.SetNextWindowSize(ctx, 1000, 800, imgui.Cond_FirstUseEver)
+    -- Open popup when requested
+    if shouldOpenModal then
         imgui.OpenPopup(ctx, "Project Routing Validator")
-        modalFirstOpen = false
+        shouldOpenModal = false
     end
 
-    local visible, open = imgui.BeginPopupModal(ctx, "Project Routing Validator", true,
-        imgui.WindowFlags_NoCollapse)
+    -- SetNextWindowSize must be called before BeginPopupModal
+    imgui.SetNextWindowSize(ctx, 1000, 800, imgui.Cond_FirstUseEver)
 
-    if visible then
+    -- BeginPopupModal must be called every frame, it only shows if OpenPopup was called
+    if imgui.BeginPopupModal(ctx, "Project Routing Validator", true, imgui.WindowFlags_NoCollapse) then
         -- Get window dimensions for proper layout
         local windowWidth, windowHeight = imgui.GetWindowSize(ctx)
         local headerHeight = 80
@@ -1799,10 +1803,6 @@ function RoutingValidator.renderModal()
         RoutingValidator.renderFooter(ctx, imgui)
 
         imgui.EndPopup(ctx)
-    end
-
-    if not open then
-        globals.showRoutingModal = false
     end
 end
 
@@ -1957,6 +1957,53 @@ function RoutingValidator.renderTrackNode(ctx, imgui, trackInfo, depth)
     imgui.Text(ctx, string.format("%s %s (ch: %d)", icon, trackInfo.name, trackInfo.channelCount))
     imgui.PopStyleColor(ctx)
 
+    -- Show sends routing information if any
+    if trackInfo.sends and #trackInfo.sends > 0 then
+        imgui.Indent(ctx, 10)
+        for _, send in ipairs(trackInfo.sends) do
+            local destTrackName = send.destTrack and reaper.GetTrackName(send.destTrack) or "Unknown"
+
+            -- Parse source and destination channels for display
+            local srcChan = send.srcChannel
+            local dstChan = send.dstChannel
+
+            local srcDisplay, dstDisplay
+
+            -- Parse source channel
+            if srcChan >= 1024 then
+                -- Mono: 1024 + channel (0-based)
+                local ch = srcChan - 1024 + 1  -- Convert to 1-based
+                srcDisplay = string.format("Ch %d (mono)", ch)
+            elseif srcChan >= 0 then
+                -- Stereo pair: srcChan is the starting channel (0-based)
+                local ch1 = srcChan + 1
+                local ch2 = srcChan + 2
+                srcDisplay = string.format("Ch %d-%d (stereo)", ch1, ch2)
+            else
+                srcDisplay = string.format("Ch %d", srcChan)
+            end
+
+            -- Parse destination channel
+            if dstChan >= 1024 then
+                -- Mono: 1024 + channel (0-based)
+                local ch = dstChan - 1024 + 1  -- Convert to 1-based
+                dstDisplay = string.format("Ch %d (mono)", ch)
+            elseif dstChan >= 0 then
+                -- Stereo pair: dstChan is the starting channel (0-based)
+                local ch1 = dstChan + 1
+                local ch2 = dstChan + 2
+                dstDisplay = string.format("Ch %d-%d (stereo)", ch1, ch2)
+            else
+                dstDisplay = string.format("Ch %d", dstChan)
+            end
+
+            imgui.PushStyleColor(ctx, imgui.Col_Text, 0x8888AAFF)
+            imgui.Text(ctx, string.format("→ Send to '%s': %s → %s", destTrackName, srcDisplay, dstDisplay))
+            imgui.PopStyleColor(ctx)
+        end
+        imgui.Unindent(ctx, 10)
+    end
+
     -- Show issues if any
     if hasIssues then
         imgui.Indent(ctx, 10)
@@ -2065,7 +2112,7 @@ function RoutingValidator.renderFixSuggestions(ctx, imgui)
         imgui.TextWrapped(ctx, suggestion.reason)
 
         if imgui.Button(ctx, "Apply This Fix##" .. i) then
-            RoutingValidator.applySingleFix(suggestion)
+            RoutingValidator.applySingleFix(suggestion, false)  -- Manual mode
             -- Re-validate after fix
             RoutingValidator.validateProjectRouting()
         end
@@ -2085,7 +2132,6 @@ function RoutingValidator.renderFooter(ctx, imgui)
         imgui.PushStyleColor(ctx, imgui.Col_Button, 0x0088FFFF)
         if imgui.Button(ctx, "Auto-Fix All Issues", 200, 35) then
             RoutingValidator.autoFixRouting(globals.pendingIssuesList, fixSuggestions)
-            globals.showRoutingModal = false
             imgui.CloseCurrentPopup(ctx)
         end
         imgui.PopStyleColor(ctx)
@@ -2096,6 +2142,8 @@ function RoutingValidator.renderFooter(ctx, imgui)
     if imgui.Button(ctx, "Re-Validate", 120, 35) then
         projectTrackCache = nil  -- Clear cache
         local newIssues = RoutingValidator.validateProjectRouting()
+        -- Close current popup before opening new one
+        imgui.CloseCurrentPopup(ctx)
         RoutingValidator.showValidationModal(newIssues, fixSuggestions)
     end
 
@@ -2103,7 +2151,6 @@ function RoutingValidator.renderFooter(ctx, imgui)
 
     -- Close button
     if imgui.Button(ctx, "Close", 120, 35) then
-        globals.showRoutingModal = false
         imgui.CloseCurrentPopup(ctx)
     end
 end
@@ -2112,7 +2159,7 @@ end
 function RoutingValidator.fixSingleIssue(issue)
     local suggestion = RoutingValidator.generateFixSuggestion(issue, globals.pendingValidationData)
     if suggestion then
-        RoutingValidator.applySingleFix(suggestion)
+        RoutingValidator.applySingleFix(suggestion, false)  -- Manual mode
         -- Re-validate and refresh modal automatically
         projectTrackCache = nil
         local newIssues = RoutingValidator.validateProjectRouting()
@@ -2127,8 +2174,7 @@ end
 -- Show channel order conflict resolution modal
 function RoutingValidator.showChannelOrderResolutionModal(suggestion)
     channelOrderConflictData = suggestion
-    showChannelOrderModal = true
-    channelOrderModalFirstOpen = true
+    shouldOpenChannelOrderModal = true
 end
 
 -- Render channel order resolution modal
@@ -2136,19 +2182,19 @@ function RoutingValidator.renderChannelOrderModal()
     local ctx = globals.ctx
     local imgui = globals.imgui
 
-    if not showChannelOrderModal or not channelOrderConflictData then return end
+    if not channelOrderConflictData then return end
 
-    -- Set initial window size
-    if channelOrderModalFirstOpen then
-        imgui.SetNextWindowSize(ctx, 600, 400, imgui.Cond_FirstUseEver)
+    -- Open popup when requested
+    if shouldOpenChannelOrderModal then
         imgui.OpenPopup(ctx, "Channel Order Conflict Resolution")
-        channelOrderModalFirstOpen = false
+        shouldOpenChannelOrderModal = false
     end
 
-    local visible, open = imgui.BeginPopupModal(ctx, "Channel Order Conflict Resolution", true,
-        imgui.WindowFlags_NoCollapse)
+    -- SetNextWindowSize must be called before BeginPopupModal
+    imgui.SetNextWindowSize(ctx, 600, 400, imgui.Cond_FirstUseEver)
 
-    if visible then
+    -- BeginPopupModal must be called every frame, it only shows if OpenPopup was called
+    if imgui.BeginPopupModal(ctx, "Channel Order Conflict Resolution", true, imgui.WindowFlags_NoCollapse) then
         local conflictData = channelOrderConflictData.conflictData
 
         -- Header
@@ -2175,7 +2221,7 @@ function RoutingValidator.renderChannelOrderModal()
         imgui.PushStyleColor(ctx, imgui.Col_Button, 0x0088AAFF)
         if imgui.Button(ctx, string.format("Use: %s", conflictData.variantName1), 250, 40) then
             RoutingValidator.applyChannelOrderChoice(conflictData.variant1, conflictData.channelMode)
-            showChannelOrderModal = false
+            channelOrderConflictData = nil
             imgui.CloseCurrentPopup(ctx)
         end
         imgui.PopStyleColor(ctx)
@@ -2189,7 +2235,7 @@ function RoutingValidator.renderChannelOrderModal()
         imgui.PushStyleColor(ctx, imgui.Col_Button, 0x0088AAFF)
         if imgui.Button(ctx, string.format("Use: %s", conflictData.variantName2), 250, 40) then
             RoutingValidator.applyChannelOrderChoice(conflictData.variant2, conflictData.channelMode)
-            showChannelOrderModal = false
+            channelOrderConflictData = nil
             imgui.CloseCurrentPopup(ctx)
         end
         imgui.PopStyleColor(ctx)
@@ -2213,16 +2259,11 @@ function RoutingValidator.renderChannelOrderModal()
         imgui.SetCursorPosX(ctx, imgui.GetCursorPosX(ctx) + (avail - buttonWidth) * 0.5)
 
         if imgui.Button(ctx, "Cancel", buttonWidth, 30) then
-            showChannelOrderModal = false
+            channelOrderConflictData = nil
             imgui.CloseCurrentPopup(ctx)
         end
 
         imgui.EndPopup(ctx)
-    end
-
-    if not open then
-        showChannelOrderModal = false
-        channelOrderConflictData = nil
     end
 end
 

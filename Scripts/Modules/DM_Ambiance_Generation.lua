@@ -15,23 +15,49 @@ function Generation.initModule(g)
 end
 
 -- Map a channel label (L, R, C, LS, RS, etc.) to a channel number
--- Handles both ITU/Dolby and SMPTE variants
+-- Handles both ITU/Dolby and SMPTE variants, and different output formats (4.0, 5.0, 7.0)
 function Generation.labelToChannelNumber(label, config, channelVariant)
-    -- ITU/Dolby by default: L R C LS RS LB RB
-    local labelToChannel = {
-        ["L"] = 1, ["R"] = 2, ["C"] = 3, ["LS"] = 4, ["RS"] = 5,
-        ["LFE"] = 4, ["LB"] = 6, ["RB"] = 7
-    }
+    -- Determine output format
+    local numChannels = config and config.channels or 2
 
-    -- SMPTE variant: L C R LS RS LB RB
-    if config and config.hasVariants and channelVariant == 1 then
-        labelToChannel["L"] = 1
-        labelToChannel["C"] = 2
-        labelToChannel["R"] = 3
-        labelToChannel["LS"] = 4
-        labelToChannel["RS"] = 5
-        labelToChannel["LB"] = 6
-        labelToChannel["RB"] = 7
+    local labelToChannel = {}
+
+    if numChannels == 4 then
+        -- 4.0 Quad: L R LS RS (no center)
+        labelToChannel = {
+            ["L"] = 1, ["R"] = 2, ["LS"] = 3, ["RS"] = 4
+        }
+    elseif numChannels == 5 then
+        -- 5.0 Surround
+        if config.hasVariants and channelVariant == 1 then
+            -- SMPTE: L C R LS RS
+            labelToChannel = {
+                ["L"] = 1, ["C"] = 2, ["R"] = 3, ["LS"] = 4, ["RS"] = 5
+            }
+        else
+            -- ITU/Dolby: L R C LS RS
+            labelToChannel = {
+                ["L"] = 1, ["R"] = 2, ["C"] = 3, ["LS"] = 4, ["RS"] = 5
+            }
+        end
+    elseif numChannels == 7 then
+        -- 7.0 Surround
+        if config.hasVariants and channelVariant == 1 then
+            -- SMPTE: L C R LS RS LB RB
+            labelToChannel = {
+                ["L"] = 1, ["C"] = 2, ["R"] = 3, ["LS"] = 4, ["RS"] = 5, ["LB"] = 6, ["RB"] = 7
+            }
+        else
+            -- ITU/Dolby: L R C LS RS LB RB
+            labelToChannel = {
+                ["L"] = 1, ["R"] = 2, ["C"] = 3, ["LS"] = 4, ["RS"] = 5, ["LB"] = 6, ["RB"] = 7
+            }
+        end
+    else
+        -- Default stereo or unknown: L R
+        labelToChannel = {
+            ["L"] = 1, ["R"] = 2
+        }
     end
 
     return labelToChannel[label]
@@ -245,11 +271,25 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
             if container.customRouting and container.customRouting[i] then
                 -- Use custom routing if available (from conflict resolution)
                 destChannel = container.customRouting[i] - 1
+
+            elseif trackChannelCount == 2 and trackStructure.trackType == "stereo" then
+                -- STEREO PAIRS: Route based on track position
+                -- Track 1 → stereo pair 0 (channels 1-2)
+                -- Track 2 → stereo pair 2 (channels 3-4)
+                -- Track 3 → stereo pair 4 (channels 5-6)
+                destChannel = (i - 1) * 2  -- 0-based: (track1→0, track2→2, track3→4)
+
             elseif trackStructure.trackLabels and trackStructure.trackLabels[i] then
-                -- Use trackStructure labels to determine proper channel routing
+                -- MONO TRACKS: Use trackStructure labels to determine proper channel routing
                 local label = trackStructure.trackLabels[i]
-                local channelNum = Generation.labelToChannelNumber(label, config, container.channelVariant) or i
-                destChannel = channelNum - 1
+                local channelNum = Generation.labelToChannelNumber(label, config, container.channelVariant)
+
+                if channelNum then
+                    destChannel = channelNum - 1
+                else
+                    -- Label not found in mapping, use sequential
+                    destChannel = i - 1
+                end
             else
                 -- Fallback: sequential routing (track 1 → ch 1, track 2 → ch 2, etc.)
                 destChannel = i - 1
@@ -260,12 +300,8 @@ function Generation.createMultiChannelTracks(containerTrack, container, isLastIn
 
             if trackChannelCount == 2 and trackStructure.trackType == "stereo" then
                 -- STEREO → STEREO routing
-                -- For stereo pairs, we route all channels from source to a stereo pair on destination
                 -- srcChannels: 0 = stereo (channels 1-2 from source)
-                -- dstChannels: destChannel (0-based, no +1024 for stereo pairs)
-                --   0 = channels 1-2 (L/R)
-                --   2 = channels 3-4 (LS/RS)
-                --   4 = channels 5-6, etc.
+                -- dstChannels: destChannel already calculated as stereo pair position (0, 2, 4, etc.)
                 srcChannels = 0  -- Stereo from source
                 dstChannels = destChannel  -- Stereo pair starting at destChannel (0-based)
             else
@@ -2656,45 +2692,48 @@ end
 function Generation.checkAndResolveConflicts()
     -- Use the new RoutingValidator module for comprehensive validation
     if not globals.RoutingValidator then
-        reaper.ShowConsoleMsg("WARNING: RoutingValidator module not initialized\n")
         return  -- Module not initialized
     end
 
     -- Validate entire project routing using the new robust system
     local issues = globals.RoutingValidator.validateProjectRouting()
 
-    -- DEBUG: Log validation results
-    if issues then
-        reaper.ShowConsoleMsg(string.format("Routing Validator: Found %d issues\n", #issues))
-        for i, issue in ipairs(issues) do
-            reaper.ShowConsoleMsg(string.format("  Issue %d: %s - %s\n", i, issue.type, issue.description or "no description"))
-        end
-    else
-        reaper.ShowConsoleMsg("Routing Validator: No issues found (issues = nil)\n")
-    end
-
     -- Handle issues based on auto-fix setting
     if issues and #issues > 0 then
+        reaper.ShowConsoleMsg(string.format("[DEBUG] Found %d routing issues after generation\n", #issues))
+        reaper.ShowConsoleMsg(string.format("[DEBUG] autoFixRouting = %s\n", tostring(globals.autoFixRouting)))
+
         if globals.autoFixRouting then
             -- Auto-fix mode: apply fixes automatically
+            reaper.ShowConsoleMsg("[DEBUG] Auto-fix mode enabled, generating suggestions...\n")
             local suggestions = globals.RoutingValidator.generateFixSuggestions(issues, globals.RoutingValidator.getProjectTrackCache())
+            reaper.ShowConsoleMsg(string.format("[DEBUG] Generated %d fix suggestions\n", suggestions and #suggestions or 0))
+
             local success = globals.RoutingValidator.autoFixRouting(issues, suggestions)
+            reaper.ShowConsoleMsg(string.format("[DEBUG] Auto-fix result: %s\n", tostring(success)))
 
             -- If auto-fix succeeded, re-validate to ensure everything is fixed
             if success then
                 local remainingIssues = globals.RoutingValidator.validateProjectRouting()
                 if remainingIssues and #remainingIssues > 0 then
+                    reaper.ShowConsoleMsg(string.format("[DEBUG] %d issues remain after auto-fix\n", #remainingIssues))
                     -- Some issues couldn't be auto-fixed, show modal
                     globals.RoutingValidator.showValidationModal(remainingIssues)
+                else
+                    reaper.ShowConsoleMsg("[DEBUG] All issues fixed successfully!\n")
                 end
             else
+                reaper.ShowConsoleMsg("[DEBUG] Auto-fix failed, showing modal\n")
                 -- Auto-fix failed, show modal for manual resolution
                 globals.RoutingValidator.showValidationModal(issues)
             end
         else
+            reaper.ShowConsoleMsg("[DEBUG] Manual mode, showing validation modal\n")
             -- Manual mode: show validation modal for user review
             globals.RoutingValidator.showValidationModal(issues)
         end
+    else
+        reaper.ShowConsoleMsg("[DEBUG] No routing issues found\n")
     end
 end
 

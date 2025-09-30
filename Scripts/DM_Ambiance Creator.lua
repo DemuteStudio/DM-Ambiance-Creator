@@ -80,12 +80,8 @@ local function loop()
         Utils.showDirectoryWarningPopup()
     end
     
-    -- Show routing validation modal if needed
-    if globals.showRoutingModal then
-        RoutingValidator.renderModal()
-    end
-
-    -- Show channel order resolution modal if needed
+    -- Show routing validation modals
+    RoutingValidator.renderModal()
     RoutingValidator.renderChannelOrderModal()
     
     -- Update waveform playback position if playing
