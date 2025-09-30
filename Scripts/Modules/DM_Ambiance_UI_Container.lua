@@ -124,11 +124,22 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local groupId = "group" .. groupIndex
     local containerId = groupId .. "_container" .. containerIndex
     
+    -- Retroactive channel count calculation for old items
+    for _, item in ipairs(container.items) do
+        if not item.numChannels and item.filePath and item.filePath ~= "" then
+            local source = reaper.PCM_Source_CreateFromFile(item.filePath)
+            if source then
+                item.numChannels = math.floor(reaper.GetMediaSourceNumChannels(source) or 2)
+                reaper.PCM_Source_Destroy(source)
+            end
+        end
+    end
+
     -- Sync channel volumes from tracks if in multichannel mode
     if container.channelMode and container.channelMode > 0 then
         globals.Utils.syncChannelVolumesFromTracks(groupIndex, containerIndex)
     end
-    
+
     -- Sync container volume from track
     globals.Utils.syncContainerVolumeFromTrack(groupIndex, containerIndex)
 
@@ -195,7 +206,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         -- Show content if expanded
         if isExpanded then
             local itemToDelete = nil
-            
+
             -- Create a child window for the item list to make it scrollable
             if imgui.BeginChild(globals.ctx, "ItemsList" .. containerId, width * 0.95, 100) then
                 -- List all imported items as selectable items
@@ -204,8 +215,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                     local isSelected = (globals.selectedItemIndex[selectionKey] == l)
 
-                    -- Calculate width for selectable to leave space for delete button
-                    local selectableWidth = width * 0.80
+                    -- Calculate width for selectable to leave space for buttons
+                    local selectableWidth = width * 0.70
 
                     -- Make item selectable with limited width
                     imgui.PushItemWidth(globals.ctx, selectableWidth)
@@ -215,7 +226,12 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                        globals.audioPreview.currentFile == item.filePath then
                         playingIndicator = "▶ "
                     end
-                    if imgui.Selectable(globals.ctx, playingIndicator .. l .. ". " .. item.name, isSelected, imgui.SelectableFlags_None, selectableWidth, 0) then
+                    -- Display channel count next to item name
+                    local channelInfo = ""
+                    if item.numChannels then
+                        channelInfo = " (" .. item.numChannels .. " ch)"
+                    end
+                    if imgui.Selectable(globals.ctx, playingIndicator .. l .. ". " .. item.name .. channelInfo, isSelected, imgui.SelectableFlags_None, selectableWidth, 0) then
                         -- Store the previously selected item
                         local previouslySelectedIndex = globals.selectedItemIndex[selectionKey]
 
@@ -259,6 +275,16 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     end
                     imgui.PopItemWidth(globals.ctx)
 
+                    -- Routing button (always visible)
+                    imgui.SameLine(globals.ctx, 0, 5)
+                    if imgui.SmallButton(globals.ctx, "⇄##route" .. l) then
+                        -- Store item index to trigger popup in main loop
+                        globals.routingPopupItemIndex = l
+                        globals.routingPopupGroupIndex = groupIndex
+                        globals.routingPopupContainerIndex = containerIndex
+                        globals.routingPopupOpened = nil  -- Reset flag to trigger OpenPopup
+                    end
+
                     -- Delete button on same line with proper spacing
                     imgui.SameLine(globals.ctx, 0, 5)
                     imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF)
@@ -269,10 +295,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                     imgui.PopID(globals.ctx)
                 end
-                
+
                 imgui.EndChild(globals.ctx)
             end
-            
+
             -- Remove the item if the delete button was pressed
             if itemToDelete then
                 -- Get the item data before deletion for cache clearing
@@ -331,7 +357,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         
         imgui.PopID(globals.ctx)
     end
-    
+
     -- Waveform Viewer Section (for selected imported items) - only visible in Edit Mode
     local selectionKey = groupIndex .. "_" .. containerIndex
     local editModeKey = groupIndex .. "_" .. containerIndex
@@ -1185,6 +1211,16 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
                 local items = globals.Items.processDroppedFiles(files)
                 for _, item in ipairs(items) do
                     table.insert(container.items, item)
+
+                    -- Auto-initialize routing for all containers (including stereo)
+                    if item.numChannels then
+                        if not container.customItemRouting then
+                            container.customItemRouting = {}
+                        end
+                        local defaultRouting = globals.Items.getDefaultRouting(item.numChannels, container.channelMode or 0)
+                        container.customItemRouting[#container.items] = defaultRouting
+                    end
+
                     -- Generate peaks for the imported item if needed
                     if item.filePath and item.filePath ~= "" then
                         local peaksFile = item.filePath .. ".reapeaks"
@@ -1205,6 +1241,16 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
             if #timelineItems > 0 then
                 for _, item in ipairs(timelineItems) do
                     table.insert(container.items, item)
+
+                    -- Auto-initialize routing for all containers (including stereo)
+                    if item.numChannels then
+                        if not container.customItemRouting then
+                            container.customItemRouting = {}
+                        end
+                        local defaultRouting = globals.Items.getDefaultRouting(item.numChannels, container.channelMode or 0)
+                        container.customItemRouting[#container.items] = defaultRouting
+                    end
+
                     -- Generate peaks for the imported item if needed
                     if item.filePath and item.filePath ~= "" then
                         local peaksFile = item.filePath .. ".reapeaks"
@@ -1300,6 +1346,156 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
         globals.containerEditModes[editModeKey] = not isEditMode
     end
     imgui.PopStyleColor(globals.ctx, 1)
+end
+
+-- Show routing matrix popup for configuring item channel routing
+function UI_Container.showRoutingMatrixPopup(groupIndex, containerIndex, containerId)
+    if not globals.routingPopupItemIndex then
+        return
+    end
+
+    -- Check if we're viewing the correct container
+    if globals.routingPopupGroupIndex ~= groupIndex or globals.routingPopupContainerIndex ~= containerIndex then
+        return
+    end
+
+    local container = globals.groups[groupIndex].containers[containerIndex]
+    local itemIdx = globals.routingPopupItemIndex
+    local item = container.items[itemIdx]
+
+    if not item then
+        return
+    end
+
+    -- IMPORTANT: OpenPopup must be called in the same frame as BeginPopupModal
+    -- Check if we need to open the popup (first frame only)
+    if not globals.routingPopupOpened then
+        imgui.OpenPopup(globals.ctx, "RoutingMatrixPopup")
+        globals.routingPopupOpened = true
+    end
+
+    -- Modal popup with flags to prevent closing by clicking outside
+    local modalFlags = imgui.WindowFlags_AlwaysAutoResize |
+                       imgui.WindowFlags_NoMove |
+                       imgui.WindowFlags_NoCollapse
+    if imgui.BeginPopupModal(globals.ctx, "RoutingMatrixPopup", nil, modalFlags) then
+        -- Get channel config
+        local containerChannelMode = container.channelMode or 0
+        local containerModeName = "Stereo"
+        local containerChannels = 2
+        local destLabels = {"L", "R"}
+
+        if containerChannelMode > 0 then
+            local config = globals.Constants.CHANNEL_CONFIGS[containerChannelMode]
+            if config then
+                containerModeName = config.name
+                containerChannels = config.channels
+                local activeConfig = config
+                if config.hasVariants then
+                    activeConfig = config.variants[container.channelVariant or 0]
+                end
+                destLabels = activeConfig.labels
+            end
+        end
+
+        -- Header
+        imgui.Text(globals.ctx, "Routing: " .. item.name)
+        imgui.Text(globals.ctx, (item.numChannels or 2) .. " ch → " .. containerModeName)
+        imgui.Separator(globals.ctx)
+
+        -- Get or initialize routing
+        local routing = container.customItemRouting and container.customItemRouting[itemIdx]
+        if not routing then
+            if not container.customItemRouting then
+                container.customItemRouting = {}
+            end
+            local defaultRouting = globals.Items.getDefaultRouting(item.numChannels or 2, containerChannelMode)
+            container.customItemRouting[itemIdx] = defaultRouting
+            routing = container.customItemRouting[itemIdx]
+        end
+
+        -- Badge AUTO/CUSTOM
+        local isAuto = (routing.isAutoRouting == true)
+        if isAuto then
+            imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x888888FF) -- Gray
+            imgui.Text(globals.ctx, "AUTO")
+            imgui.PopStyleColor(globals.ctx, 1)
+        else
+            imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFF8800FF) -- Orange
+            imgui.Text(globals.ctx, "CUSTOM")
+            imgui.PopStyleColor(globals.ctx, 1)
+        end
+
+        imgui.Separator(globals.ctx)
+
+        -- Matrix using table for proper alignment
+        local itemChannels = item.numChannels or 2
+        local tableFlags = imgui.TableFlags_Borders | imgui.TableFlags_SizingFixedFit
+
+        if imgui.BeginTable(globals.ctx, "RoutingMatrix", containerChannels + 1, tableFlags) then
+            -- Header row
+            imgui.TableSetupColumn(globals.ctx, " ", imgui.TableColumnFlags_WidthFixed, 40)
+            for destIdx = 1, containerChannels do
+                imgui.TableSetupColumn(globals.ctx, destLabels[destIdx], imgui.TableColumnFlags_WidthFixed, 35)
+            end
+            imgui.TableHeadersRow(globals.ctx)
+
+            -- Data rows (source channels)
+            for srcCh = 1, itemChannels do
+                imgui.TableNextRow(globals.ctx)
+
+                -- First column: source channel label
+                imgui.TableNextColumn(globals.ctx)
+                imgui.Text(globals.ctx, "Ch" .. srcCh)
+
+                -- Destination columns: radio buttons
+                for destCh = 1, containerChannels do
+                    imgui.TableNextColumn(globals.ctx)
+
+                    local currentDest = routing.routingMatrix[srcCh]
+                    local isSelected = (currentDest == destCh)
+
+                    -- Special case: if destCh == 0 (distribute mode for mono), show all selected
+                    if currentDest == 0 and itemChannels == 1 then
+                        isSelected = true
+                    end
+
+                    if imgui.RadioButton(globals.ctx, "##r" .. srcCh .. "_" .. destCh, isSelected) then
+                        -- Set routing
+                        routing.routingMatrix[srcCh] = destCh
+                        routing.isAutoRouting = false
+                    end
+                end
+            end
+
+            imgui.EndTable(globals.ctx)
+        end
+
+        imgui.Separator(globals.ctx)
+
+        -- Buttons
+        if imgui.Button(globals.ctx, "Reset to Auto", 120, 0) then
+            local defaultRouting = globals.Items.getDefaultRouting(item.numChannels or 2, containerChannelMode)
+            container.customItemRouting[itemIdx] = defaultRouting
+        end
+
+        imgui.SameLine(globals.ctx, 0, 10)
+        if imgui.Button(globals.ctx, "Close", 120, 0) then
+            globals.routingPopupItemIndex = nil
+            globals.routingPopupGroupIndex = nil
+            globals.routingPopupContainerIndex = nil
+            globals.routingPopupOpened = nil
+            imgui.CloseCurrentPopup(globals.ctx)
+        end
+
+        imgui.EndPopup(globals.ctx)
+    else
+        -- Popup was closed externally
+        globals.routingPopupItemIndex = nil
+        globals.routingPopupGroupIndex = nil
+        globals.routingPopupContainerIndex = nil
+        globals.routingPopupOpened = nil
+    end
 end
 
 return UI_Container

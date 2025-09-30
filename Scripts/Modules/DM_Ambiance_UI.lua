@@ -1205,6 +1205,11 @@ function UI.ShowMainWindow(open)
         Utils.showDirectoryWarningPopup()
     end
 
+    -- Handle routing matrix popup
+    if globals.routingPopupItemIndex then
+        UI_Container.showRoutingMatrixPopup(globals.routingPopupGroupIndex, globals.routingPopupContainerIndex, "routing")
+    end
+
     -- Handle other popups
     handlePopups()
     

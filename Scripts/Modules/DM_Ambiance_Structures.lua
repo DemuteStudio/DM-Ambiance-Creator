@@ -84,6 +84,10 @@ function Structures.createContainer(name)
         channelMode = Constants.CHANNEL_MODES.DEFAULT,  -- Default to stereo
         channelVariant = 0,  -- Channel variant (0=ITU/Dolby, 1=SMPTE)
         channelVolumes = {},  -- Volume per channel in dB
+        -- Item routing and distribution
+        itemDistributionMode = 0,  -- 0=Round-robin, 1=Random, 2=All tracks (for mono items)
+        downmixMode = 0,  -- 0=Stereo, 1=Mono (when item channels > container channels)
+        customItemRouting = {},  -- Custom routing per item: {[itemIndex] = {routingMatrix = {[srcCh]=destCh}, isAutoRouting = true}}
         -- Chunk Mode parameters
         chunkDuration = Constants.DEFAULTS.CHUNK_DURATION,
         chunkSilence = Constants.DEFAULTS.CHUNK_SILENCE,

@@ -39,6 +39,12 @@ function Items.getSelectedItems()
         takeName = filename:match("([^/\\]+)$") or filename
       end
       
+      -- Detect number of channels
+      local numChannels = 2 -- Default to stereo
+      if source then
+        numChannels = math.floor(reaper.GetMediaSourceNumChannels(source) or 2)
+      end
+
       local itemData = {
         name = takeName,
         filePath = filename,
@@ -47,7 +53,8 @@ function Items.getSelectedItems()
         length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
         originalPitch = reaper.GetMediaItemTakeInfo_Value(take, "D_PITCH"),
         originalVolume = reaper.GetMediaItemTakeInfo_Value(take, "D_VOL"),
-        originalPan = reaper.GetMediaItemTakeInfo_Value(take, "D_PAN")
+        originalPan = reaper.GetMediaItemTakeInfo_Value(take, "D_PAN"),
+        numChannels = numChannels
       }
       table.insert(items, itemData)
     end
@@ -246,11 +253,13 @@ function Items.createItemFromFilePath(filePath)
   local fileName = filePath:match("([^/\\]+)$") or filePath
   local name = fileName:match("^(.+)%..+$") or fileName -- Remove extension
 
-  -- Get audio file length using REAPER's PCM_Source
+  -- Get audio file length and channel count using REAPER's PCM_Source
   local length = nil
+  local numChannels = 2 -- Default to stereo
   local source = reaper.PCM_Source_CreateFromFile(filePath)
   if source then
     length = reaper.GetMediaSourceLength(source, nil)
+    numChannels = math.floor(reaper.GetMediaSourceNumChannels(source) or 2)
     reaper.PCM_Source_Destroy(source)
   end
 
@@ -263,7 +272,8 @@ function Items.createItemFromFilePath(filePath)
     length = length, -- Now properly calculated from the audio file
     originalPitch = 0,
     originalVolume = 1.0,
-    originalPan = 0.0
+    originalPan = 0.0,
+    numChannels = numChannels
   }
 
   return itemData
@@ -281,6 +291,66 @@ function Items.processDroppedFiles(files)
   end
 
   return items
+end
+
+-- Get default routing for an item based on its channel count and container channel mode
+-- Returns a 1-to-1 routing matrix mapping source channels to destination channels
+-- @param itemChannels number: Number of channels in the audio item
+-- @param containerChannelMode number: Container channel mode (0=stereo, 1=4.0, 2=5.0, 3=7.0)
+-- @return table: {routingMatrix = {[srcChannel] = destChannel}, isAutoRouting = true}
+function Items.getDefaultRouting(itemChannels, containerChannelMode)
+  -- Default mode (stereo) or invalid mode - no routing needed
+  if not containerChannelMode or containerChannelMode == 0 then
+    return {routingMatrix = {}, isAutoRouting = true}
+  end
+
+  -- Need access to constants
+  if not globals.Constants then
+    return {routingMatrix = {}, isAutoRouting = true}
+  end
+
+  local config = globals.Constants.CHANNEL_CONFIGS[containerChannelMode]
+  if not config then
+    return {routingMatrix = {}, isAutoRouting = true}
+  end
+
+  local containerChannels = config.channels
+  local routingMatrix = {}
+
+  -- Perfect match: direct 1-to-1 mapping
+  if itemChannels == containerChannels then
+    for i = 1, itemChannels do
+      routingMatrix[i] = i
+    end
+
+  -- Mono item: special flag 0 = distribute across all channels (handled by distribution mode)
+  elseif itemChannels == 1 then
+    routingMatrix[1] = 0  -- Flag for distribution mode
+
+  -- Stereo item in multichannel: Ch1→L, Ch2→R
+  elseif itemChannels == 2 then
+    routingMatrix[1] = 1  -- L
+    routingMatrix[2] = 2  -- R
+
+  -- 4.0 item in 5.0/7.0: map L/R/LS/RS (skip C)
+  elseif itemChannels == 4 and containerChannelMode >= 2 then
+    routingMatrix[1] = 1  -- L
+    routingMatrix[2] = 2  -- R
+    routingMatrix[3] = 4  -- LS (skip C which is 3)
+    routingMatrix[4] = 5  -- RS
+
+  -- 5.0 item in 7.0: map first 5 channels
+  elseif itemChannels == 5 and containerChannelMode == 3 then
+    for i = 1, 5 do
+      routingMatrix[i] = i
+    end
+
+  -- Downmix: only use first channel → L
+  else
+    routingMatrix[1] = 1
+  end
+
+  return {routingMatrix = routingMatrix, isAutoRouting = true}
 end
 
 

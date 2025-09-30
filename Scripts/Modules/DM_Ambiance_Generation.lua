@@ -507,6 +507,70 @@ function Generation.clearChannelTracks(tracks)
     end
 end
 
+-- Calculate how to distribute an item across channel tracks based on channel counts
+-- @param itemChannels number: Number of channels in the audio item
+-- @param containerChannelMode number: Container channel mode (0=stereo, 1=4.0, 2=5.0, 3=7.0)
+-- @return table: { targetTrackIndices = {}, downmixStrategy = "none"/"first"/"custom" }
+function Generation.calculateTrackMultiplier(itemChannels, containerChannelMode)
+    -- Default mode (stereo) - always use single track
+    if not containerChannelMode or containerChannelMode == 0 then
+        return { targetTrackIndices = {1}, downmixStrategy = "none" }
+    end
+
+    local config = globals.Constants.CHANNEL_CONFIGS[containerChannelMode]
+    if not config then
+        return { targetTrackIndices = {1}, downmixStrategy = "none" }
+    end
+
+    local containerChannels = config.channels
+
+    -- Item has same channel count as container - direct mapping
+    if itemChannels == containerChannels then
+        return { targetTrackIndices = {1}, downmixStrategy = "none" }
+    end
+
+    -- Mono item - place on ALL container tracks
+    if itemChannels == 1 then
+        local indices = {}
+        for i = 1, containerChannels do
+            table.insert(indices, i)
+        end
+        return { targetTrackIndices = indices, downmixStrategy = "none" }
+    end
+
+    -- Stereo item in multichannel container
+    if itemChannels == 2 then
+        if containerChannelMode == 1 then
+            -- 4.0: Stereo goes to Front (L/R) and Rear (LS/RS)
+            return { targetTrackIndices = {1, 2}, downmixStrategy = "none" }
+        elseif containerChannelMode == 2 then
+            -- 5.0: Stereo goes to Front (L/R) and Rear (LS/RS)
+            return { targetTrackIndices = {1, 2}, downmixStrategy = "none" }
+        elseif containerChannelMode == 3 then
+            -- 7.0: Stereo goes to Front (L/R) and Rear (LS/RS)
+            return { targetTrackIndices = {1, 2}, downmixStrategy = "none" }
+        end
+    end
+
+    -- Item has MORE channels than container - downmix to first channel only
+    if itemChannels > containerChannels then
+        return { targetTrackIndices = {1}, downmixStrategy = "first" }
+    end
+
+    -- 4.0 item in 5.0 or 7.0 container - map to L, R, LS, RS (skip center)
+    if itemChannels == 4 and (containerChannelMode == 2 or containerChannelMode == 3) then
+        return { targetTrackIndices = {1}, downmixStrategy = "first" }
+    end
+
+    -- 5.0 item in 7.0 container - downmix to first channel
+    if itemChannels == 5 and containerChannelMode == 3 then
+        return { targetTrackIndices = {1}, downmixStrategy = "first" }
+    end
+
+    -- Default fallback - use first track only
+    return { targetTrackIndices = {1}, downmixStrategy = "first" }
+end
+
 -- Get tracks for container in a unified way
 -- @param container table: The container configuration
 -- @param containerTrack userdata: The container track
@@ -679,20 +743,51 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             end
         end
 
-        -- Generate items on each channel track independently
-        for _, targetTrack in ipairs(channelTracks) do
-            -- Reset for each track
-            local lastItemRef = nil
-            local isFirstItem = true
-            local lastItemEnd = globals.startTime
+        -- Generate items considering channel count matching
+        -- For multichannel containers, we need to intelligently distribute items
+        local isMultiChannel = container.channelMode and container.channelMode > 0
 
-            while lastItemEnd < globals.endTime do
-                -- Select a random item from the container
-                local randomItemIndex = math.random(1, #effectiveParams.items)
-                local originalItemData = effectiveParams.items[randomItemIndex]
+        -- Reset for generation
+        local lastItemRef = nil
+        local isFirstItem = true
+        local lastItemEnd = globals.startTime
 
-                -- Select area if available, or use full item
-                local itemData = Utils.selectRandomAreaOrFullItem(originalItemData)
+        while lastItemEnd < globals.endTime do
+            -- Select a random item from the container
+            local randomItemIndex = math.random(1, #effectiveParams.items)
+            local originalItemData = effectiveParams.items[randomItemIndex]
+
+            -- Select area if available, or use full item
+            local itemData = Utils.selectRandomAreaOrFullItem(originalItemData)
+
+            -- Determine which tracks to place this item on based on channel counts
+            local targetTracks = {channelTracks[1]} -- Default: first track only
+            local downmixToFirstChannel = false
+
+            -- Check for custom routing first
+            if container.customItemRouting and container.customItemRouting[randomItemIndex] and
+               container.customItemRouting[randomItemIndex].targetChannels then
+                -- Use custom routing
+                targetTracks = {}
+                for _, trackIdx in ipairs(container.customItemRouting[randomItemIndex].targetChannels) do
+                    if channelTracks[trackIdx] then
+                        table.insert(targetTracks, channelTracks[trackIdx])
+                    end
+                end
+            elseif isMultiChannel and itemData.numChannels then
+                -- Use automatic routing based on channel counts
+                local routing = Generation.calculateTrackMultiplier(itemData.numChannels, container.channelMode)
+                targetTracks = {}
+                for _, trackIdx in ipairs(routing.targetTrackIndices) do
+                    if channelTracks[trackIdx] then
+                        table.insert(targetTracks, channelTracks[trackIdx])
+                    end
+                end
+                downmixToFirstChannel = (routing.downmixStrategy == "first")
+            elseif not isMultiChannel then
+                -- Stereo mode, use the single track
+                targetTracks = channelTracks
+            end
             
             -- Vérification pour les intervalles négatifs
             if interval < 0 then
@@ -744,87 +839,99 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 break
             end
 
-            -- Create and configure the new item on current track
-            local newItem = reaper.AddMediaItemToTrack(targetTrack)
-            local newTake = reaper.AddTakeToMediaItem(newItem)
+            -- Place the item on all target tracks determined by channel routing
+            for trackIdx, targetTrack in ipairs(targetTracks) do
+                -- Create and configure the new item on current track
+                local newItem = reaper.AddMediaItemToTrack(targetTrack)
+                local newTake = reaper.AddTakeToMediaItem(newItem)
 
-            -- Configure the item
-            local PCM_source = reaper.PCM_Source_CreateFromFile(itemData.filePath)
-            reaper.SetMediaItemTake_Source(newTake, PCM_source)
-            reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
+                -- Configure the item
+                local PCM_source = reaper.PCM_Source_CreateFromFile(itemData.filePath)
+                reaper.SetMediaItemTake_Source(newTake, PCM_source)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
 
-            -- Trim item so it never exceeds the selection end
-            local maxLen = globals.endTime - position
-            local actualLen = math.min(itemData.length, maxLen)
-
-            reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
-            reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
-            reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
-
-            -- Apply randomizations using effective parameters
-            if effectiveParams.randomizePitch then
-                local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
-                reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
-            else
-                reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
-            end
-
-            if effectiveParams.randomizeVolume then
-                local randomVolume = itemData.originalVolume * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
-                reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", randomVolume)
-            else
-                reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume)
-            end
-
-            -- Apply pan randomization only for stereo containers (channelMode = 0 or nil)
-            if effectiveParams.randomizePan and (not effectiveParams.channelMode or effectiveParams.channelMode == 0) then
-                local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
-                randomPan = math.max(-1, math.min(1, randomPan))
-                -- Use envelope instead of directly modifying the property
-                Items.createTakePanEnvelope(newTake, randomPan)
-            end
-
-            -- Apply fade in if enabled
-            if effectiveParams.fadeInEnabled then
-                local fadeInDuration = effectiveParams.fadeInDuration or 0.1
-                -- Convert percentage to seconds if using percentage mode
-                if effectiveParams.fadeInUsePercentage then
-                    fadeInDuration = (fadeInDuration / 100) * actualLen
+                -- Apply downmix if needed (keep only first channel)
+                if downmixToFirstChannel then
+                    -- Set item to use only first channel in mono mode
+                    reaper.SetMediaItemInfo_Value(newItem, "I_CHANMODE", 3) -- Mono (left)
                 end
-                -- Ensure fade doesn't exceed item length
-                fadeInDuration = math.min(fadeInDuration, actualLen)
 
-                reaper.SetMediaItemInfo_Value(newItem, "D_FADEINLEN", fadeInDuration)
-                reaper.SetMediaItemInfo_Value(newItem, "C_FADEINSHAPE", effectiveParams.fadeInShape or 0)
-                reaper.SetMediaItemInfo_Value(newItem, "D_FADEINDIR", effectiveParams.fadeInCurve or 0.0)
-            end
+                -- Trim item so it never exceeds the selection end
+                local maxLen = globals.endTime - position
+                local actualLen = math.min(itemData.length, maxLen)
 
-            -- Apply fade out if enabled
-            if effectiveParams.fadeOutEnabled then
-                local fadeOutDuration = effectiveParams.fadeOutDuration or 0.1
-                -- Convert percentage to seconds if using percentage mode
-                if effectiveParams.fadeOutUsePercentage then
-                    fadeOutDuration = (fadeOutDuration / 100) * actualLen
+                reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
+                reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
+                reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
+
+                -- Apply randomizations using effective parameters
+                if effectiveParams.randomizePitch then
+                    local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+                else
+                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
                 end
-                -- Ensure fade doesn't exceed item length
-                fadeOutDuration = math.min(fadeOutDuration, actualLen)
 
-                reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", fadeOutDuration)
-                reaper.SetMediaItemInfo_Value(newItem, "C_FADEOUTSHAPE", effectiveParams.fadeOutShape or 0)
-                reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
-            end
+                if effectiveParams.randomizeVolume then
+                    local randomVolume = itemData.originalVolume * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
+                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", randomVolume)
+                else
+                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume)
+                end
 
-            -- Create crossfade if items overlap (negative triggerRate)
-            if lastItemRef and position < lastItemEnd then
-                Utils.createCrossfade(lastItemRef, newItem, xfadeshape)
-            end
+                -- Apply pan randomization only for stereo containers (channelMode = 0 or nil)
+                if effectiveParams.randomizePan and (not effectiveParams.channelMode or effectiveParams.channelMode == 0) then
+                    local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+                    randomPan = math.max(-1, math.min(1, randomPan))
+                    -- Use envelope instead of directly modifying the property
+                    Items.createTakePanEnvelope(newTake, randomPan)
+                end
 
-            -- Update references for next iteration
-            lastItemEnd = position + actualLen
-            lastItemRef = newItem
+                -- Apply fade in if enabled
+                if effectiveParams.fadeInEnabled then
+                    local fadeInDuration = effectiveParams.fadeInDuration or 0.1
+                    -- Convert percentage to seconds if using percentage mode
+                    if effectiveParams.fadeInUsePercentage then
+                        fadeInDuration = (fadeInDuration / 100) * actualLen
+                    end
+                    -- Ensure fade doesn't exceed item length
+                    fadeInDuration = math.min(fadeInDuration, actualLen)
+
+                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEINLEN", fadeInDuration)
+                    reaper.SetMediaItemInfo_Value(newItem, "C_FADEINSHAPE", effectiveParams.fadeInShape or 0)
+                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEINDIR", effectiveParams.fadeInCurve or 0.0)
+                end
+
+                -- Apply fade out if enabled
+                if effectiveParams.fadeOutEnabled then
+                    local fadeOutDuration = effectiveParams.fadeOutDuration or 0.1
+                    -- Convert percentage to seconds if using percentage mode
+                    if effectiveParams.fadeOutUsePercentage then
+                        fadeOutDuration = (fadeOutDuration / 100) * actualLen
+                    end
+                    -- Ensure fade doesn't exceed item length
+                    fadeOutDuration = math.min(fadeOutDuration, actualLen)
+
+                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", fadeOutDuration)
+                    reaper.SetMediaItemInfo_Value(newItem, "C_FADEOUTSHAPE", effectiveParams.fadeOutShape or 0)
+                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
+                end
+
+                -- Create crossfade if items overlap (negative triggerRate)
+                -- Only for the first target track to avoid duplicate crossfades
+                if trackIdx == 1 and lastItemRef and position < lastItemEnd then
+                    Utils.createCrossfade(lastItemRef, newItem, xfadeshape)
+                end
+
+                -- Update references for next iteration (only from first track)
+                if trackIdx == 1 then
+                    lastItemEnd = position + actualLen
+                    lastItemRef = newItem
+                end
+            end  -- End of for loop for target tracks
+
             ::continue_loop::
-            end  -- End of while loop for current track
-        end  -- End of for loop for each channel track
+        end  -- End of while loop
 
         -- Message d'erreur pour les items skippés
         if skippedItems > 0 then
