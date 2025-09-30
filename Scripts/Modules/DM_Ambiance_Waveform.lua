@@ -1849,7 +1849,8 @@ function Waveform.startPlayback(filePath, startOffset, length, relativePosition)
 end
 
 -- Stop audio playback
-function Waveform.stopPlayback()
+-- @param resetToStart: if true, reset position to beginning instead of saving current position
+function Waveform.stopPlayback(resetToStart)
     if globals.audioPreview.isPlaying then
         -- Save current playback position before stopping, so we can resume from there
         local currentPosition = globals.audioPreview.position or 0
@@ -1881,9 +1882,17 @@ function Waveform.stopPlayback()
         globals.audioPreview.isPlaying = false
         -- KEEP currentFile so the marker stays visible for the correct file
         -- globals.audioPreview.currentFile = nil  -- DON'T clear this or the marker will disappear
-        globals.audioPreview.position = currentPosition
-        -- Save the current position as clickedPosition so we can resume from there with spacebar
-        globals.audioPreview.clickedPosition = relativePosition
+
+        if resetToStart then
+            -- Reset to beginning
+            globals.audioPreview.position = startOffset
+            globals.audioPreview.clickedPosition = 0
+        else
+            -- Save current position for resume
+            globals.audioPreview.position = currentPosition
+            globals.audioPreview.clickedPosition = relativePosition
+        end
+
         globals.audioPreview.playbackStartPosition = nil  -- Clear the start position
     end
 end
@@ -1900,7 +1909,7 @@ function Waveform.updatePlaybackPosition()
                 local endPosition = (globals.audioPreview.startOffset or 0) + globals.audioPreview.playbackLength
                 if pos >= endPosition then
                     -- Stop and reset to start
-                    Waveform.stopPlayback()
+                    Waveform.stopPlayback(true)  -- Reset to beginning
                     return
                 end
             end
@@ -1926,7 +1935,7 @@ function Waveform.updatePlaybackPosition()
                 end
 
                 if elapsed >= effectiveLength then
-                    Waveform.stopPlayback()
+                    Waveform.stopPlayback(true)  -- Reset to beginning
                     return
                 end
             end
@@ -1934,7 +1943,7 @@ function Waveform.updatePlaybackPosition()
 
         local isPlaying = reaper.CF_Preview_GetValue(globals.audioPreview.cfPreview, 'B_PLAY')
         if isPlaying and isPlaying == 0 then
-            Waveform.stopPlayback()
+            Waveform.stopPlayback(true)  -- Reset to beginning when preview stops externally
         end
     end
 end
