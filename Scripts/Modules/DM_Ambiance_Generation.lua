@@ -2533,15 +2533,7 @@ function Generation.stabilizeProjectConfiguration(lightMode)
         -- Capture project state before changes
         local startState = Generation.captureProjectState()
 
-        -- STEP 1: Validate and resolve conflicts FIRST (prevents overwrites)
-        if not lightMode or iteration > 1 then
-            -- reaper.ShowConsoleMsg("  → Validating and resolving conflicts...\n")
-            Generation.checkAndResolveConflicts()
-        else
-            -- reaper.ShowConsoleMsg("  → Skipping validation in light mode first iteration\n")
-        end
-
-        -- STEP 2: Recalculate channel requirements bottom-up AFTER fixes
+        -- Recalculate channel requirements bottom-up
         -- reaper.ShowConsoleMsg("  → Recalculating channel requirements...\n")
         Generation.recalculateChannelRequirements()
 
@@ -2566,6 +2558,10 @@ function Generation.stabilizeProjectConfiguration(lightMode)
     else
         -- reaper.ShowConsoleMsg(string.format("SUCCESS: Project stabilized after %d iterations\n", iteration))
     end
+
+    -- CRITICAL: Validate and resolve routing conflicts AFTER stabilization is complete
+    -- This ensures fixes are not overwritten by recalculation iterations
+    Generation.checkAndResolveConflicts()
 
     return not hasChanges  -- Return true if fully stabilized
 end
@@ -2695,12 +2691,18 @@ function Generation.checkAndResolveConflicts()
         return  -- Module not initialized
     end
 
+    -- CRITICAL: Clear cache before validation to ensure fresh scan after generation
+    globals.RoutingValidator.clearCache()
+
     -- Validate entire project routing using the new robust system
     local issues = globals.RoutingValidator.validateProjectRouting()
 
     -- Handle issues based on auto-fix setting
     if issues and #issues > 0 then
         reaper.ShowConsoleMsg(string.format("[DEBUG] Found %d routing issues after generation\n", #issues))
+        for i, issue in ipairs(issues) do
+            reaper.ShowConsoleMsg(string.format("[DEBUG]   Issue %d: %s - %s\n", i, issue.type, issue.description))
+        end
         reaper.ShowConsoleMsg(string.format("[DEBUG] autoFixRouting = %s\n", tostring(globals.autoFixRouting)))
 
         if globals.autoFixRouting then
@@ -2708,15 +2710,23 @@ function Generation.checkAndResolveConflicts()
             reaper.ShowConsoleMsg("[DEBUG] Auto-fix mode enabled, generating suggestions...\n")
             local suggestions = globals.RoutingValidator.generateFixSuggestions(issues, globals.RoutingValidator.getProjectTrackCache())
             reaper.ShowConsoleMsg(string.format("[DEBUG] Generated %d fix suggestions\n", suggestions and #suggestions or 0))
+            for i, suggestion in ipairs(suggestions or {}) do
+                reaper.ShowConsoleMsg(string.format("[DEBUG]   Suggestion %d: %s\n", i, suggestion.action))
+            end
 
             local success = globals.RoutingValidator.autoFixRouting(issues, suggestions)
             reaper.ShowConsoleMsg(string.format("[DEBUG] Auto-fix result: %s\n", tostring(success)))
 
             -- If auto-fix succeeded, re-validate to ensure everything is fixed
             if success then
+                reaper.ShowConsoleMsg("[DEBUG] Re-validating after auto-fix...\n")
+                globals.RoutingValidator.clearCache()  -- Force fresh scan
                 local remainingIssues = globals.RoutingValidator.validateProjectRouting()
                 if remainingIssues and #remainingIssues > 0 then
-                    reaper.ShowConsoleMsg(string.format("[DEBUG] %d issues remain after auto-fix\n", #remainingIssues))
+                    reaper.ShowConsoleMsg(string.format("[DEBUG] %d issues remain after auto-fix:\n", #remainingIssues))
+                    for i, issue in ipairs(remainingIssues) do
+                        reaper.ShowConsoleMsg(string.format("[DEBUG]   Remaining Issue %d: %s - %s\n", i, issue.type, issue.description))
+                    end
                     -- Some issues couldn't be auto-fixed, show modal
                     globals.RoutingValidator.showValidationModal(remainingIssues)
                 else

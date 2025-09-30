@@ -97,6 +97,12 @@ local SEVERITY = {
 -- ===================================================================
 
 -- Main validation function - validates entire project routing
+-- Clear the validation cache to force a fresh scan
+function RoutingValidator.clearCache()
+    projectTrackCache = nil
+    lastValidationTime = 0
+end
+
 function RoutingValidator.validateProjectRouting()
     -- CRITICAL: Skip validation if downgrade operation is in progress
     if globals.skipRoutingValidation then
@@ -1252,8 +1258,17 @@ function RoutingValidator.applySingleFix(suggestion, autoMode)
         if channels % 2 == 1 then
             channels = channels + 1
         end
-        reaper.SetMediaTrackInfo_Value(suggestion.track, "I_NCHAN", channels)
-        return true
+
+        local _, trackName = reaper.GetTrackName(suggestion.track)
+        local oldChannels = reaper.GetMediaTrackInfo_Value(suggestion.track, "I_NCHAN")
+        reaper.ShowConsoleMsg(string.format("[FIX] set_channel_count: Track '%s' from %d to %d channels\n", trackName or "unknown", oldChannels, channels))
+
+        local success = reaper.SetMediaTrackInfo_Value(suggestion.track, "I_NCHAN", channels)
+        reaper.UpdateArrange()
+
+        local newChannels = reaper.GetMediaTrackInfo_Value(suggestion.track, "I_NCHAN")
+        reaper.ShowConsoleMsg(string.format("[FIX] Verification: Track '%s' now has %d channels (success=%s)\n", trackName or "unknown", newChannels, tostring(success)))
+        return success
 
     elseif suggestion.action == "reroute_container" then
         return RoutingValidator.applyNewRouting(suggestion.track, suggestion.newRouting)
@@ -1264,8 +1279,17 @@ function RoutingValidator.applySingleFix(suggestion, autoMode)
         if channels % 2 == 1 then
             channels = channels + 1
         end
-        reaper.SetMediaTrackInfo_Value(suggestion.track, "I_NCHAN", channels)
-        return true
+
+        local _, trackName = reaper.GetTrackName(suggestion.track)
+        local oldChannels = reaper.GetMediaTrackInfo_Value(suggestion.track, "I_NCHAN")
+        reaper.ShowConsoleMsg(string.format("[FIX] increase_parent_channels: Track '%s' from %d to %d channels\n", trackName or "unknown", oldChannels, channels))
+
+        local success = reaper.SetMediaTrackInfo_Value(suggestion.track, "I_NCHAN", channels)
+        reaper.UpdateArrange()
+
+        local newChannels = reaper.GetMediaTrackInfo_Value(suggestion.track, "I_NCHAN")
+        reaper.ShowConsoleMsg(string.format("[FIX] Verification: Track '%s' now has %d channels (success=%s)\n", trackName or "unknown", newChannels, tostring(success)))
+        return success
 
     elseif suggestion.action == "apply_proper_downmix" then
         return RoutingValidator.applyNewRouting(suggestion.track, suggestion.newRouting)
