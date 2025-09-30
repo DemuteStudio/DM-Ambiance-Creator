@@ -996,6 +996,25 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         container.monoChannelSelection = 0
     end
 
+    -- Analyze items for preview (before UI rendering)
+    local itemsAnalysis = nil
+    local trackStructure = nil
+    if container.items and #container.items > 0 then
+        itemsAnalysis = globals.Generation.analyzeContainerItems(container)
+        trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
+    end
+
+    -- Layout: Left column (controls) + Right column (preview)
+    local leftColumnWidth = width * 0.55
+    local rightColumnWidth = width * 0.42
+
+    -- Begin left column (in a child window for independent scrolling if needed)
+    imgui.BeginGroup(globals.ctx)
+
+    -- Define label column width for alignment
+    local labelWidth = 120
+    local comboWidth = leftColumnWidth - labelWidth - 8
+
     -- Build channel mode items
     local channelModeItems = ""
     for i = 0, 3 do
@@ -1007,8 +1026,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
     -- Output Format
     imgui.Text(globals.ctx, "Output Format:")
-    imgui.SameLine(globals.ctx)
-    imgui.PushItemWidth(globals.ctx, width * 0.35)
+    imgui.SameLine(globals.ctx, labelWidth)
+    imgui.PushItemWidth(globals.ctx, comboWidth)
     local rv, newMode = imgui.Combo(globals.ctx, "##ChannelMode_" .. containerId, container.channelMode, channelModeItems)
     if rv and newMode ~= container.channelMode then
         container.channelMode = newMode
@@ -1024,9 +1043,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     if container.channelMode > 0 then
         local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
         if config and config.hasVariants then
-            imgui.SameLine(globals.ctx, 0, 8)
-            imgui.Text(globals.ctx, "Variant:")
-            imgui.SameLine(globals.ctx)
+            imgui.Text(globals.ctx, "Output Variant:")
+            imgui.SameLine(globals.ctx, labelWidth)
 
             local variantItems = ""
             for i = 0, 1 do
@@ -1039,7 +1057,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 container.channelVariant = 0
             end
 
-            imgui.PushItemWidth(globals.ctx, width * 0.35)
+            imgui.PushItemWidth(globals.ctx, comboWidth)
             local rvVar, newVariant = imgui.Combo(globals.ctx, "##ChannelVariant_" .. containerId, container.channelVariant, variantItems)
             if rvVar then
                 container.channelVariant = newVariant
@@ -1051,9 +1069,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     end
 
     -- Channel Selection Mode
-    imgui.Spacing(globals.ctx)
     imgui.Text(globals.ctx, "Channel Selection:")
-    imgui.SameLine(globals.ctx)
+    imgui.SameLine(globals.ctx, labelWidth)
 
     -- Build channel selection options
     local selectionModeItems = "Auto Optimize\0Stereo Pairs\0Mono Split\0"
@@ -1063,7 +1080,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     elseif container.channelSelectionMode == "mono" then selectionModeIndex = 2
     end
 
-    imgui.PushItemWidth(globals.ctx, width * 0.35)
+    imgui.PushItemWidth(globals.ctx, comboWidth)
     local selChanged, newSelMode = imgui.Combo(globals.ctx, "##ChannelSelection_" .. containerId, selectionModeIndex, selectionModeItems)
     if selChanged then
         if newSelMode == 0 then container.channelSelectionMode = "none"
@@ -1074,30 +1091,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     end
     imgui.PopItemWidth(globals.ctx)
 
-    -- Distribution (only for multichannel + mono items)
-    if container.channelMode > 0 then
-        imgui.Spacing(globals.ctx)
-        imgui.Text(globals.ctx, "Item Distribution:")
-        imgui.SameLine(globals.ctx)
-        globals.Utils.HelpMarker("How mono items are distributed across tracks")
-        imgui.SameLine(globals.ctx)
-
-        imgui.PushItemWidth(globals.ctx, width * 0.35)
-        local distChanged, newDist = imgui.Combo(globals.ctx, "##ItemDistribution_" .. containerId, container.itemDistributionMode, "Round-robin\0Random\0All tracks\0")
-        if distChanged then
-            container.itemDistributionMode = newDist
-            container.needsRegeneration = true
-        end
-        imgui.PopItemWidth(globals.ctx)
-    end
-
     -- === Stereo Pair Settings (visible if channelSelectionMode == "stereo") ===
     if container.channelSelectionMode == "stereo" then
-        imgui.Spacing(globals.ctx)
-        imgui.Text(globals.ctx, "Stereo Pair:")
-        imgui.SameLine(globals.ctx)
-        globals.Utils.HelpMarker("Select which stereo pair to use (Ch1-2, Ch3-4, etc.)")
-
         -- Build stereo pair options based on item channels
         local maxItemChannels = 2
         if container.items and #container.items > 0 then
@@ -1110,6 +1105,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
         -- Only show if items have enough channels for stereo pairs
         if maxItemChannels >= 2 and maxItemChannels % 2 == 0 then
+            imgui.Text(globals.ctx, "Stereo Pair:")
+            imgui.SameLine(globals.ctx, labelWidth)
+
             local numPairs = maxItemChannels / 2
             local stereoPairOptions = ""
             for i = 0, numPairs - 1 do
@@ -1118,7 +1116,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 stereoPairOptions = stereoPairOptions .. "Ch " .. ch1 .. "-" .. ch2 .. "\0"
             end
 
-            imgui.PushItemWidth(globals.ctx, width * 0.35)
+            imgui.PushItemWidth(globals.ctx, comboWidth)
             local pairChanged, newPair = imgui.Combo(globals.ctx, "##StereoPair_" .. containerId, container.stereoPairSelection, stereoPairOptions)
             if pairChanged then
                 container.stereoPairSelection = newPair
@@ -1127,17 +1125,12 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.PopItemWidth(globals.ctx)
         else
             -- Items don't support stereo pairs (odd channels)
-            imgui.TextColored(globals.ctx, 0xFF4444FF, "⚠ Stereo pairs not available (odd channel count)")
+            imgui.TextColored(globals.ctx, 0xFF4444FF, "⚠ Stereo pairs not available")
         end
     end
 
     -- === Mono Channel Settings (visible if channelSelectionMode == "mono") ===
     if container.channelSelectionMode == "mono" then
-        imgui.Spacing(globals.ctx)
-        imgui.Text(globals.ctx, "Mono Channel:")
-        imgui.SameLine(globals.ctx)
-        globals.Utils.HelpMarker("Select which channel to extract for mono split")
-
         -- Find max item channels
         local maxItemChannels = 2
         if container.items and #container.items > 0 then
@@ -1147,6 +1140,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 end
             end
         end
+
+        imgui.Text(globals.ctx, "Mono Channel:")
+        imgui.SameLine(globals.ctx, labelWidth)
 
         -- Build options: Channel 1, Channel 2, ..., Random
         local monoChannelOptions = ""
@@ -1160,7 +1156,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             container.monoChannelSelection = maxItemChannels  -- Random index
         end
 
-        imgui.PushItemWidth(globals.ctx, width * 0.35)
+        imgui.PushItemWidth(globals.ctx, comboWidth)
         local monoChChanged, newMonoCh = imgui.Combo(globals.ctx, "##MonoChannel_" .. containerId, container.monoChannelSelection, monoChannelOptions)
         if monoChChanged then
             container.monoChannelSelection = newMonoCh
@@ -1169,72 +1165,77 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         imgui.PopItemWidth(globals.ctx)
     end
 
-    -- === Track Structure Preview ===
-    if container.items and #container.items > 0 then
-        imgui.Spacing(globals.ctx)
-        imgui.Separator(globals.ctx)
+    -- Distribution (only for multichannel + mono items)
+    if container.channelMode > 0 then
+        imgui.Text(globals.ctx, "Item Distribution:")
+        imgui.SameLine(globals.ctx, labelWidth)
 
-        -- Analyze and determine structure
-        local itemsAnalysis = globals.Generation.analyzeContainerItems(container)
-        local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
+        imgui.PushItemWidth(globals.ctx, comboWidth)
+        local distChanged, newDist = imgui.Combo(globals.ctx, "##ItemDistribution_" .. containerId, container.itemDistributionMode, "Round-robin\0Random\0All tracks\0")
+        if distChanged then
+            container.itemDistributionMode = newDist
+            container.needsRegeneration = true
+        end
+        imgui.PopItemWidth(globals.ctx)
+    end
+
+    -- Source Format dropdown (if needed for 5.0/7.0 items)
+    if trackStructure and trackStructure.needsSourceVariant then
+        imgui.Text(globals.ctx, "Source Format:")
+        imgui.SameLine(globals.ctx, labelWidth)
+
+        local sourceFormatItems = "Unknown\0ITU/Dolby (L R C LS RS)\0SMPTE (L C R LS RS)\0"
+        local currentIndex = 0
+        if container.sourceChannelVariant == nil then
+            currentIndex = 0
+        elseif container.sourceChannelVariant == 0 then
+            currentIndex = 1
+        elseif container.sourceChannelVariant == 1 then
+            currentIndex = 2
+        end
+
+        imgui.PushItemWidth(globals.ctx, comboWidth)
+        local sfChanged, newIndex = imgui.Combo(globals.ctx, "##SourceFormat_" .. containerId, currentIndex, sourceFormatItems)
+        imgui.PopItemWidth(globals.ctx)
+
+        if sfChanged then
+            if newIndex == 0 then
+                container.sourceChannelVariant = nil
+            elseif newIndex == 1 then
+                container.sourceChannelVariant = 0
+            elseif newIndex == 2 then
+                container.sourceChannelVariant = 1
+            end
+            container.needsRegeneration = true
+        end
+    end
+
+    imgui.EndGroup(globals.ctx)
+
+    -- === Track Structure Preview (Right Column) ===
+    if trackStructure then
+        imgui.SameLine(globals.ctx, 0, width * 0.03)
+        imgui.BeginGroup(globals.ctx)
+
+        imgui.Dummy(globals.ctx, 0, 4)
+        imgui.Indent(globals.ctx, 8)
 
         -- Display preview header
-        imgui.TextColored(globals.ctx, 0xFFAAFFFF, "Track Structure Preview:")
+        imgui.TextColored(globals.ctx, 0xFFAAFFFF, "Track Structure Preview")
+        imgui.Separator(globals.ctx)
+        imgui.Dummy(globals.ctx, 0, 2)
 
         -- Show structure info
         if trackStructure.numTracks == 1 then
             local channelText = trackStructure.trackChannels == 1 and "mono" or (trackStructure.trackChannels .. "ch")
-            imgui.Text(globals.ctx, string.format("  → Will create: 1 track (%s)", channelText))
+            imgui.Text(globals.ctx, string.format("→ 1 track (%s)", channelText))
         else
             local trackTypeText = trackStructure.trackType == "stereo" and "stereo" or "mono"
-            imgui.Text(globals.ctx, string.format("  → Will create: %d %s tracks", trackStructure.numTracks, trackTypeText))
+            imgui.Text(globals.ctx, string.format("→ %d %s tracks", trackStructure.numTracks, trackTypeText))
 
             -- Show track labels if available
             if trackStructure.trackLabels then
-                local labelsText = "  → Labels: " .. table.concat(trackStructure.trackLabels, ", ")
-                imgui.Text(globals.ctx, labelsText)
-            end
-        end
-
-        -- Show strategy
-        imgui.TextColored(globals.ctx, 0xFFCCCCCC, "  → Strategy: " .. (trackStructure.strategy or "default"))
-
-        -- Show warning if any
-        if trackStructure.warning then
-            imgui.Spacing(globals.ctx)
-            imgui.PushTextWrapPos(globals.ctx, imgui.GetCursorPosX(globals.ctx) + width - 20)
-            imgui.TextColored(globals.ctx, 0xFFAAAAFF, "⚠ " .. trackStructure.warning)
-            imgui.PopTextWrapPos(globals.ctx)
-        end
-
-        -- Show Source Format dropdown if needed (for 5.0/7.0 items without known center position)
-        if trackStructure.needsSourceVariant then
-            imgui.Spacing(globals.ctx)
-            imgui.Text(globals.ctx, "Source Format:")
-
-            local sourceFormatItems = "Unknown (use Ch1 only)\0ITU/Dolby (C at ch 3)\0SMPTE (C at ch 2)\0"
-            local currentIndex = 0
-            if container.sourceChannelVariant == nil then
-                currentIndex = 0
-            elseif container.sourceChannelVariant == 0 then
-                currentIndex = 1
-            elseif container.sourceChannelVariant == 1 then
-                currentIndex = 2
-            end
-
-            imgui.PushItemWidth(globals.ctx, width * 0.5)
-            local rv, newIndex = imgui.Combo(globals.ctx, "##SourceFormat_" .. containerId, currentIndex, sourceFormatItems)
-            imgui.PopItemWidth(globals.ctx)
-
-            if rv then
-                if newIndex == 0 then
-                    container.sourceChannelVariant = nil
-                elseif newIndex == 1 then
-                    container.sourceChannelVariant = 0
-                elseif newIndex == 2 then
-                    container.sourceChannelVariant = 1
-                end
-                container.needsRegeneration = true
+                imgui.TextColored(globals.ctx, 0xFFCCCCCC, "  " .. table.concat(trackStructure.trackLabels, ", "))
             end
         end
 
@@ -1242,11 +1243,27 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         if trackStructure.useDistribution then
             local distModeText = {"Round-robin", "Random", "All tracks"}
             local distMode = distModeText[container.itemDistributionMode + 1] or "Round-robin"
-            imgui.TextColored(globals.ctx, 0xFFCCCCCC, "  → Distribution: " .. distMode)
+            imgui.TextColored(globals.ctx, 0xFFCCCCCC, "→ " .. distMode)
         end
 
-        imgui.Separator(globals.ctx)
+        imgui.Dummy(globals.ctx, 0, 2)
+        imgui.TextColored(globals.ctx, 0xFF888888, trackStructure.strategy or "default")
+
+        -- Show warning if any
+        if trackStructure.warning then
+            imgui.Dummy(globals.ctx, 0, 4)
+            imgui.PushTextWrapPos(globals.ctx, imgui.GetCursorPosX(globals.ctx) + rightColumnWidth - 16)
+            imgui.TextColored(globals.ctx, 0xFFAAAAFF, "⚠ " .. trackStructure.warning)
+            imgui.PopTextWrapPos(globals.ctx)
+        end
+
+        imgui.Unindent(globals.ctx, 8)
+        imgui.Dummy(globals.ctx, 0, 4)
+
+        imgui.EndGroup(globals.ctx)
     end
+
+    imgui.Separator(globals.ctx)
 
     -- Get the active configuration (with variant if applicable)
     if container.channelMode > 0 then
