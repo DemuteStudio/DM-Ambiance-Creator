@@ -156,7 +156,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local containerName = container.name
     imgui.PushItemWidth(globals.ctx, nameWidth)
     local rv, newContainerName = imgui.InputText(globals.ctx, "Name##detail_" .. containerId, containerName)
-    if rv then container.name = newContainerName end
+    if rv and newContainerName ~= containerName then
+        globals.History.captureState("Rename container")
+        container.name = newContainerName
+    end
     imgui.PopItemWidth(globals.ctx)
 
     -- Container preset controls on same line
@@ -306,6 +309,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             if itemToDelete then
                 -- Get the item data before deletion for cache clearing
                 local itemToDeleteData = globals.groups[groupIndex].containers[containerIndex].items[itemToDelete]
+
+                -- Capture state before deletion
+                globals.History.captureState("Delete item from container")
 
                 -- Directly modify the global container reference to ensure persistence
                 table.remove(globals.groups[groupIndex].containers[containerIndex].items, itemToDelete)
@@ -1399,7 +1405,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local rv, newOverrideParent = imgui.Checkbox(globals.ctx, "Override Parent Settings##" .. containerId, overrideParent)
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Enable 'Override Parent Settings' to customize parameters for this container instead of inheriting from the group.")
-    if rv then
+    if rv and newOverrideParent ~= overrideParent then
+        globals.History.captureState("Toggle override parent settings")
         container.overrideParent = newOverrideParent
         container.needsRegeneration = true
     end
@@ -1484,6 +1491,9 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
             -- Process dropped files
             if #files > 0 then
                 local items = globals.Items.processDroppedFiles(files)
+                if #items > 0 then
+                    globals.History.captureState("Import items to container")
+                end
                 for _, item in ipairs(items) do
                     table.insert(container.items, item)
 
@@ -1514,6 +1524,7 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
             -- This handles drops from REAPER timeline
             local timelineItems = globals.Items.getSelectedItems()
             if #timelineItems > 0 then
+                globals.History.captureState("Import items from timeline")
                 for _, item in ipairs(timelineItems) do
                     table.insert(container.items, item)
 
@@ -1548,6 +1559,7 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
     if isClicked and not isDragActive then
         local timelineItems = globals.Items.getSelectedItems()
         if #timelineItems > 0 then
+            globals.History.captureState("Import items from Media Explorer")
             for _, item in ipairs(timelineItems) do
                 table.insert(container.items, item)
                 -- Generate peaks for the imported item if needed

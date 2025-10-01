@@ -602,6 +602,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
     -- Add group button
     if imgui.Button(globals.ctx, "Add Group") then
+        globals.History.captureState("Add group")
         table.insert(globals.groups, globals.Structures.createGroup())
         local newGroupIndex = #globals.groups
         globals.selectedGroupIndex = newGroupIndex
@@ -750,6 +751,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
             buttons = {
                 {icon = "+", id = groupId, tooltip = "Add container", onClick = function()
+                    globals.History.captureState("Add container")
                     table.insert(group.containers, globals.Structures.createContainer())
                     clearContainerSelections()
                     local newContainerIndex = #group.containers
@@ -950,6 +952,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
             -- Delete the marked container if any
             if containerToDelete then
+                globals.History.captureState("Delete container")
                 globals.selectedContainers[i .. "_" .. containerToDelete] = nil
                 table.remove(group.containers, containerToDelete)
                 if globals.selectedGroupIndex == i and globals.selectedContainerIndex == containerToDelete then
@@ -970,6 +973,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
     -- Delete the marked group if any
     if groupToDelete then
+        globals.History.captureState("Delete group")
         -- Remove any selected containers from this group
         for key in pairs(globals.selectedContainers) do
             local t, c = key:match("(%d+)_(%d+)")
@@ -1000,12 +1004,14 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
     
     -- Process any pending moves after rendering is complete
     if globals.pendingGroupMove then
+        globals.History.captureState("Reorder group")
         UI_Groups.reorderGroups(globals.pendingGroupMove.sourceIndex, globals.pendingGroupMove.targetIndex)
         globals.pendingGroupMove = nil
         globals.draggedItem = nil -- Clear drag state after successful move
     end
-    
+
     if globals.pendingContainerMultiMove then
+        globals.History.captureState("Move multiple containers")
         UI_Groups.moveMultipleContainersToGroup(
             globals.pendingContainerMultiMove.containers,
             globals.pendingContainerMultiMove.targetGroupIndex,
@@ -1016,6 +1022,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
     end
 
     if globals.pendingContainerMove then
+        globals.History.captureState("Move container")
         UI_Groups.moveContainerToGroup(
             globals.pendingContainerMove.sourceGroupIndex,
             globals.pendingContainerMove.sourceContainerIndex,
@@ -1027,6 +1034,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
     end
 
     if globals.pendingContainerReorder then
+        globals.History.captureState("Reorder container")
         UI_Groups.reorderContainers(
             globals.pendingContainerReorder.groupIndex,
             globals.pendingContainerReorder.sourceIndex,

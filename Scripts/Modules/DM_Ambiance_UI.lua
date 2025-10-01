@@ -1083,8 +1083,26 @@ function UI.ShowMainWindow(open)
 
     -- CRITICAL: Only call End() if Begin() returned true (visible)
     if visible then
+        -- Handle Undo/Redo keyboard shortcuts
+        local ctrlPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Ctrl ~= 0)
+        local shiftPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Shift ~= 0)
+
+        -- Ctrl+Z: Undo
+        if ctrlPressed and not shiftPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Z) then
+            globals.History.undo()
+        end
+
+        -- Ctrl+Y or Ctrl+Shift+Z: Redo
+        if (ctrlPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Y)) or
+           (ctrlPressed and shiftPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Z)) then
+            globals.History.redo()
+        end
+
         -- Handle keyboard input for Delete key
         if globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Delete) then
+            -- Capture state before deletion
+            globals.History.captureState("Delete items")
+
             -- Check if we're in multi-selection mode
             if globals.inMultiSelectMode and next(globals.selectedContainers) then
                 -- Build list of containers to delete (sorted in reverse to maintain indices)

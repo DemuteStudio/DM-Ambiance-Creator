@@ -88,6 +88,30 @@ function UI_Preset.drawPresetControls()
         -- Always show modal, even if no issues (issues can be empty array)
         globals.RoutingValidator.showValidationModal(issues or {})
     end
+
+    -- Undo button
+    imgui.SameLine(globals.ctx)
+    local canUndo = globals.History.canUndo()
+    imgui.BeginDisabled(globals.ctx, not canUndo)
+    if imgui.Button(globals.ctx, "Undo##UndoBtn") then
+        globals.History.undo()
+    end
+    if imgui.IsItemHovered(globals.ctx, imgui.HoveredFlags_AllowWhenDisabled) then
+        imgui.SetTooltip(globals.ctx, "Undo last action (Ctrl+Z)")
+    end
+    imgui.EndDisabled(globals.ctx)
+
+    -- Redo button
+    imgui.SameLine(globals.ctx)
+    local canRedo = globals.History.canRedo()
+    imgui.BeginDisabled(globals.ctx, not canRedo)
+    if imgui.Button(globals.ctx, "Redo##RedoBtn") then
+        globals.History.redo()
+    end
+    if imgui.IsItemHovered(globals.ctx, imgui.HoveredFlags_AllowWhenDisabled) then
+        imgui.SetTooltip(globals.ctx, "Redo last undone action (Ctrl+Y or Ctrl+Shift+Z)")
+    end
+    imgui.EndDisabled(globals.ctx)
     
     -- Handle the save preset popup modal window
     UI_Preset.handleSavePresetPopup(presetList)

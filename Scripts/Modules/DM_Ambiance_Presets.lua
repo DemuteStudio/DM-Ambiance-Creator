@@ -156,7 +156,7 @@ function Presets.loadPreset(name)
   if name == "" then return false end
 
   globals.selectedContainers = {}
-  
+
   local path = Presets.getPresetsPath("Global") .. name .. ".lua"
   local success, presetData = pcall(dofile, path)
 
@@ -170,7 +170,7 @@ function Presets.loadPreset(name)
       if group.trackVolume then
         globals.Utils.setGroupTrackVolume(groupIndex, group.trackVolume)
       end
-      
+
       -- Apply container track volumes if they exist
       if group.containers then
         for containerIndex, container in ipairs(group.containers) do
@@ -180,7 +180,13 @@ function Presets.loadPreset(name)
         end
       end
     end
-    
+
+    -- Recapture state after loading preset (new starting point for undo)
+    if globals.History then
+      globals.History.clear()
+      globals.History.captureState("Loaded preset: " .. name)
+    end
+
     return true
   else
     reaper.ShowConsoleMsg("Error loading preset: " .. tostring(presetData) .. "\n")
@@ -244,6 +250,11 @@ end
 -- Load a group preset from disk and assign it to the specified group index
 function Presets.loadGroupPreset(name, groupIndex)
   if name == "" then return false end
+
+  -- Capture state before loading group preset
+  if globals.History then
+    globals.History.captureState("Load group preset: " .. name)
+  end
 
   local path = Presets.getPresetsPath("Groups") .. name .. ".lua"
   local success, presetData = pcall(dofile, path)
@@ -319,6 +330,11 @@ end
 -- Load a container preset from disk and apply it to the specified container, preserving existing items
 function Presets.loadContainerPreset(name, groupIndex, containerIndex)
   if name == "" then return false end
+
+  -- Capture state before loading container preset
+  if globals.History then
+    globals.History.captureState("Load container preset: " .. name)
+  end
 
   -- Remove any reference to track name (if any)
   local path = Presets.getPresetsPath("Containers") .. name .. ".lua"

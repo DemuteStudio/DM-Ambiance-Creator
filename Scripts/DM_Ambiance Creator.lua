@@ -37,6 +37,7 @@ local UI = dofile(script_path .. "Modules/DM_Ambiance_UI.lua")
 local Settings = dofile(script_path .. "Modules/DM_AmbianceCreator_Settings.lua")
 local RoutingValidator = dofile(script_path .. "Modules/DM_Ambiance_RoutingValidator.lua")
 local Waveform = dofile(script_path .. "Modules/DM_Ambiance_Waveform.lua")
+local History = dofile(script_path .. "Modules/DM_Ambiance_History.lua")
 
 -- Global state shared across modules and UI
 local globals = {
@@ -130,6 +131,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     _G.Settings = Settings
     _G.RoutingValidator = RoutingValidator
     _G.Waveform = Waveform
+    _G.History = History
     _G.imgui = imgui
 
     -- Seed the random number generator for consistent randomization
@@ -151,6 +153,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.Settings = Settings
     globals.RoutingValidator = RoutingValidator
     globals.Waveform = Waveform
+    globals.History = History
 
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
@@ -162,9 +165,13 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     Settings.initModule(globals)
     RoutingValidator.initModule(globals)
     Waveform.initModule(globals)
+    History.initModule(globals)
     
     -- Initialize backward compatibility for container volumes
     Utils.initializeContainerVolumes()
+
+    -- Capture initial state for undo/redo system
+    History.captureState("Initial state")
 
     -- Start the main UI loop
     reaper.defer(loop)

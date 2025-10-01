@@ -31,7 +31,10 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     local groupName = group.name
     imgui.PushItemWidth(globals.ctx, width * 0.5)
     local rv, newGroupName = imgui.InputText(globals.ctx, "Name##detail_" .. groupId, groupName)
-    if rv then group.name = newGroupName end
+    if rv and newGroupName ~= groupName then
+        globals.History.captureState("Rename group")
+        group.name = newGroupName
+    end
     
     -- Group track volume slider
     imgui.Text(globals.ctx, "Track Volume")
