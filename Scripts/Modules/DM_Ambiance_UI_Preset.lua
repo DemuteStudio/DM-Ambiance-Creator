@@ -33,6 +33,7 @@ function UI_Preset.drawPresetControls()
     for _, name in ipairs(presetList) do
         presetItems = presetItems .. name .. "\0"
     end
+    presetItems = presetItems .. "\0" -- ImGui requires double null termination
     
     -- Set the width of the combo box to 300 pixels
     imgui.PushItemWidth(globals.ctx, 300)
