@@ -422,8 +422,8 @@ end
 
 -- Function to reorder groups
 function UI_Groups.reorderGroups(sourceIndex, targetIndex)
-    if sourceIndex == targetIndex or sourceIndex < 1 or targetIndex < 1 or 
-       sourceIndex > #globals.groups or targetIndex > #globals.groups then
+    if sourceIndex == targetIndex or sourceIndex < 1 or targetIndex < 1 or
+       sourceIndex > #globals.groups or targetIndex > #globals.groups + 1 then
         return
     end
     
