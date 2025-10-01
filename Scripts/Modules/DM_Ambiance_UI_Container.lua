@@ -51,7 +51,7 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, wi
 
     -- Preset dropdown control
     imgui.PushItemWidth(globals.ctx, dropdownWidth)
-    local rv, newSelectedContainerIndex = imgui.Combo(
+    local rv, newSelectedContainerIndex = globals.UndoWrappers.Combo(
         globals.ctx,
         "##ContainerPresetSelector" .. containerId,
         globals.selectedContainerPresetIndex[presetKey],
@@ -153,11 +153,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local buttonSpacing = 4
 
     -- Editable container name input field
-    local containerName = container.name
     imgui.PushItemWidth(globals.ctx, nameWidth)
-    local rv, newContainerName = imgui.InputText(globals.ctx, "Name##detail_" .. containerId, containerName)
-    if rv and newContainerName ~= containerName then
-        globals.History.captureState("Rename container")
+    local rv, newContainerName = globals.UndoWrappers.InputText(globals.ctx, "Name##detail_" .. containerId, container.name)
+    if rv then
         container.name = newContainerName
     end
     imgui.PopItemWidth(globals.ctx)
@@ -474,7 +472,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.SameLine(globals.ctx)
             imgui.PushItemWidth(globals.ctx, 120)
             local modeNames = "Auto Detect\0Split Count\0Split Time\0"
-            local modeChanged, newMode = imgui.Combo(globals.ctx, "##AreaMode" .. containerId, selectedItem.areaCreationMode - 1, modeNames)
+            local modeChanged, newMode = globals.UndoWrappers.Combo(globals.ctx, "##AreaMode" .. containerId, selectedItem.areaCreationMode - 1, modeNames)
             if modeChanged then
                 selectedItem.areaCreationMode = newMode + 1
             end
@@ -489,21 +487,21 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             if selectedItem.areaCreationMode == 1 then -- Auto Detect mode
                 -- First line: Thresholds and Min Length
                 imgui.PushItemWidth(globals.ctx, 80)
-                local openChanged, newOpenThreshold = imgui.SliderDouble(globals.ctx, "Open##" .. containerId, selectedItem.gateOpenThreshold, -60, 0, "%.1f dB")
+                local openChanged, newOpenThreshold = globals.UndoWrappers.SliderDouble(globals.ctx, "Open##" .. containerId, selectedItem.gateOpenThreshold, -60, 0, "%.1f dB")
                 if openChanged then
                     selectedItem.gateOpenThreshold = newOpenThreshold
                     itemChanged = true
                 end
 
                 imgui.SameLine(globals.ctx)
-                local closeChanged, newCloseThreshold = imgui.SliderDouble(globals.ctx, "Close##" .. containerId, selectedItem.gateCloseThreshold, -60, 0, "%.1f dB")
+                local closeChanged, newCloseThreshold = globals.UndoWrappers.SliderDouble(globals.ctx, "Close##" .. containerId, selectedItem.gateCloseThreshold, -60, 0, "%.1f dB")
                 if closeChanged then
                     selectedItem.gateCloseThreshold = newCloseThreshold
                     itemChanged = true
                 end
 
                 imgui.SameLine(globals.ctx)
-                local minLenChanged, newMinLength = imgui.SliderDouble(globals.ctx, "Min Length##" .. containerId, selectedItem.gateMinLength, 0, 5000, "%.0f ms")
+                local minLenChanged, newMinLength = globals.UndoWrappers.SliderDouble(globals.ctx, "Min Length##" .. containerId, selectedItem.gateMinLength, 0, 5000, "%.0f ms")
                 if minLenChanged then
                     selectedItem.gateMinLength = newMinLength
                     itemChanged = true
@@ -514,14 +512,14 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 imgui.Text(globals.ctx, "Offset:")
                 imgui.SameLine(globals.ctx)
                 imgui.PushItemWidth(globals.ctx, 60)
-                local startOffsetChanged, newStartOffset = imgui.InputDouble(globals.ctx, "Start##" .. containerId, selectedItem.gateStartOffset, 0, 0, "%.0f ms")
+                local startOffsetChanged, newStartOffset = globals.UndoWrappers.InputDouble(globals.ctx, "Start##" .. containerId, selectedItem.gateStartOffset, 0, 0, "%.0f ms")
                 if startOffsetChanged then
                     selectedItem.gateStartOffset = newStartOffset
                     itemChanged = true
                 end
 
                 imgui.SameLine(globals.ctx)
-                local endOffsetChanged, newEndOffset = imgui.InputDouble(globals.ctx, "End##" .. containerId, selectedItem.gateEndOffset, 0, 0, "%.0f ms")
+                local endOffsetChanged, newEndOffset = globals.UndoWrappers.InputDouble(globals.ctx, "End##" .. containerId, selectedItem.gateEndOffset, 0, 0, "%.0f ms")
                 if endOffsetChanged then
                     selectedItem.gateEndOffset = newEndOffset
                     itemChanged = true
@@ -532,7 +530,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 imgui.Text(globals.ctx, "Number of areas:")
                 imgui.SameLine(globals.ctx)
                 imgui.PushItemWidth(globals.ctx, 80)
-                local countChanged, newCount = imgui.InputInt(globals.ctx, "##SplitCount" .. containerId, selectedItem.splitCount)
+                local countChanged, newCount = globals.UndoWrappers.InputInt(globals.ctx, "##SplitCount" .. containerId, selectedItem.splitCount)
                 if countChanged then
                     selectedItem.splitCount = math.max(1, math.min(100, newCount)) -- Clamp between 1 and 100
                     itemChanged = true
@@ -543,7 +541,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 imgui.Text(globals.ctx, "Area duration:")
                 imgui.SameLine(globals.ctx)
                 imgui.PushItemWidth(globals.ctx, 80)
-                local durationChanged, newDuration = imgui.InputDouble(globals.ctx, "##SplitDuration" .. containerId, selectedItem.splitDuration, 0.1, 1.0, "%.1f s")
+                local durationChanged, newDuration = globals.UndoWrappers.InputDouble(globals.ctx, "##SplitDuration" .. containerId, selectedItem.splitDuration, 0.1, 1.0, "%.1f s")
                 if durationChanged then
                     selectedItem.splitDuration = math.max(0.1, newDuration) -- Minimum 0.1 seconds
                     itemChanged = true
@@ -825,7 +823,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 -- Volume control on same line as stop button
                 imgui.SameLine(globals.ctx)
                 imgui.PushItemWidth(globals.ctx, 100)
-                local rv, newVolume = imgui.SliderDouble(
+                local rv, newVolume = globals.UndoWrappers.SliderDouble(
                     globals.ctx,
                     "##PreviewVolume_" .. containerId,
                     globals.audioPreview.volume,
@@ -875,7 +873,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     -- Volume control on same line as play button
                     imgui.SameLine(globals.ctx)
                     imgui.PushItemWidth(globals.ctx, 100)
-                    local rv, newVolume = imgui.SliderDouble(
+                    local rv, newVolume = globals.UndoWrappers.SliderDouble(
                         globals.ctx,
                         "##PreviewVolume_" .. containerId,
                         globals.audioPreview.volume,
@@ -950,7 +948,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local sliderWidth = width - inputFieldWidth - 8  -- Remaining space minus spacing
 
     imgui.PushItemWidth(globals.ctx, sliderWidth)
-    local rv, newNormalizedVolume = imgui.SliderDouble(
+    local rv, newNormalizedVolume = globals.UndoWrappers.SliderDouble(
         globals.ctx,
         "##TrackVolume_" .. containerId,
         normalizedVolume,
@@ -970,7 +968,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     imgui.SameLine(globals.ctx, 0, 8)
     imgui.PushItemWidth(globals.ctx, inputFieldWidth)
     local displayValue = container.trackVolume <= -144 and -144 or container.trackVolume
-    local rv2, manualDB = imgui.InputDouble(
+    local rv2, manualDB = globals.UndoWrappers.InputDouble(
         globals.ctx,
         "##TrackVolumeInput_" .. containerId,
         displayValue,
@@ -1054,7 +1052,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     imgui.Text(globals.ctx, "Output Format:")
     imgui.SameLine(globals.ctx, labelWidth)
     imgui.PushItemWidth(globals.ctx, comboWidth)
-    local rv, newMode = imgui.Combo(globals.ctx, "##ChannelMode_" .. containerId, container.channelMode, channelModeItems)
+    local rv, newMode = globals.UndoWrappers.Combo(globals.ctx, "##ChannelMode_" .. containerId, container.channelMode, channelModeItems)
     if imgui.IsItemHovered(globals.ctx) then
         imgui.SetTooltip(globals.ctx, "Output channel configuration for this container.\nDetermines how many channels the final output will have.\n\nStereo: 2 channels (L, R)\n4.0: 4 channels (L, R, LS, RS)\n5.0: 5 channels (L, R, C, LS, RS)\n7.0: 7 channels (L, R, C, LS, RS, LB, RB)")
     end
@@ -1087,7 +1085,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             end
 
             imgui.PushItemWidth(globals.ctx, comboWidth)
-            local rvVar, newVariant = imgui.Combo(globals.ctx, "##ChannelVariant_" .. containerId, container.channelVariant, variantItems)
+            local rvVar, newVariant = globals.UndoWrappers.Combo(globals.ctx, "##ChannelVariant_" .. containerId, container.channelVariant, variantItems)
             if imgui.IsItemHovered(globals.ctx) then
                 imgui.SetTooltip(globals.ctx, "Channel order variant for OUTPUT tracks.\n\nITU/Dolby: L R C LS RS (Center at channel 3)\nSMPTE: L C R LS RS (Center at channel 2)\n\nThis defines where the center channel is positioned\nin the output track structure.")
             end
@@ -1113,7 +1111,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     end
 
     imgui.PushItemWidth(globals.ctx, comboWidth)
-    local selChanged, newSelMode = imgui.Combo(globals.ctx, "##ChannelSelection_" .. containerId, selectionModeIndex, selectionModeItems)
+    local selChanged, newSelMode = globals.UndoWrappers.Combo(globals.ctx, "##ChannelSelection_" .. containerId, selectionModeIndex, selectionModeItems)
     if imgui.IsItemHovered(globals.ctx) then
         imgui.SetTooltip(globals.ctx, "How to handle items with different channel counts.\n\nAuto Optimize: Automatically choose the best routing\nbased on item channels vs output format.\n\nStereo Pairs: Extract a specific stereo pair from\nmultichannel items (e.g., Ch 1-2, Ch 3-4).\n\nMono Split: Extract a single channel from items\nand distribute across output tracks.")
     end
@@ -1152,7 +1150,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             end
 
             imgui.PushItemWidth(globals.ctx, comboWidth)
-            local pairChanged, newPair = imgui.Combo(globals.ctx, "##StereoPair_" .. containerId, container.stereoPairSelection, stereoPairOptions)
+            local pairChanged, newPair = globals.UndoWrappers.Combo(globals.ctx, "##StereoPair_" .. containerId, container.stereoPairSelection, stereoPairOptions)
             if imgui.IsItemHovered(globals.ctx) then
                 imgui.SetTooltip(globals.ctx, "Select which stereo pair to extract from multichannel items.\n\nCh 1-2: Front L/R (most common)\nCh 3-4: Rear LS/RS or Center/LFE\nCh 5-6: Additional channels\n\nOnly the selected pair will be used.")
             end
@@ -1195,7 +1193,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         end
 
         imgui.PushItemWidth(globals.ctx, comboWidth)
-        local monoChChanged, newMonoCh = imgui.Combo(globals.ctx, "##MonoChannel_" .. containerId, container.monoChannelSelection, monoChannelOptions)
+        local monoChChanged, newMonoCh = globals.UndoWrappers.Combo(globals.ctx, "##MonoChannel_" .. containerId, container.monoChannelSelection, monoChannelOptions)
         if imgui.IsItemHovered(globals.ctx) then
             imgui.SetTooltip(globals.ctx, "Select which channel to extract from multichannel items.\n\nChannel 1: Usually Left\nChannel 2: Usually Right\nChannel 3+: Surround/center channels\nRandom: Pick a random channel for each item\n\nExtracted channels are distributed across output tracks.")
         end
@@ -1212,7 +1210,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         imgui.SameLine(globals.ctx, labelWidth)
 
         imgui.PushItemWidth(globals.ctx, comboWidth)
-        local distChanged, newDist = imgui.Combo(globals.ctx, "##ItemDistribution_" .. containerId, container.itemDistributionMode, "Round-robin\0Random\0All tracks\0")
+        local distChanged, newDist = globals.UndoWrappers.Combo(globals.ctx, "##ItemDistribution_" .. containerId, container.itemDistributionMode, "Round-robin\0Random\0All tracks\0")
         if imgui.IsItemHovered(globals.ctx) then
             imgui.SetTooltip(globals.ctx, "How to distribute mono items across output tracks.\n\nRound-robin: Cycle through tracks sequentially\n(item1→L, item2→R, item3→LS, item4→RS, repeat)\n\nRandom: Place each item on a random track\n\nAll tracks: Generate independently on ALL tracks\n(each track gets its own timeline with all parameters)")
         end
@@ -1239,7 +1237,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         end
 
         imgui.PushItemWidth(globals.ctx, comboWidth)
-        local sfChanged, newIndex = imgui.Combo(globals.ctx, "##SourceFormat_" .. containerId, currentIndex, sourceFormatItems)
+        local sfChanged, newIndex = globals.UndoWrappers.Combo(globals.ctx, "##SourceFormat_" .. containerId, currentIndex, sourceFormatItems)
         if imgui.IsItemHovered(globals.ctx) then
             imgui.SetTooltip(globals.ctx, "Channel order of the SOURCE items (5.0/7.0).\n\nUnknown: Uses channel 1 only (mono)\n\nITU/Dolby: L R C LS RS (Center at ch 3)\n→ Enables smart routing: skips center channel\n→ Routes L, R, LS, RS to output tracks\n\nSMPTE: L C R LS RS (Center at ch 2)\n→ Same smart routing, different channel order\n\nSpecifying format enables intelligent multichannel routing.")
         end
@@ -1357,7 +1355,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
             -- Volume control with optimized width
             imgui.PushItemWidth(globals.ctx, sliderWidth)
-            local rv, newNormalizedVolume = imgui.SliderDouble(
+            local rv, newNormalizedVolume = globals.UndoWrappers.SliderDouble(
                 globals.ctx,
                 "##Vol_" .. i,
                 normalizedVolume,
@@ -1377,7 +1375,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.SameLine(globals.ctx, 0, 8)
             imgui.PushItemWidth(globals.ctx, inputWidth)
             local displayValue = container.channelVolumes[i] <= -144 and -144 or container.channelVolumes[i]
-            local rv2, manualDB = imgui.InputDouble(
+            local rv2, manualDB = globals.UndoWrappers.InputDouble(
                 globals.ctx,
                 "##VolInput_" .. i,
                 displayValue,
@@ -1402,7 +1400,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
     -- "Override Parent Settings" checkbox
     local overrideParent = container.overrideParent
-    local rv, newOverrideParent = imgui.Checkbox(globals.ctx, "Override Parent Settings##" .. containerId, overrideParent)
+    local rv, newOverrideParent = globals.UndoWrappers.Checkbox(globals.ctx, "Override Parent Settings##" .. containerId, overrideParent)
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Enable 'Override Parent Settings' to customize parameters for this container instead of inheriting from the group.")
     if rv and newOverrideParent ~= overrideParent then

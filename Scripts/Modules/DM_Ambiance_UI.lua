@@ -278,7 +278,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.BeginGroup(globals.ctx)
         imgui.PushItemWidth(globals.ctx, controlWidth)
         local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0"
-        local rv, newIntervalMode = imgui.Combo(globals.ctx, "##IntervalMode", dataObj.intervalMode, intervalModes)
+        local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "##IntervalMode", dataObj.intervalMode, intervalModes)
         if rv then callbacks.setIntervalMode(newIntervalMode) end
         imgui.EndGroup(globals.ctx)
 
@@ -317,7 +317,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.PushItemWidth(globals.ctx, controlWidth)
 
         local triggerRateKey = trackingKey .. "_triggerRate"
-        local rv, newRate = imgui.SliderDouble(globals.ctx, "##TriggerRate", dataObj.triggerRate, rateMin, rateMax, "%.1f")
+        local rv, newRate = globals.UndoWrappers.SliderDouble(globals.ctx, "##TriggerRate", dataObj.triggerRate, rateMin, rateMax, "%.1f")
 
         -- Store initial value when starting to drag
         if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[triggerRateKey] then
@@ -342,7 +342,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.PushItemWidth(globals.ctx, 60)
 
         local triggerDriftKey = trackingKey .. "_triggerDrift"
-        local rvDrift, newDrift = imgui.DragInt(globals.ctx, "##TriggerDrift", dataObj.triggerDrift, 0.5, 0, 100, "%d%%")
+        local rvDrift, newDrift = globals.UndoWrappers.DragInt(globals.ctx, "##TriggerDrift", dataObj.triggerDrift, 0.5, 0, 100, "%d%%")
 
         -- Store initial value when starting to drag
         if imgui.IsItemActive(globals.ctx) and autoRegenCallback and not globals.autoRegenTracking[triggerDriftKey] then
@@ -370,7 +370,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.PushItemWidth(globals.ctx, controlWidth)
 
             local chunkDurationKey = trackingKey .. "_chunkDuration"
-            local rv, newDuration = imgui.SliderDouble(globals.ctx, "##ChunkDuration", dataObj.chunkDuration, 0.5, 60.0, "%.1f sec")
+            local rv, newDuration = globals.UndoWrappers.SliderDouble(globals.ctx, "##ChunkDuration", dataObj.chunkDuration, 0.5, 60.0, "%.1f sec")
 
             -- Store initial value when starting to drag
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkDurationKey] then
@@ -397,7 +397,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.PushItemWidth(globals.ctx, 60)
 
             local chunkDurationVarKey = trackingKey .. "_chunkDurationVar"
-            local rv2, newDurationVar = imgui.DragInt(globals.ctx, "##ChunkDurationVar", dataObj.chunkDurationVariation, 0.5, 0, 100, "%d%%")
+            local rv2, newDurationVar = globals.UndoWrappers.DragInt(globals.ctx, "##ChunkDurationVar", dataObj.chunkDurationVariation, 0.5, 0, 100, "%d%%")
 
             -- Store initial value when starting to drag
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkDurationVarKey] then
@@ -423,7 +423,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.PushItemWidth(globals.ctx, controlWidth)
 
             local chunkSilenceKey = trackingKey .. "_chunkSilence"
-            local rv, newSilence = imgui.SliderDouble(globals.ctx, "##ChunkSilence", dataObj.chunkSilence, 0.0, 120.0, "%.1f sec")
+            local rv, newSilence = globals.UndoWrappers.SliderDouble(globals.ctx, "##ChunkSilence", dataObj.chunkSilence, 0.0, 120.0, "%.1f sec")
 
             -- Store initial value when starting to drag
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkSilenceKey] then
@@ -450,7 +450,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.PushItemWidth(globals.ctx, 60)
 
             local chunkSilenceVarKey = trackingKey .. "_chunkSilenceVar"
-            local rv2, newSilenceVar = imgui.DragInt(globals.ctx, "##ChunkSilenceVar", dataObj.chunkSilenceVariation, 0.5, 0, 100, "%d%%")
+            local rv2, newSilenceVar = globals.UndoWrappers.DragInt(globals.ctx, "##ChunkSilenceVar", dataObj.chunkSilenceVariation, 0.5, 0, 100, "%d%%")
 
             -- Store initial value when starting to drag
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkSilenceVarKey] then
@@ -552,7 +552,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
 
     -- Pitch randomization (checkbox + link button + slider on same line)
     imgui.BeginGroup(globals.ctx)
-    local rv, newRandomizePitch = imgui.Checkbox(globals.ctx, "##RandomizePitch", obj.randomizePitch)
+    local rv, newRandomizePitch = globals.UndoWrappers.Checkbox(globals.ctx, "##RandomizePitch", obj.randomizePitch)
     if rv then
         obj.randomizePitch = newRandomizePitch
         obj.needsRegeneration = true
@@ -599,7 +599,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
 
     -- Volume randomization (checkbox + link button + slider on same line)
     imgui.BeginGroup(globals.ctx)
-    local rv, newRandomizeVolume = imgui.Checkbox(globals.ctx, "##RandomizeVolume", obj.randomizeVolume)
+    local rv, newRandomizeVolume = globals.UndoWrappers.Checkbox(globals.ctx, "##RandomizeVolume", obj.randomizeVolume)
     if rv then
         obj.randomizeVolume = newRandomizeVolume
         obj.needsRegeneration = true
@@ -657,7 +657,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     if showPanControls then
         -- Pan randomization (checkbox + link button + slider on same line)
         imgui.BeginGroup(globals.ctx)
-        local rv, newRandomizePan = imgui.Checkbox(globals.ctx, "##RandomizePan", obj.randomizePan)
+        local rv, newRandomizePan = globals.UndoWrappers.Checkbox(globals.ctx, "##RandomizePan", obj.randomizePan)
         if rv then
             obj.randomizePan = newRandomizePan
             obj.needsRegeneration = true
@@ -763,7 +763,7 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
         
         -- Column 1: Checkbox (position 0)
         imgui.SetCursorPosX(globals.ctx, colCheckbox)
-        local rv, newEnabled = imgui.Checkbox(globals.ctx, "##Enable" .. suffix, enabled or false)
+        local rv, newEnabled = globals.UndoWrappers.Checkbox(globals.ctx, "##Enable" .. suffix, enabled or false)
         if rv then 
             if isIn then obj.fadeInEnabled = newEnabled
             else obj.fadeOutEnabled = newEnabled end
@@ -805,7 +805,7 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
         imgui.PushItemWidth(globals.ctx, durationWidth)
         local maxVal = usePercentage and 100 or 10
         local format = usePercentage and "%.0f%%" or "%.2f"
-        local rv, newDuration = imgui.SliderDouble(globals.ctx, "##Duration" .. suffix,
+        local rv, newDuration = globals.UndoWrappers.SliderDouble(globals.ctx, "##Duration" .. suffix,
             duration or 0.1, 0, maxVal, format)
         if rv then
             -- Apply linked fade logic
@@ -833,7 +833,7 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
         imgui.SetCursorPosX(globals.ctx, colShape)
         imgui.PushItemWidth(globals.ctx, shapeWidth)
         local fadeShapes = "Linear\0Fast Start\0Fast End\0Fast S/E\0Slow S/E\0Bezier\0S-Curve\0"
-        local rv, newShape = imgui.Combo(globals.ctx, "##Shape" .. suffix, shape or 0, fadeShapes)
+        local rv, newShape = globals.UndoWrappers.Combo(globals.ctx, "##Shape" .. suffix, shape or 0, fadeShapes)
         if rv then
             if isIn then obj.fadeInShape = newShape
             else obj.fadeOutShape = newShape end
@@ -861,7 +861,7 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
             imgui.SameLine(globals.ctx)
             imgui.SetCursorPosX(globals.ctx, colCurve)
             imgui.PushItemWidth(globals.ctx, curveWidth)
-            local rv, newCurve = imgui.SliderDouble(globals.ctx, "##Curve" .. suffix,
+            local rv, newCurve = globals.UndoWrappers.SliderDouble(globals.ctx, "##Curve" .. suffix,
                 curve or 0.0, -1.0, 1.0, "%.1f")
             if rv then
                 if isIn then obj.fadeInCurve = newCurve
@@ -1083,16 +1083,17 @@ function UI.ShowMainWindow(open)
 
     -- CRITICAL: Only call End() if Begin() returned true (visible)
     if visible then
+
         -- Handle Undo/Redo keyboard shortcuts
         local ctrlPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Ctrl ~= 0)
         local shiftPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Shift ~= 0)
 
-        -- Ctrl+Z: Undo
+        -- Ctrl+Z: Undo (works everywhere)
         if ctrlPressed and not shiftPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Z) then
             globals.History.undo()
         end
 
-        -- Ctrl+Y or Ctrl+Shift+Z: Redo
+        -- Ctrl+Y or Ctrl+Shift+Z: Redo (works everywhere)
         if (ctrlPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Y)) or
            (ctrlPressed and shiftPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Z)) then
             globals.History.redo()

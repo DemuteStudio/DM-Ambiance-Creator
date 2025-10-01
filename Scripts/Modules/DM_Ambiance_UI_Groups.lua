@@ -39,7 +39,7 @@ function UI_Groups.drawGroupPresetControls(i)
 
     -- Group preset dropdown selector
     imgui.PushItemWidth(globals.ctx, Constants.UI.PRESET_SELECTOR_WIDTH)
-    local rv, newSelectedGroupIndex = imgui.Combo(
+    local rv, newSelectedGroupIndex = globals.UndoWrappers.Combo(
         globals.ctx,
         "##GroupPresetSelector" .. groupId,
         globals.selectedGroupPresetIndex[i],
@@ -957,7 +957,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 table.remove(group.containers, containerToDelete)
                 if globals.selectedGroupIndex == i and globals.selectedContainerIndex == containerToDelete then
                     globals.selectedContainerIndex = nil
-                elseif globals.selectedGroupIndex == i and globals.selectedContainerIndex > containerToDelete then
+                elseif globals.selectedGroupIndex == i and globals.selectedContainerIndex and globals.selectedContainerIndex > containerToDelete then
                     globals.selectedContainerIndex = globals.selectedContainerIndex - 1
                 end
                 -- Update selection indices for containers after the deleted one

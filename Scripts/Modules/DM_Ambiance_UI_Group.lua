@@ -28,11 +28,9 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     imgui.Separator(globals.ctx)
     
     -- Group name input field
-    local groupName = group.name
     imgui.PushItemWidth(globals.ctx, width * 0.5)
-    local rv, newGroupName = imgui.InputText(globals.ctx, "Name##detail_" .. groupId, groupName)
-    if rv and newGroupName ~= groupName then
-        globals.History.captureState("Rename group")
+    local rv, newGroupName = globals.UndoWrappers.InputText(globals.ctx, "Name##detail_" .. groupId, group.name)
+    if rv then
         group.name = newGroupName
     end
     
@@ -51,10 +49,10 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     -- Convert current dB to normalized
     local normalizedVolume = globals.Utils.dbToNormalizedRelative(group.trackVolume)
     
-    local rv, newNormalizedVolume = imgui.SliderDouble(
-        globals.ctx, 
-        "##GroupTrackVolume_" .. groupId, 
-        normalizedVolume, 
+    local rv, newNormalizedVolume = globals.UndoWrappers.SliderDouble(
+        globals.ctx,
+        "##GroupTrackVolume_" .. groupId,
+        normalizedVolume,
         0.0,  -- Min normalized
         1.0,  -- Max normalized
         ""    -- No format, we'll display custom text
@@ -70,7 +68,7 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     imgui.SameLine(globals.ctx)
     imgui.PushItemWidth(globals.ctx, 65)
     local displayValue = group.trackVolume <= -144 and -144 or group.trackVolume
-    local rv2, manualDB = imgui.InputDouble(
+    local rv2, manualDB = globals.UndoWrappers.InputDouble(
         globals.ctx,
         "##GroupTrackVolumeInput_" .. groupId,
         displayValue,

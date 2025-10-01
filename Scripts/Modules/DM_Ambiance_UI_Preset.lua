@@ -39,7 +39,7 @@ function UI_Preset.drawPresetControls()
     imgui.PushItemWidth(globals.ctx, 300)
     
     -- Display the dropdown combo box for selecting a preset
-    local rv, newSelectedIndex = imgui.Combo(globals.ctx, "##PresetSelector", globals.selectedPresetIndex, presetItems)
+    local rv, newSelectedIndex = globals.UndoWrappers.Combo(globals.ctx, "##PresetSelector", globals.selectedPresetIndex, presetItems)
     
     -- If the user changed the selection, update the current preset index and name
     if rv then

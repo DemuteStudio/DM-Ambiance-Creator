@@ -513,7 +513,7 @@ function Settings.showAppearanceSettings()
     imgui.Separator(ctx)
     -- UI Rounding slider with immediate UI update
     imgui.PushItemWidth(ctx, 200)
-    local rv, newRounding = imgui.SliderDouble(ctx, "UI Rounding", tempSettings.uiRounding, 0.0, 12.0, "%.1f")
+    local rv, newRounding = globals.UndoWrappers.SliderDouble(ctx, "UI Rounding", tempSettings.uiRounding, 0.0, 12.0, "%.1f")
     imgui.PopItemWidth(ctx)
     if rv and newRounding ~= tempSettings.uiRounding then
         tempSettings.uiRounding = newRounding
@@ -523,7 +523,7 @@ function Settings.showAppearanceSettings()
     globals.Utils.HelpMarker("Controls the roundness of UI elements like buttons, frames, and sliders. Higher values create more rounded corners.")
     -- UI Item Spacing with immediate UI update
     imgui.PushItemWidth(ctx, 200)
-    local rv, newSpacing = imgui.SliderInt(ctx, "UI Spacing", tempSettings.itemSpacing, 0, 20, "%d")
+    local rv, newSpacing = globals.UndoWrappers.SliderInt(ctx, "UI Spacing", tempSettings.itemSpacing, 0, 20, "%d")
     imgui.PopItemWidth(ctx)
     if rv and newSpacing ~= tempSettings.itemSpacing then
         tempSettings.itemSpacing = newSpacing
@@ -548,7 +548,7 @@ function Settings.showCrossfadeSettings()
     imgui.Separator(ctx)
     -- Crossfade margin/length setting with immediate UI update
     imgui.PushItemWidth(ctx, 200)
-    local rv, newMargin = imgui.SliderDouble(ctx, "Crossfade Length (seconds)", tempSettings.crossfadeMargin, 0.05, 2.0, "%.3f")
+    local rv, newMargin = globals.UndoWrappers.SliderDouble(ctx, "Crossfade Length (seconds)", tempSettings.crossfadeMargin, 0.05, 2.0, "%.3f")
     imgui.PopItemWidth(ctx)
     if rv and newMargin ~= tempSettings.crossfadeMargin then
         tempSettings.crossfadeMargin = newMargin

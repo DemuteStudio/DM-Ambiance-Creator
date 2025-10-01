@@ -34,7 +34,7 @@ function UI_Generation.drawMainGenerationButton()
 end
 
 function UI_Generation.drawKeepExistingTracksButton()
-    local changed, newValue = globals.imgui.Checkbox(globals.ctx, "Keep existing tracks", globals.keepExistingTracks)
+    local changed, newValue = globals.UndoWrappers.Checkbox(globals.ctx, "Keep existing tracks", globals.keepExistingTracks)
     
     if changed then
         globals.keepExistingTracks = newValue
@@ -108,24 +108,24 @@ function UI_Generation.drawGlobalGenerationSettings()
     globals.imgui.Indent(globals.ctx, 10)
     
     -- Global cross-fade settings
-    local rv, newCrossfadeEnabled = globals.imgui.Checkbox(globals.ctx, "Enable automatic crossfades", globals.enableCrossfades)
+    local rv, newCrossfadeEnabled = globals.UndoWrappers.Checkbox(globals.ctx, "Enable automatic crossfades", globals.enableCrossfades)
     if rv then globals.enableCrossfades = newCrossfadeEnabled end
     
     if globals.enableCrossfades then
         globals.imgui.PushItemWidth(globals.ctx, 200)
         local crossfadeShapes = "Linear\0Slow start/end\0Fast start\0Fast end\0Sharp\0"
-        local rv, newShape = globals.imgui.Combo(globals.ctx, "Crossfade shape", globals.crossfadeShape, crossfadeShapes)
+        local rv, newShape = globals.UndoWrappers.Combo(globals.ctx, "Crossfade shape", globals.crossfadeShape, crossfadeShapes)
         if rv then globals.crossfadeShape = newShape end
     end
     
     -- Random seed control
     globals.imgui.Separator(globals.ctx)
-    local rv, newUseSeed = globals.imgui.Checkbox(globals.ctx, "Use fixed seed", globals.useRandomSeed)
+    local rv, newUseSeed = globals.UndoWrappers.Checkbox(globals.ctx, "Use fixed seed", globals.useRandomSeed)
     if rv then globals.useRandomSeed = newUseSeed end
     
     if globals.useRandomSeed then
         globals.imgui.PushItemWidth(globals.ctx, 200)
-        local rv, newSeed = globals.imgui.InputInt(globals.ctx, "Random seed", globals.randomSeed)
+        local rv, newSeed = globals.UndoWrappers.InputInt(globals.ctx, "Random seed", globals.randomSeed)
         if rv then globals.randomSeed = newSeed end
     end
     

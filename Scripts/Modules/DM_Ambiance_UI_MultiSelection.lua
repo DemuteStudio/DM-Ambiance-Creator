@@ -87,7 +87,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         overrideParent = true
     end
 
-    local rv, newOverrideParent = imgui.Checkbox(globals.ctx, overrideText, overrideParent)
+    local rv, newOverrideParent = globals.UndoWrappers.Checkbox(globals.ctx, overrideText, overrideParent)
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Enable 'Override Parent Settings' to customize parameters")
 
@@ -244,7 +244,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             -- Add a dropdown to set all values to the same value
             imgui.PushItemWidth(globals.ctx, width * 0.5)
             local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0"
-            local rv, newIntervalMode = imgui.Combo(globals.ctx, "Set all to##IntervalMode", 0, intervalModes)
+            local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "Set all to##IntervalMode", 0, intervalModes)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
@@ -284,7 +284,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             
             -- Add a slider to set all values to the same value
             imgui.PushItemWidth(globals.ctx, width * 0.5)
-            local rv, newTriggerRate = imgui.SliderDouble(globals.ctx, "Set all to##TriggerRate",
+            local rv, newTriggerRate = globals.UndoWrappers.SliderDouble(globals.ctx, "Set all to##TriggerRate",
                                                         0, triggerRateMin, triggerRateMax, "%.1f")
             if rv then
                 -- Apply to all selected containers
@@ -295,15 +295,15 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
                 commonTriggerRate = newTriggerRate
             end
         end
-        
+
         -- Trigger drift - handle mixed values
         if commonTriggerDrift == -1 then
             imgui.Text(globals.ctx, "Random variation (%):")
             showMixedValues()
-            
+
             -- Add a slider to set all values to the same value
             imgui.PushItemWidth(globals.ctx, width * 0.5)
-            local rv, newTriggerDrift = imgui.SliderInt(globals.ctx, "Set all to##TriggerDrift", 0, 0, 100, "%d")
+            local rv, newTriggerDrift = globals.UndoWrappers.SliderInt(globals.ctx, "Set all to##TriggerDrift", 0, 0, 100, "%d")
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
@@ -405,7 +405,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         randomizePitch = true
     end
 
-    local rv, newRandomizePitch = imgui.Checkbox(globals.ctx, pitchText, randomizePitch)
+    local rv, newRandomizePitch = globals.UndoWrappers.Checkbox(globals.ctx, pitchText, randomizePitch)
     if rv then
         -- Apply to all selected containers
         for _, c in ipairs(containers) do
@@ -478,7 +478,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         randomizeVolume = true
     end
 
-    local rv, newRandomizeVolume = imgui.Checkbox(globals.ctx, volumeText, randomizeVolume)
+    local rv, newRandomizeVolume = globals.UndoWrappers.Checkbox(globals.ctx, volumeText, randomizeVolume)
     if rv then
         -- Apply to all selected containers
         for _, c in ipairs(containers) do
@@ -553,7 +553,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             randomizePan = true
         end
 
-        local rv, newRandomizePan = imgui.Checkbox(globals.ctx, panText, randomizePan)
+        local rv, newRandomizePan = globals.UndoWrappers.Checkbox(globals.ctx, panText, randomizePan)
         if rv then
             -- Apply to all selected containers
             for _, c in ipairs(containers) do

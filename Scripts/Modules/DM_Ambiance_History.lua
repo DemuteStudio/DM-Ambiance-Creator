@@ -79,16 +79,75 @@ local function restoreState(snapshot)
         return false
     end
 
+    -- Save current selection before restoring
+    local savedSelectedGroupIndex = globals.selectedGroupIndex
+    local savedSelectedContainerIndex = globals.selectedContainerIndex
+    local savedSelectedContainers = {}
+    for k, v in pairs(globals.selectedContainers) do
+        savedSelectedContainers[k] = v
+    end
+
     -- Restore the groups state
     globals.groups = deepCopy(snapshot.groups)
 
-    -- Clear selection state to avoid referencing non-existent indices
-    globals.selectedGroupIndex = nil
-    globals.selectedContainerIndex = nil
+    -- Apply track volumes to REAPER tracks after restoration
+    if globals.Utils then
+        for groupIndex, group in ipairs(globals.groups) do
+            -- Apply group track volume if it exists
+            if group.trackVolume then
+                globals.Utils.setGroupTrackVolume(groupIndex, group.trackVolume)
+            end
+
+            -- Apply container track volumes if they exist
+            if group.containers then
+                for containerIndex, container in ipairs(group.containers) do
+                    if container.trackVolume then
+                        globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, container.trackVolume)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Restore selection if indices are still valid
+    if savedSelectedGroupIndex and savedSelectedGroupIndex <= #globals.groups then
+        globals.selectedGroupIndex = savedSelectedGroupIndex
+
+        -- Check if container index is still valid
+        if savedSelectedContainerIndex and
+           globals.groups[savedSelectedGroupIndex] and
+           savedSelectedContainerIndex <= #globals.groups[savedSelectedGroupIndex].containers then
+            globals.selectedContainerIndex = savedSelectedContainerIndex
+        else
+            globals.selectedContainerIndex = nil
+        end
+    else
+        globals.selectedGroupIndex = nil
+        globals.selectedContainerIndex = nil
+    end
+
+    -- Restore multi-selection (validate each entry)
     globals.selectedContainers = {}
+    for key, value in pairs(savedSelectedContainers) do
+        local groupIdx, containerIdx = key:match("(%d+)_(%d+)")
+        if groupIdx and containerIdx then
+            groupIdx = tonumber(groupIdx)
+            containerIdx = tonumber(containerIdx)
+            -- Only restore if indices are still valid
+            if groupIdx <= #globals.groups and
+               globals.groups[groupIdx] and
+               containerIdx <= #globals.groups[groupIdx].containers then
+                globals.selectedContainers[key] = value
+            end
+        end
+    end
+
+    -- Update multi-select mode based on restored selection
     globals.inMultiSelectMode = false
-    globals.shiftAnchorGroupIndex = nil
-    globals.shiftAnchorContainerIndex = nil
+    for _ in pairs(globals.selectedContainers) do
+        globals.inMultiSelectMode = true
+        break
+    end
 
     -- Debug logging (can be enabled for debugging)
     -- reaper.ShowConsoleMsg(string.format("[History] Restored: %s\n", snapshot.description or "Unnamed"))
