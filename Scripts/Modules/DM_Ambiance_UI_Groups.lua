@@ -118,35 +118,36 @@ local function drawListItemWithButtons(params)
     local scrollbarMargin = 40 -- Reserve more space for scrollbar + safety margin
     local selectableWidth = params.availableWidth - totalButtonWidth - scrollbarMargin
 
-    -- Draw expansion arrow if needed
+    -- Use TreeNode for better click/drag handling
+    local nodeFlags = 0
+
     if params.hasArrow then
-        local arrowIcon = params.isOpen and "▼" or "▶"
-        imgui.Text(ctx, arrowIcon)
-
-        -- Check if arrow was clicked
-        if imgui.IsItemClicked(ctx) then
-            if params.onToggle then
-                params.onToggle()
-            end
-        end
-
-        imgui.SameLine(ctx, 0, 5)
-        selectableWidth = selectableWidth - 20 -- Reduce width to account for arrow
+        -- Group with arrow
+        nodeFlags = nodeFlags | (params.isOpen and imgui.TreeNodeFlags_DefaultOpen or 0)
+        nodeFlags = nodeFlags | imgui.TreeNodeFlags_OpenOnArrow
+    else
+        -- Container without arrow (leaf node)
+        nodeFlags = nodeFlags | imgui.TreeNodeFlags_Leaf
+        nodeFlags = nodeFlags | imgui.TreeNodeFlags_NoTreePushOnOpen
     end
 
-    -- Draw selectable with fixed width (like imported items)
-    local clicked = imgui.Selectable(
-        ctx,
-        params.text,
-        params.isSelected,
-        imgui.SelectableFlags_AllowDoubleClick,
-        selectableWidth,
-        0
-    )
+    -- Selection state
+    if params.isSelected then
+        nodeFlags = nodeFlags | imgui.TreeNodeFlags_Selected
+    end
 
-    -- DRAG SOURCE: Must be IMMEDIATELY after Selectable (ImGui requirement)
+    -- Frame padding for better look
+    nodeFlags = nodeFlags | imgui.TreeNodeFlags_FramePadding
+
+    -- Draw TreeNode
+    local opened = imgui.TreeNodeEx(ctx, params.id, params.text, nodeFlags)
+
+    -- Update expansion state for groups
+    local clicked = imgui.IsItemClicked(ctx)
+
+    -- DRAG SOURCE: Must be IMMEDIATELY after TreeNode (ImGui requirement)
     if params.dragSource then
-        if imgui.BeginDragDropSource(ctx) then
+        if imgui.BeginDragDropSource(ctx, imgui.DragDropFlags_None) then
             imgui.SetDragDropPayload(ctx, params.dragSource.type, params.dragSource.data)
             imgui.Text(ctx, params.dragSource.preview)
 
@@ -159,28 +160,49 @@ local function drawListItemWithButtons(params)
         end
     end
 
-    -- DROP TARGET: Can be on the same widget
+    -- DROP TARGET: Show insertion line indicator with smart positioning
     if params.dropTarget then
         if imgui.BeginDragDropTarget(ctx) then
-            -- Visual indicator when hovering with valid payload
             local min_x, min_y = imgui.GetItemRectMin(ctx)
             local max_x, max_y = imgui.GetItemRectMax(ctx)
             local drawList = imgui.GetWindowDrawList(ctx)
+            local _, mouseY = imgui.GetMousePos(ctx)
 
-            -- Get button color from settings for highlight
-            local buttonColor = globals.Settings.getSetting("buttonColor")
-            local highlightColor = buttonColor & 0xFFFFFF40 -- Semi-transparent
-            local borderColor = globals.Utils.brightenColor(buttonColor, 0.3)
+            -- Light gray color for insertion line (1px)
+            local lineColor = 0xB0B0B0FF -- Lighter gray
 
-            -- Draw highlight background
-            imgui.DrawList_AddRectFilled(drawList, min_x, min_y, max_x, max_y, highlightColor)
-            imgui.DrawList_AddRect(drawList, min_x, min_y, max_x, max_y, borderColor, 0, 0, 2)
+            -- Calculate relative mouse position (0.0 = top, 1.0 = bottom)
+            local itemHeight = max_y - min_y
+            local relativeY = (mouseY - min_y) / itemHeight
+
+            -- Smart positioning:
+            -- Top 25%: insert BEFORE
+            -- Bottom 25%: insert AFTER
+            -- Middle 50%: insert INTO (for groups only)
+            local dropPosition = "middle" -- "before", "after", "middle"
+
+            if relativeY < 0.25 then
+                dropPosition = "before"
+            elseif relativeY > 0.75 then
+                dropPosition = "after"
+            else
+                -- Middle zone: only valid for groups to drop INTO
+                dropPosition = params.allowDropInto and "middle" or (relativeY < 0.5 and "before" or "after")
+            end
+
+            -- Draw insertion line (NOT in middle zone)
+            if dropPosition == "before" then
+                imgui.DrawList_AddLine(drawList, min_x, min_y, max_x, min_y, lineColor, 1)
+            elseif dropPosition == "after" then
+                imgui.DrawList_AddLine(drawList, min_x, max_y, max_x, max_y, lineColor, 1)
+            end
+            -- Middle zone: no line (visual clarity that item will go INTO)
 
             -- Try to accept each specified payload type
             for _, acceptType in ipairs(params.dropTarget.accept) do
                 if imgui.AcceptDragDropPayload(ctx, acceptType) then
                     if params.dropTarget.onDrop then
-                        params.dropTarget.onDrop(acceptType)
+                        params.dropTarget.onDrop(acceptType, dropPosition)
                     end
                 end
             end
@@ -188,13 +210,9 @@ local function drawListItemWithButtons(params)
         end
     end
 
-    -- Handle selection clicks
-    if clicked then
-        if params.hasArrow and imgui.IsMouseDoubleClicked(ctx, 0) and params.onToggle then
-            params.onToggle()
-        elseif params.onSelect then
-            params.onSelect()
-        end
+    -- Handle selection clicks (simple click, not double click)
+    if clicked and params.onSelect then
+        params.onSelect()
     end
 
     -- Draw buttons aligned to the right
@@ -227,7 +245,7 @@ local function drawListItemWithButtons(params)
         end
     end
 
-    return clicked
+    return opened, clicked
 end
 
 
@@ -550,8 +568,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
             groupDisplayName = "• " .. group.name
         end
 
-        -- Draw group using the new helper function
-        drawListItemWithButtons({
+        -- Draw group using the helper function
+        local groupOpen, groupClicked = drawListItemWithButtons({
             id = groupId,
             text = groupDisplayName,
             isSelected = isSelected,
@@ -573,33 +591,64 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 end
             },
 
-            -- Drop target: groups and containers can be dropped on groups
+            -- Drop target: groups accept both groups and containers
             dropTarget = {
                 accept = {"DND_GROUP", "DND_CONTAINER"},
-                onDrop = function(payloadType)
+                allowDropInto = true, -- Groups can receive items INTO them
+                onDrop = function(payloadType, dropPosition)
                     if payloadType == "DND_CONTAINER" then
-                        -- Drop container at the end of the group
+                        -- Drop container
                         if globals.draggedItem and globals.draggedItem.type == "CONTAINER" then
                             local sourceGroupIndex = globals.draggedItem.groupIndex
                             local sourceContainerIndex = globals.draggedItem.containerIndex
 
-                            if sourceGroupIndex ~= i then
-                                globals.pendingContainerMove = {
-                                    sourceGroupIndex = sourceGroupIndex,
-                                    sourceContainerIndex = sourceContainerIndex,
-                                    targetGroupIndex = i,
-                                    targetContainerIndex = #globals.groups[i].containers + 1
-                                }
+                            local targetContainerIndex
+                            if dropPosition == "before" then
+                                -- Insert before this group (beginning of group)
+                                targetContainerIndex = 1
+                            elseif dropPosition == "after" then
+                                -- Insert after this group (end of group)
+                                targetContainerIndex = #globals.groups[i].containers + 1
+                            else -- "middle"
+                                -- Drop INTO the group (end of group)
+                                targetContainerIndex = #globals.groups[i].containers + 1
+                            end
+
+                            if sourceGroupIndex ~= i or (sourceGroupIndex == i and sourceContainerIndex ~= targetContainerIndex and sourceContainerIndex ~= targetContainerIndex - 1) then
+                                if sourceGroupIndex == i then
+                                    globals.pendingContainerReorder = {
+                                        groupIndex = i,
+                                        sourceIndex = sourceContainerIndex,
+                                        targetIndex = targetContainerIndex
+                                    }
+                                else
+                                    globals.pendingContainerMove = {
+                                        sourceGroupIndex = sourceGroupIndex,
+                                        sourceContainerIndex = sourceContainerIndex,
+                                        targetGroupIndex = i,
+                                        targetContainerIndex = targetContainerIndex
+                                    }
+                                end
                             end
                         end
                     elseif payloadType == "DND_GROUP" then
                         -- Reorder groups
                         if globals.draggedItem and globals.draggedItem.type == "GROUP" then
                             local sourceIndex = globals.draggedItem.index
-                            if sourceIndex ~= i then
+                            local targetIndex
+
+                            if dropPosition == "before" then
+                                targetIndex = i
+                            elseif dropPosition == "after" then
+                                targetIndex = i + 1
+                            else -- "middle" - treat as "after" for groups
+                                targetIndex = i + 1
+                            end
+
+                            if sourceIndex ~= targetIndex and sourceIndex ~= targetIndex - 1 then
                                 globals.pendingGroupMove = {
                                     sourceIndex = sourceIndex,
-                                    targetIndex = i
+                                    targetIndex = targetIndex
                                 }
                             end
                         end
@@ -642,8 +691,11 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
             }
         })
 
+        -- Update group expansion state
+        group.expanded = groupOpen
+
         -- If the group is open, display its content
-        if group.expanded then
+        if groupOpen then
 
             -- Help marker
             imgui.SameLine(globals.ctx)
@@ -672,8 +724,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 -- Get actual available width after indentation
                 local containerAvailWidth = imgui.GetContentRegionAvail(globals.ctx)
 
-                -- Draw container using the new helper function
-                drawListItemWithButtons({
+                -- Draw container using the helper function
+                local _, containerClicked = drawListItemWithButtons({
                     id = containerId,
                     text = containerDisplayName,
                     isSelected = isSelected,
@@ -699,18 +751,27 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                     -- Drop target: containers can be dropped on other containers
                     dropTarget = {
                         accept = {"DND_CONTAINER"},
-                        onDrop = function(payloadType)
+                        allowDropInto = false, -- Containers don't accept items INTO them
+                        onDrop = function(payloadType, dropPosition)
                             if globals.draggedItem and globals.draggedItem.type == "CONTAINER" then
                                 local sourceGroupIndex = globals.draggedItem.groupIndex
                                 local sourceContainerIndex = globals.draggedItem.containerIndex
 
+                                -- Calculate target index based on drop position
+                                local targetIndex
+                                if dropPosition == "before" then
+                                    targetIndex = j
+                                else -- "after" (middle is treated as after for containers)
+                                    targetIndex = j + 1
+                                end
+
                                 if sourceGroupIndex == i then
                                     -- Reorder within same group
-                                    if sourceContainerIndex ~= j then
+                                    if sourceContainerIndex ~= targetIndex and sourceContainerIndex ~= targetIndex - 1 then
                                         globals.pendingContainerReorder = {
                                             groupIndex = i,
                                             sourceIndex = sourceContainerIndex,
-                                            targetIndex = j
+                                            targetIndex = targetIndex
                                         }
                                     end
                                 else
@@ -719,7 +780,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                                         sourceGroupIndex = sourceGroupIndex,
                                         sourceContainerIndex = sourceContainerIndex,
                                         targetGroupIndex = i,
-                                        targetContainerIndex = j
+                                        targetContainerIndex = targetIndex
                                     }
                                 end
                             end
@@ -777,6 +838,11 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                         globals.selectedContainers[i .. "_" .. k] = nil
                     end
                 end
+            end
+
+            -- TreePop for groups that are expanded
+            if groupOpen then
+                imgui.TreePop(globals.ctx)
             end
         end
     end
