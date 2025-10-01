@@ -1226,17 +1226,22 @@ function UI.ShowMainWindow(open)
 
         -- Check if splitter is being dragged
         if globals.imgui.IsItemActive(globals.ctx) then
-            local delta = globals.imgui.GetMouseDragDelta(globals.ctx, 0)
-            if delta ~= 0 then
-                globals.leftPanelWidth = globals.leftPanelWidth + delta
+            local deltaX, deltaY = globals.imgui.GetMouseDragDelta(globals.ctx, 0)
+            if deltaX ~= 0 then
+                globals.leftPanelWidth = globals.leftPanelWidth + deltaX
                 globals.imgui.ResetMouseDragDelta(globals.ctx, 0)
 
-                -- Clamp and save
+                -- Clamp width
                 local minWidth = Constants.UI.MIN_LEFT_PANEL_WIDTH
                 local maxWidth = windowWidth - 200
                 globals.leftPanelWidth = math.max(minWidth, math.min(globals.leftPanelWidth, maxWidth))
-                globals.Settings.setSetting("leftPanelWidth", globals.leftPanelWidth)
             end
+        end
+
+        -- Save when drag is released
+        if globals.imgui.IsItemDeactivated(globals.ctx) and globals.leftPanelWidth then
+            globals.Settings.setSetting("leftPanelWidth", globals.leftPanelWidth)
+            globals.Settings.saveSettings()  -- Write to file
         end
 
         -- Change cursor on hover

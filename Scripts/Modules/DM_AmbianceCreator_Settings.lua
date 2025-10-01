@@ -27,6 +27,7 @@ local defaultSettings = {
     itemSpacing = 8, -- Default item spacing
     crossfadeMargin = 0.2, -- Default crossfade margin in seconds
     waveformAutoPlayOnSelect = true, -- Auto-play when selecting items in waveform
+    leftPanelWidth = nil, -- Width of the left panel (nil = use default percentage)
 }
 
 -- Initialize the module with global references and load settings
@@ -97,6 +98,12 @@ function Settings.loadSettings()
             if settings[k] ~= nil then
                 globals.settings[k] = settings[k]
             else
+                globals.settings[k] = v
+            end
+        end
+        -- Also load settings that are in the file but not in defaults
+        for k, v in pairs(settings) do
+            if globals.settings[k] == nil then
                 globals.settings[k] = v
             end
         end

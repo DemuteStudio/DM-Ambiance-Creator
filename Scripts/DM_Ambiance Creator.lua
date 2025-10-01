@@ -103,6 +103,11 @@ local function loop()
     if open then
         reaper.defer(loop)
     else
+        -- Save settings on exit
+        if globals.Settings and globals.Settings.saveSettings then
+            globals.Settings.saveSettings()
+        end
+
         -- Cleanup waveform resources on exit
         if globals.Waveform and globals.Waveform.cleanup then
             globals.Waveform.cleanup()
