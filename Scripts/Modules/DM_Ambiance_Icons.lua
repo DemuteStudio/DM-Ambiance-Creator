@@ -312,7 +312,7 @@ end
 function Icons.getIconSize()
     -- The actual icons are 48x48 pixels
     -- We can scale them down if needed
-    return 16, 16  -- Display at 16x16 for compact size
+    return 14, 14  -- Display at 14x14 for compact size
 end
 
 -- Create a delete icon button
