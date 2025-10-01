@@ -245,17 +245,18 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                         -- Stop any current playback when changing selection (regardless of autoplay setting)
                         if previouslySelectedIndex ~= l and globals.Waveform then
                             globals.Waveform.stopPlayback()
+
+                            -- Reset marker position to beginning when selecting a new item
+                            if globals.audioPreview then
+                                globals.audioPreview.clickedPosition = nil
+                                globals.audioPreview.playbackStartPosition = nil
+                                globals.audioPreview.position = item.startOffset or 0
+                                globals.audioPreview.currentFile = item.filePath
+                            end
                         end
 
                         -- Auto-play if enabled and we actually changed selection
                         if globals.Settings.getSetting("waveformAutoPlayOnSelect") and previouslySelectedIndex ~= l then
-
-                            -- Clear any saved position marker when auto-playing
-                            if globals.audioPreview then
-                                globals.audioPreview.clickedPosition = nil
-                                globals.audioPreview.playbackStartPosition = nil
-                                globals.audioPreview.currentFile = item.filePath
-                            end
 
                             -- Start playback from the beginning
                             if globals.Waveform and item.filePath then

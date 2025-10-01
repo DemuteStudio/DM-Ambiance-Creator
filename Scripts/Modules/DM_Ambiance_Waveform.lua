@@ -1849,26 +1849,12 @@ function Waveform.startPlayback(filePath, startOffset, length, relativePosition)
 end
 
 -- Stop audio playback
--- @param resetToStart: if true, reset position to beginning instead of saving current position
+-- @param resetToStart: if true, reset position to beginning instead of keeping current marker position
 function Waveform.stopPlayback(resetToStart)
     if globals.audioPreview.isPlaying then
-        -- Save current playback position before stopping, so we can resume from there
-        local currentPosition = globals.audioPreview.position or 0
         local startOffset = globals.audioPreview.startOffset or 0
 
-        -- Convert absolute position to relative position (within the edited item range)
-        local relativePosition = currentPosition - startOffset
-        if relativePosition < 0 then relativePosition = 0 end
-
         if globals.audioPreview.cfPreview then
-            -- Get the current playback position before stopping
-            local pos = reaper.CF_Preview_GetValue(globals.audioPreview.cfPreview, 'D_POSITION')
-            if pos and type(pos) == "number" then
-                currentPosition = pos
-                relativePosition = currentPosition - startOffset
-                if relativePosition < 0 then relativePosition = 0 end
-            end
-
             reaper.CF_Preview_Stop(globals.audioPreview.cfPreview)
 
             if globals.audioPreview.cfSource then
@@ -1887,11 +1873,8 @@ function Waveform.stopPlayback(resetToStart)
             -- Reset to beginning
             globals.audioPreview.position = startOffset
             globals.audioPreview.clickedPosition = 0
-        else
-            -- Save current position for resume
-            globals.audioPreview.position = currentPosition
-            globals.audioPreview.clickedPosition = relativePosition
         end
+        -- If not resetToStart, keep the existing position/clickedPosition unchanged
 
         globals.audioPreview.playbackStartPosition = nil  -- Clear the start position
     end
