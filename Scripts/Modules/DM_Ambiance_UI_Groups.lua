@@ -561,6 +561,15 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
         globals.shiftAnchorGroupIndex = newGroupIndex
         globals.shiftAnchorContainerIndex = nil
     end
+
+    -- Help marker for drag and drop
+    imgui.SameLine(globals.ctx)
+    globals.Utils.HelpMarker("Drag and drop:\n" ..
+        "- Drag groups to reorder them\n" ..
+        "- Drag containers to move them within/between groups\n" ..
+        "- Drop containers on group headers to add them to the end\n" ..
+        "- Use Ctrl+Click and Shift+Click for multi-selection")
+
     imgui.Separator(globals.ctx)
 
     -- Detect if Ctrl is pressed for multi-selection
@@ -704,15 +713,6 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
         -- If the group is open, display its content
         if group.expanded then
-
-            -- Help marker
-            imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Drag and drop:\n" ..
-                "- Drag groups to reorder them\n" ..
-                "- Drag containers to move them within/between groups\n" ..
-                "- Drop containers on group headers to add them to the end\n" ..
-                "- Use Ctrl+Click and Shift+Click for multi-selection")
-
             local containerToDelete = nil
 
             -- Loop through containers in this group
