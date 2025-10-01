@@ -92,7 +92,7 @@ function UI_Groups.drawGroupPresetControls(i)
 end
 
 -- Helper function to draw a list item (group or container) with buttons aligned to the right
--- This replaces the TreeNodeEx approach with Selectable for better width control
+-- Uses Selectable for full-width clickable area, manual arrow for expansion
 -- @param params table: Configuration table with the following keys:
 --   - id: string - Unique ID for the item
 --   - text: string - Display text
@@ -110,42 +110,45 @@ local function drawListItemWithButtons(params)
     local imgui = globals.imgui
     local ctx = globals.ctx
 
-    -- Calculate width for selectable (leave space for buttons)
+    -- Calculate button area width
     local buttonWidth = 16
     local buttonSpacing = 5
     local numButtons = #params.buttons
     local totalButtonWidth = numButtons * (buttonWidth + buttonSpacing)
-    local scrollbarMargin = 40 -- Reserve more space for scrollbar + safety margin
-    local selectableWidth = params.availableWidth - totalButtonWidth - scrollbarMargin
+    local scrollbarMargin = 30
 
-    -- Use TreeNode for better click/drag handling
-    local nodeFlags = 0
+    -- Full width for the selectable (minus scrollbar)
+    local selectableWidth = params.availableWidth - scrollbarMargin
 
+    -- Draw expansion arrow if needed (manual, not TreeNode)
+    local arrowWidth = 0
     if params.hasArrow then
-        -- Group with arrow
-        nodeFlags = nodeFlags | (params.isOpen and imgui.TreeNodeFlags_DefaultOpen or 0)
-        nodeFlags = nodeFlags | imgui.TreeNodeFlags_OpenOnArrow
-    else
-        -- Container without arrow (leaf node)
-        nodeFlags = nodeFlags | imgui.TreeNodeFlags_Leaf
-        nodeFlags = nodeFlags | imgui.TreeNodeFlags_NoTreePushOnOpen
+        local arrowIcon = params.isOpen and "▼" or "▶"
+        imgui.Text(ctx, arrowIcon)
+
+        -- Check if arrow was clicked
+        local arrowClicked = imgui.IsItemClicked(ctx)
+        if arrowClicked and params.onToggle then
+            params.onToggle()
+        end
+
+        imgui.SameLine(ctx, 0, 5)
+        arrowWidth = 20
     end
 
-    -- Selection state
-    if params.isSelected then
-        nodeFlags = nodeFlags | imgui.TreeNodeFlags_Selected
-    end
+    -- Draw Selectable with full width
+    -- Use "text##id" format to have unique ID but display the name
+    local selectableLabel = params.text .. "##" .. params.id
+    local clicked = imgui.Selectable(
+        ctx,
+        selectableLabel,
+        params.isSelected,
+        imgui.SelectableFlags_None,
+        selectableWidth - arrowWidth - totalButtonWidth,
+        0
+    )
 
-    -- Frame padding for better look
-    nodeFlags = nodeFlags | imgui.TreeNodeFlags_FramePadding
-
-    -- Draw TreeNode
-    local opened = imgui.TreeNodeEx(ctx, params.id, params.text, nodeFlags)
-
-    -- Update expansion state for groups
-    local clicked = imgui.IsItemClicked(ctx)
-
-    -- DRAG SOURCE: Must be IMMEDIATELY after TreeNode (ImGui requirement)
+    -- DRAG SOURCE: Must be IMMEDIATELY after Selectable (ImGui requirement)
     if params.dragSource then
         if imgui.BeginDragDropSource(ctx, imgui.DragDropFlags_None) then
             imgui.SetDragDropPayload(ctx, params.dragSource.type, params.dragSource.data)
@@ -200,8 +203,11 @@ local function drawListItemWithButtons(params)
 
             -- Try to accept each specified payload type
             for _, acceptType in ipairs(params.dropTarget.accept) do
-                if imgui.AcceptDragDropPayload(ctx, acceptType) then
-                    if params.dropTarget.onDrop then
+                local payload = imgui.AcceptDragDropPayload(ctx, acceptType)
+                if payload then
+                    -- Only process if we don't already have a pending operation
+                    local hasPendingOp = globals.pendingGroupMove or globals.pendingContainerMove or globals.pendingContainerReorder
+                    if not hasPendingOp and params.dropTarget.onDrop then
                         params.dropTarget.onDrop(acceptType, dropPosition)
                     end
                 end
@@ -245,7 +251,7 @@ local function drawListItemWithButtons(params)
         end
     end
 
-    return opened, clicked
+    return clicked
 end
 
 
@@ -569,7 +575,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
         end
 
         -- Draw group using the helper function
-        local groupOpen, groupClicked = drawListItemWithButtons({
+        local groupClicked = drawListItemWithButtons({
             id = groupId,
             text = groupDisplayName,
             isSelected = isSelected,
@@ -691,11 +697,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
             }
         })
 
-        -- Update group expansion state
-        group.expanded = groupOpen
-
         -- If the group is open, display its content
-        if groupOpen then
+        if group.expanded then
 
             -- Help marker
             imgui.SameLine(globals.ctx)
@@ -725,7 +728,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 local containerAvailWidth = imgui.GetContentRegionAvail(globals.ctx)
 
                 -- Draw container using the helper function
-                local _, containerClicked = drawListItemWithButtons({
+                local containerClicked = drawListItemWithButtons({
                     id = containerId,
                     text = containerDisplayName,
                     isSelected = isSelected,
@@ -767,7 +770,11 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
                                 if sourceGroupIndex == i then
                                     -- Reorder within same group
-                                    if sourceContainerIndex ~= targetIndex and sourceContainerIndex ~= targetIndex - 1 then
+                                    -- Don't reorder if dropping at same position
+                                    local isSamePosition = (dropPosition == "before" and sourceContainerIndex == targetIndex) or
+                                                          (dropPosition == "after" and sourceContainerIndex == targetIndex - 1)
+
+                                    if not isSamePosition then
                                         globals.pendingContainerReorder = {
                                             groupIndex = i,
                                             sourceIndex = sourceContainerIndex,
@@ -838,11 +845,6 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                         globals.selectedContainers[i .. "_" .. k] = nil
                     end
                 end
-            end
-
-            -- TreePop for groups that are expanded
-            if groupOpen then
-                imgui.TreePop(globals.ctx)
             end
         end
     end
