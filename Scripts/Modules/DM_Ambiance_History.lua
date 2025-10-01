@@ -230,4 +230,34 @@ function History.setMaxSize(size)
     end
 end
 
+-- Get the history stack for UI display
+-- @return table: Array of history entries with {description, timestamp}
+function History.getHistoryStack()
+    return historyStack
+end
+
+-- Get current history index
+-- @return number: Current position in history (0 = no history)
+function History.getCurrentIndex()
+    return historyIndex
+end
+
+-- Get memory usage of history in bytes
+-- @return number: Approximate memory usage in bytes
+function History.getMemoryUsage()
+    -- Rough estimate: each snapshot is ~1KB per group/container
+    local totalGroups = 0
+    for _, snapshot in ipairs(historyStack) do
+        if snapshot.groups then
+            totalGroups = totalGroups + #snapshot.groups
+            for _, group in ipairs(snapshot.groups) do
+                if group.containers then
+                    totalGroups = totalGroups + #group.containers
+                end
+            end
+        end
+    end
+    return totalGroups * 1024 -- Rough estimate
+end
+
 return History

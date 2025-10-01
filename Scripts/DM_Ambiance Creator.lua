@@ -39,6 +39,7 @@ local RoutingValidator = dofile(script_path .. "Modules/DM_Ambiance_RoutingValid
 local Waveform = dofile(script_path .. "Modules/DM_Ambiance_Waveform.lua")
 local History = dofile(script_path .. "Modules/DM_Ambiance_History.lua")
 local UndoWrappers = dofile(script_path .. "Modules/DM_Ambiance_UndoWrappers.lua")
+local UI_UndoHistory = dofile(script_path .. "Modules/DM_Ambiance_UI_UndoHistory.lua")
 
 -- Global state shared across modules and UI
 local globals = {
@@ -72,6 +73,9 @@ local globals = {
     
     -- Drag and drop state
     draggedItem = nil,                -- Currently dragged item info
+
+    -- UI window states
+    showUndoHistoryWindow = false,    -- Flag to show/hide Undo History window
 }
 
 -- Main loop function for the GUI; called repeatedly via reaper.defer
@@ -99,7 +103,12 @@ local function loop()
 
     -- Render the main window; returns 'open' (true if window is open)
     local open = UI.ShowMainWindow(true)
-    
+
+    -- Show Undo History window if flagged
+    if globals.showUndoHistoryWindow then
+        globals.showUndoHistoryWindow = UI_UndoHistory.showWindow()
+    end
+
     UI.PopStyle()
 
     -- Continue the loop if the window is still open
@@ -156,6 +165,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.Waveform = Waveform
     globals.History = History
     globals.UndoWrappers = UndoWrappers
+    globals.UI_UndoHistory = UI_UndoHistory
 
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
@@ -169,6 +179,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     Waveform.initModule(globals)
     History.initModule(globals)
     UndoWrappers.initModule(globals)
+    UI_UndoHistory.initModule(globals)
     
     -- Initialize backward compatibility for container volumes
     Utils.initializeContainerVolumes()

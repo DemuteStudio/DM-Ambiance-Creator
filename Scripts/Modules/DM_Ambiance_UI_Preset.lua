@@ -112,7 +112,16 @@ function UI_Preset.drawPresetControls()
         imgui.SetTooltip(globals.ctx, "Redo last undone action (Ctrl+Y or Ctrl+Shift+Z)")
     end
     imgui.EndDisabled(globals.ctx)
-    
+
+    -- Undo History button
+    imgui.SameLine(globals.ctx)
+    if imgui.Button(globals.ctx, "History##UndoHistoryBtn") then
+        globals.showUndoHistoryWindow = not globals.showUndoHistoryWindow
+    end
+    if imgui.IsItemHovered(globals.ctx) then
+        imgui.SetTooltip(globals.ctx, "Show Undo History window")
+    end
+
     -- Handle the save preset popup modal window
     UI_Preset.handleSavePresetPopup(presetList)
     
