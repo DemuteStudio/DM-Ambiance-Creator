@@ -10,6 +10,9 @@
 local UndoWrappers = {}
 local globals = {}
 
+-- Track which widgets are currently being edited to avoid duplicate captures
+local activeWidgets = {}
+
 function UndoWrappers.initModule(g)
     if not g then
         error("UndoWrappers.initModule: globals parameter is required")
@@ -23,15 +26,23 @@ end
 -- @param text Current text value
 -- @return changed (boolean), new text value (string)
 function UndoWrappers.InputText(ctx, label, text)
-    -- Capture state BEFORE editing (when widget becomes active)
-    if globals.imgui.IsItemActivated(ctx) then
-        if globals.History then
-            globals.History.captureState("Edit text: " .. label)
-            reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE edit for: " .. label .. "\n")
-        end
-    end
+    -- Check BEFORE calling the widget
+    local shouldCapture = not activeWidgets[label]
 
     local rv, newText = globals.imgui.InputText(ctx, label, text)
+
+    -- Capture when value FIRST changes (rv is true for the first time this session)
+    if rv and shouldCapture and globals.History then
+        globals.History.captureState("Edit text: " .. label)
+        reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE first change for: " .. label .. "\n")
+        activeWidgets[label] = true
+    end
+
+    -- Clear tracking when widget is deactivated
+    if globals.imgui.IsItemDeactivated(ctx) then
+        activeWidgets[label] = nil
+        reaper.ShowConsoleMsg("[UndoWrappers] Deactivated: " .. label .. "\n")
+    end
 
     return rv, newText
 end
@@ -45,57 +56,94 @@ end
 -- @param format Display format (optional)
 -- @return changed (boolean), new value (number)
 function UndoWrappers.SliderDouble(ctx, label, value, min, max, format)
-    -- Capture state BEFORE editing (when widget becomes active)
-    if globals.imgui.IsItemActivated(ctx) then
-        if globals.History then
-            globals.History.captureState("Edit slider: " .. label)
-            reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE edit for: " .. label .. "\n")
-        end
-    end
+    -- Capture state BEFORE the widget returns a changed value for the first time
+    -- At this point globals.groups still has the OLD value because the calling code
+    -- hasn't executed "if rv then container.value = newValue" yet
+    local shouldCapture = not activeWidgets[label]
 
     local rv, newValue = globals.imgui.SliderDouble(ctx, label, value, min, max, format)
+
+    -- Capture when value FIRST changes (rv is true for the first time this session)
+    if rv and shouldCapture and globals.History then
+        globals.History.captureState("Edit slider: " .. label)
+        reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE first change for: " .. label .. "\n")
+        activeWidgets[label] = true
+    end
+
+    -- Clear tracking when widget is deactivated (user releases it)
+    if globals.imgui.IsItemDeactivated(ctx) then
+        activeWidgets[label] = nil
+        reaper.ShowConsoleMsg("[UndoWrappers] Deactivated: " .. label .. "\n")
+    end
 
     return rv, newValue
 end
 
 -- Wrapper for SliderInt with automatic undo
 function UndoWrappers.SliderInt(ctx, label, value, min, max, format)
-    if globals.imgui.IsItemActivated(ctx) then
-        if globals.History then
-            globals.History.captureState("Edit slider: " .. label)
-            reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE edit for: " .. label .. "\n")
-        end
-    end
+    -- Check BEFORE calling the widget
+    local shouldCapture = not activeWidgets[label]
 
     local rv, newValue = globals.imgui.SliderInt(ctx, label, value, min, max, format)
+
+    -- Capture when value FIRST changes (rv is true for the first time this session)
+    if rv and shouldCapture and globals.History then
+        globals.History.captureState("Edit slider: " .. label)
+        reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE first change for: " .. label .. "\n")
+        activeWidgets[label] = true
+    end
+
+    -- Clear tracking when widget is deactivated
+    if globals.imgui.IsItemDeactivated(ctx) then
+        activeWidgets[label] = nil
+        reaper.ShowConsoleMsg("[UndoWrappers] Deactivated: " .. label .. "\n")
+    end
 
     return rv, newValue
 end
 
 -- Wrapper for InputDouble with automatic undo
 function UndoWrappers.InputDouble(ctx, label, value, step, step_fast, format)
-    if globals.imgui.IsItemActivated(ctx) then
-        if globals.History then
-            globals.History.captureState("Edit input: " .. label)
-            reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE edit for: " .. label .. "\n")
-        end
-    end
+    -- Check BEFORE calling the widget
+    local shouldCapture = not activeWidgets[label]
 
     local rv, newValue = globals.imgui.InputDouble(ctx, label, value, step, step_fast, format)
+
+    -- Capture when value FIRST changes (rv is true for the first time this session)
+    if rv and shouldCapture and globals.History then
+        globals.History.captureState("Edit input: " .. label)
+        reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE first change for: " .. label .. "\n")
+        activeWidgets[label] = true
+    end
+
+    -- Clear tracking when widget is deactivated
+    if globals.imgui.IsItemDeactivated(ctx) then
+        activeWidgets[label] = nil
+        reaper.ShowConsoleMsg("[UndoWrappers] Deactivated: " .. label .. "\n")
+    end
 
     return rv, newValue
 end
 
 -- Wrapper for InputInt with automatic undo
 function UndoWrappers.InputInt(ctx, label, value, step, step_fast)
-    if globals.imgui.IsItemActivated(ctx) then
-        if globals.History then
-            globals.History.captureState("Edit input: " .. label)
-            reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE edit for: " .. label .. "\n")
-        end
-    end
+    -- Check BEFORE calling the widget
+    local shouldCapture = not activeWidgets[label]
 
     local rv, newValue = globals.imgui.InputInt(ctx, label, value, step, step_fast)
+
+    -- Capture when value FIRST changes (rv is true for the first time this session)
+    if rv and shouldCapture and globals.History then
+        globals.History.captureState("Edit input: " .. label)
+        reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE first change for: " .. label .. "\n")
+        activeWidgets[label] = true
+    end
+
+    -- Clear tracking when widget is deactivated
+    if globals.imgui.IsItemDeactivated(ctx) then
+        activeWidgets[label] = nil
+        reaper.ShowConsoleMsg("[UndoWrappers] Deactivated: " .. label .. "\n")
+    end
 
     return rv, newValue
 end
@@ -134,42 +182,69 @@ end
 
 -- Wrapper for DragDouble with automatic undo
 function UndoWrappers.DragDouble(ctx, label, value, v_speed, v_min, v_max, format)
-    if globals.imgui.IsItemActivated(ctx) then
-        if globals.History then
-            globals.History.captureState("Drag value: " .. label)
-            reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE edit for: " .. label .. "\n")
-        end
-    end
+    -- Check BEFORE calling the widget
+    local shouldCapture = not activeWidgets[label]
 
     local rv, newValue = globals.imgui.DragDouble(ctx, label, value, v_speed, v_min, v_max, format)
+
+    -- Capture when value FIRST changes (rv is true for the first time this session)
+    if rv and shouldCapture and globals.History then
+        globals.History.captureState("Drag value: " .. label)
+        reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE first change for: " .. label .. "\n")
+        activeWidgets[label] = true
+    end
+
+    -- Clear tracking when widget is deactivated
+    if globals.imgui.IsItemDeactivated(ctx) then
+        activeWidgets[label] = nil
+        reaper.ShowConsoleMsg("[UndoWrappers] Deactivated: " .. label .. "\n")
+    end
 
     return rv, newValue
 end
 
 -- Wrapper for DragInt with automatic undo
 function UndoWrappers.DragInt(ctx, label, value, v_speed, v_min, v_max, format)
-    if globals.imgui.IsItemActivated(ctx) then
-        if globals.History then
-            globals.History.captureState("Drag value: " .. label)
-            reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE edit for: " .. label .. "\n")
-        end
-    end
+    -- Check BEFORE calling the widget
+    local shouldCapture = not activeWidgets[label]
 
     local rv, newValue = globals.imgui.DragInt(ctx, label, value, v_speed, v_min, v_max, format)
+
+    -- Capture when value FIRST changes (rv is true for the first time this session)
+    if rv and shouldCapture and globals.History then
+        globals.History.captureState("Drag value: " .. label)
+        reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE first change for: " .. label .. "\n")
+        activeWidgets[label] = true
+    end
+
+    -- Clear tracking when widget is deactivated
+    if globals.imgui.IsItemDeactivated(ctx) then
+        activeWidgets[label] = nil
+        reaper.ShowConsoleMsg("[UndoWrappers] Deactivated: " .. label .. "\n")
+    end
 
     return rv, newValue
 end
 
 -- Wrapper for ColorEdit4 with automatic undo
 function UndoWrappers.ColorEdit4(ctx, label, col, flags)
-    if globals.imgui.IsItemActivated(ctx) then
-        if globals.History then
-            globals.History.captureState("Edit color: " .. label)
-            reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE edit for: " .. label .. "\n")
-        end
-    end
+    -- Check BEFORE calling the widget
+    local shouldCapture = not activeWidgets[label]
 
     local rv, r, g, b, a = globals.imgui.ColorEdit4(ctx, label, col, flags)
+
+    -- Capture when value FIRST changes (rv is true for the first time this session)
+    if rv and shouldCapture and globals.History then
+        globals.History.captureState("Edit color: " .. label)
+        reaper.ShowConsoleMsg("[UndoWrappers] Captured BEFORE first change for: " .. label .. "\n")
+        activeWidgets[label] = true
+    end
+
+    -- Clear tracking when widget is deactivated
+    if globals.imgui.IsItemDeactivated(ctx) then
+        activeWidgets[label] = nil
+        reaper.ShowConsoleMsg("[UndoWrappers] Deactivated: " .. label .. "\n")
+    end
 
     return rv, r, g, b, a
 end
