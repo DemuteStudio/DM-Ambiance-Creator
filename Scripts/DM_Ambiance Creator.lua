@@ -66,6 +66,7 @@ local globals = {
     pendingGroupMove = nil,           -- Pending group reorder operation
     pendingContainerMove = nil,       -- Pending container move operation
     pendingContainerReorder = nil,    -- Pending container reorder within same group
+    pendingContainerMultiMove = nil,  -- Pending multi-container move operation
     
     -- Drag and drop state
     draggedItem = nil,                -- Currently dragged item info

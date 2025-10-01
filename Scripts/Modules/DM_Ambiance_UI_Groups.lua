@@ -152,7 +152,13 @@ local function drawListItemWithButtons(params)
     if params.dragSource then
         if imgui.BeginDragDropSource(ctx, imgui.DragDropFlags_None) then
             imgui.SetDragDropPayload(ctx, params.dragSource.type, params.dragSource.data)
-            imgui.Text(ctx, params.dragSource.preview)
+
+            -- Handle preview as string or function
+            local previewText = params.dragSource.preview
+            if type(previewText) == "function" then
+                previewText = previewText()
+            end
+            imgui.Text(ctx, previewText)
 
             -- Initialize drag state
             if params.dragSource.onStart then
@@ -209,7 +215,7 @@ local function drawListItemWithButtons(params)
                 local payload = imgui.AcceptDragDropPayload(ctx, acceptType)
                 if payload then
                     -- Only process if we don't already have a pending operation
-                    local hasPendingOp = globals.pendingGroupMove or globals.pendingContainerMove or globals.pendingContainerReorder
+                    local hasPendingOp = globals.pendingGroupMove or globals.pendingContainerMove or globals.pendingContainerReorder or globals.pendingContainerMultiMove
                     if not hasPendingOp and params.dropTarget.onDrop then
                         params.dropTarget.onDrop(acceptType, dropPosition)
                     end
@@ -480,6 +486,50 @@ function UI_Groups.moveContainerToGroup(sourceGroupIndex, sourceContainerIndex, 
     globals.Utils.reorganizeTracksAfterContainerMove(sourceGroupIndex, targetGroupIndex, movingContainer.name)
 end
 
+-- Function to move multiple containers to a target group
+function UI_Groups.moveMultipleContainersToGroup(containers, targetGroupIndex, targetContainerIndex)
+    if not containers or #containers == 0 then return end
+
+    -- Sort containers by groupIndex then containerIndex (descending) to remove from back to front
+    table.sort(containers, function(a, b)
+        if a.groupIndex == b.groupIndex then
+            return a.containerIndex > b.containerIndex
+        end
+        return a.groupIndex > b.groupIndex
+    end)
+
+    -- Extract all containers first
+    local movedContainers = {}
+    for _, item in ipairs(containers) do
+        if item.groupIndex >= 1 and item.groupIndex <= #globals.groups and
+           item.containerIndex >= 1 and item.containerIndex <= #globals.groups[item.groupIndex].containers then
+            local container = globals.groups[item.groupIndex].containers[item.containerIndex]
+            table.insert(movedContainers, 1, container) -- Insert at front to maintain order
+            table.remove(globals.groups[item.groupIndex].containers, item.containerIndex)
+        end
+    end
+
+    -- Insert all containers at target position
+    if targetGroupIndex >= 1 and targetGroupIndex <= #globals.groups then
+        local insertIndex = math.max(1, math.min(targetContainerIndex, #globals.groups[targetGroupIndex].containers + 1))
+        for _, container in ipairs(movedContainers) do
+            table.insert(globals.groups[targetGroupIndex].containers, insertIndex, container)
+            insertIndex = insertIndex + 1
+        end
+    end
+
+    -- Clear selection and reorganize tracks
+    globals.selectedContainers = {}
+    globals.inMultiSelectMode = false
+    globals.selectedContainerIndex = nil
+
+    -- Trigger track reorganization
+    for _, item in ipairs(containers) do
+        globals.Utils.reorganizeTracksAfterContainerMove(item.groupIndex, targetGroupIndex, "multiple containers")
+        break -- Only need to call once
+    end
+end
+
 -- Function to reorder containers within the same group
 function UI_Groups.reorderContainers(groupIndex, sourceIndex, targetIndex)
     if sourceIndex == targetIndex or sourceIndex < 1 or targetIndex < 1 or
@@ -617,11 +667,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 allowDropInto = true, -- Groups can receive items INTO them
                 onDrop = function(payloadType, dropPosition)
                     if payloadType == "DND_CONTAINER" then
-                        -- Drop container
-                        if globals.draggedItem and globals.draggedItem.type == "CONTAINER" then
-                            local sourceGroupIndex = globals.draggedItem.groupIndex
-                            local sourceContainerIndex = globals.draggedItem.containerIndex
-
+                        -- Drop container(s)
+                        if globals.draggedItem and (globals.draggedItem.type == "CONTAINER" or globals.draggedItem.type == "CONTAINER_MULTI") then
                             local targetContainerIndex
                             if dropPosition == "before" then
                                 -- Insert before this group (beginning of group)
@@ -634,20 +681,33 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                                 targetContainerIndex = #globals.groups[i].containers + 1
                             end
 
-                            if sourceGroupIndex ~= i or (sourceGroupIndex == i and sourceContainerIndex ~= targetContainerIndex and sourceContainerIndex ~= targetContainerIndex - 1) then
-                                if sourceGroupIndex == i then
-                                    globals.pendingContainerReorder = {
-                                        groupIndex = i,
-                                        sourceIndex = sourceContainerIndex,
-                                        targetIndex = targetContainerIndex
-                                    }
-                                else
-                                    globals.pendingContainerMove = {
-                                        sourceGroupIndex = sourceGroupIndex,
-                                        sourceContainerIndex = sourceContainerIndex,
-                                        targetGroupIndex = i,
-                                        targetContainerIndex = targetContainerIndex
-                                    }
+                            if globals.draggedItem.type == "CONTAINER_MULTI" then
+                                -- Multi-container move to group
+                                globals.pendingContainerMultiMove = {
+                                    containers = globals.draggedItem.containers,
+                                    targetGroupIndex = i,
+                                    targetContainerIndex = targetContainerIndex
+                                }
+                            else
+                                -- Single container move
+                                local sourceGroupIndex = globals.draggedItem.groupIndex
+                                local sourceContainerIndex = globals.draggedItem.containerIndex
+
+                                if sourceGroupIndex ~= i or (sourceGroupIndex == i and sourceContainerIndex ~= targetContainerIndex and sourceContainerIndex ~= targetContainerIndex - 1) then
+                                    if sourceGroupIndex == i then
+                                        globals.pendingContainerReorder = {
+                                            groupIndex = i,
+                                            sourceIndex = sourceContainerIndex,
+                                            targetIndex = targetContainerIndex
+                                        }
+                                    else
+                                        globals.pendingContainerMove = {
+                                            sourceGroupIndex = sourceGroupIndex,
+                                            sourceContainerIndex = sourceContainerIndex,
+                                            targetGroupIndex = i,
+                                            targetContainerIndex = targetContainerIndex
+                                        }
+                                    end
                                 end
                             end
                         end
@@ -745,14 +805,41 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                     dragSource = {
                         type = "DND_CONTAINER",
                         data = string.format("CONTAINER:%d:%d", i, j),
-                        preview = "📦 " .. container.name,
+                        preview = function()
+                            -- If multi-select is active and this container is selected, show count
+                            if globals.inMultiSelectMode and isSelected then
+                                local count = UI_Groups.getSelectedContainersCount()
+                                return "📦 " .. count .. " containers"
+                            else
+                                return "📦 " .. container.name
+                            end
+                        end,
                         onStart = function()
-                            globals.draggedItem = {
-                                type = "CONTAINER",
-                                groupIndex = i,
-                                containerIndex = j,
-                                name = container.name
-                            }
+                            -- If dragging a selected container in multi-select mode, store all selected
+                            if globals.inMultiSelectMode and isSelected then
+                                local selectedContainers = {}
+                                for key, _ in pairs(globals.selectedContainers) do
+                                    local gIdx, cIdx = key:match("(%d+)_(%d+)")
+                                    if gIdx and cIdx then
+                                        table.insert(selectedContainers, {
+                                            groupIndex = tonumber(gIdx),
+                                            containerIndex = tonumber(cIdx)
+                                        })
+                                    end
+                                end
+                                globals.draggedItem = {
+                                    type = "CONTAINER_MULTI",
+                                    containers = selectedContainers,
+                                    count = #selectedContainers
+                                }
+                            else
+                                globals.draggedItem = {
+                                    type = "CONTAINER",
+                                    groupIndex = i,
+                                    containerIndex = j,
+                                    name = container.name
+                                }
+                            end
                         end
                     },
 
@@ -769,7 +856,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                                     local targetIndex = i + 1 -- Always drop after parent group
 
                                     if sourceIndex ~= targetIndex and sourceIndex ~= targetIndex - 1 then
-                                        local hasPendingOp = globals.pendingGroupMove or globals.pendingContainerMove or globals.pendingContainerReorder
+                                        local hasPendingOp = globals.pendingGroupMove or globals.pendingContainerMove or globals.pendingContainerReorder or globals.pendingContainerMultiMove
                                         if not hasPendingOp then
                                             globals.pendingGroupMove = {
                                                 sourceIndex = sourceIndex,
@@ -778,10 +865,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                                         end
                                     end
                                 end
-                            elseif globals.draggedItem and globals.draggedItem.type == "CONTAINER" then
-                                local sourceGroupIndex = globals.draggedItem.groupIndex
-                                local sourceContainerIndex = globals.draggedItem.containerIndex
-
+                            elseif globals.draggedItem and (globals.draggedItem.type == "CONTAINER" or globals.draggedItem.type == "CONTAINER_MULTI") then
                                 -- Calculate target index based on drop position
                                 local targetIndex
                                 if dropPosition == "before" then
@@ -790,27 +874,40 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                                     targetIndex = j + 1
                                 end
 
-                                if sourceGroupIndex == i then
-                                    -- Reorder within same group
-                                    -- Don't reorder if dropping at same position
-                                    local isSamePosition = (dropPosition == "before" and sourceContainerIndex == targetIndex) or
-                                                          (dropPosition == "after" and sourceContainerIndex == targetIndex - 1)
-
-                                    if not isSamePosition then
-                                        globals.pendingContainerReorder = {
-                                            groupIndex = i,
-                                            sourceIndex = sourceContainerIndex,
-                                            targetIndex = targetIndex
-                                        }
-                                    end
-                                else
-                                    -- Move between groups
-                                    globals.pendingContainerMove = {
-                                        sourceGroupIndex = sourceGroupIndex,
-                                        sourceContainerIndex = sourceContainerIndex,
+                                if globals.draggedItem.type == "CONTAINER_MULTI" then
+                                    -- Multi-container move
+                                    globals.pendingContainerMultiMove = {
+                                        containers = globals.draggedItem.containers,
                                         targetGroupIndex = i,
                                         targetContainerIndex = targetIndex
                                     }
+                                else
+                                    -- Single container move
+                                    local sourceGroupIndex = globals.draggedItem.groupIndex
+                                    local sourceContainerIndex = globals.draggedItem.containerIndex
+
+                                    if sourceGroupIndex == i then
+                                        -- Reorder within same group
+                                        -- Don't reorder if dropping at same position
+                                        local isSamePosition = (dropPosition == "before" and sourceContainerIndex == targetIndex) or
+                                                              (dropPosition == "after" and sourceContainerIndex == targetIndex - 1)
+
+                                        if not isSamePosition then
+                                            globals.pendingContainerReorder = {
+                                                groupIndex = i,
+                                                sourceIndex = sourceContainerIndex,
+                                                targetIndex = targetIndex
+                                            }
+                                        end
+                                    else
+                                        -- Move between groups
+                                        globals.pendingContainerMove = {
+                                            sourceGroupIndex = sourceGroupIndex,
+                                            sourceContainerIndex = sourceContainerIndex,
+                                            targetGroupIndex = i,
+                                            targetContainerIndex = targetIndex
+                                        }
+                                    end
                                 end
                             end
                         end
@@ -908,6 +1005,16 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
         globals.draggedItem = nil -- Clear drag state after successful move
     end
     
+    if globals.pendingContainerMultiMove then
+        UI_Groups.moveMultipleContainersToGroup(
+            globals.pendingContainerMultiMove.containers,
+            globals.pendingContainerMultiMove.targetGroupIndex,
+            globals.pendingContainerMultiMove.targetContainerIndex
+        )
+        globals.pendingContainerMultiMove = nil
+        globals.draggedItem = nil -- Clear drag state after successful move
+    end
+
     if globals.pendingContainerMove then
         UI_Groups.moveContainerToGroup(
             globals.pendingContainerMove.sourceGroupIndex,
@@ -918,7 +1025,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
         globals.pendingContainerMove = nil
         globals.draggedItem = nil -- Clear drag state after successful move
     end
-    
+
     if globals.pendingContainerReorder then
         UI_Groups.reorderContainers(
             globals.pendingContainerReorder.groupIndex,
@@ -930,8 +1037,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
     end
     
     -- Clean up drag state if no drag is active and no pending operations (fixes persistent drop zones)
-    if globals.draggedItem and not imgui.IsMouseDown(globals.ctx, imgui.MouseButton_Left) and 
-       not globals.pendingGroupMove and not globals.pendingContainerMove and not globals.pendingContainerReorder then
+    if globals.draggedItem and not imgui.IsMouseDown(globals.ctx, imgui.MouseButton_Left) and
+       not globals.pendingGroupMove and not globals.pendingContainerMove and not globals.pendingContainerReorder and not globals.pendingContainerMultiMove then
         globals.draggedItem = nil
     end
 end
