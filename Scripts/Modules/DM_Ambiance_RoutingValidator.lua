@@ -1768,7 +1768,7 @@ function RoutingValidator.renderModal()
         -- Get window dimensions for proper layout
         local windowWidth, windowHeight = imgui.GetWindowSize(ctx)
         local headerHeight = 80
-        local footerHeight = 80
+        local footerHeight = 100 -- Increased from 80 to prevent button clipping
         local contentHeight = windowHeight - headerHeight - footerHeight - 20
 
         -- Header

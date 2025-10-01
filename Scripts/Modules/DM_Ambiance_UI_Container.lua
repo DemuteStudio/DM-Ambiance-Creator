@@ -208,7 +208,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             local itemToDelete = nil
 
             -- Create a child window for the item list to make it scrollable
-            if imgui.BeginChild(globals.ctx, "ItemsList" .. containerId, width * 0.95, 100) then
+            -- Reduce width to account for scrollbar
+            local listWidth = width * 0.88 -- Reduced from 0.95 to avoid scrollbar overlap
+            if imgui.BeginChild(globals.ctx, "ItemsList" .. containerId, listWidth, 100) then
                 -- List all imported items as selectable items
                 for l, item in ipairs(container.items) do
                     imgui.PushID(globals.ctx, "item_" .. l)

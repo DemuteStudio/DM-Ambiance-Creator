@@ -91,6 +91,145 @@ function UI_Groups.drawGroupPresetControls(i)
     end
 end
 
+-- Helper function to draw a list item (group or container) with buttons aligned to the right
+-- This replaces the TreeNodeEx approach with Selectable for better width control
+-- @param params table: Configuration table with the following keys:
+--   - id: string - Unique ID for the item
+--   - text: string - Display text
+--   - isSelected: boolean - Whether the item is selected
+--   - hasArrow: boolean - Whether to show expand/collapse arrow
+--   - isOpen: boolean - Whether the item is expanded (only used if hasArrow = true)
+--   - availableWidth: number - Total available width for the row
+--   - dragSource: table - Drag source config {type, data, preview, onStart} (optional)
+--   - dropTarget: table - Drop target config {accept[], onDrop} (optional)
+--   - onSelect: function - Callback when item is clicked
+--   - onToggle: function - Callback when arrow is clicked (only if hasArrow = true)
+--   - buttons: table - Array of button configs {icon, id, tooltip, onClick}
+-- @return boolean - Whether the item was clicked
+local function drawListItemWithButtons(params)
+    local imgui = globals.imgui
+    local ctx = globals.ctx
+
+    -- Calculate width for selectable (leave space for buttons)
+    local buttonWidth = 16
+    local buttonSpacing = 5
+    local numButtons = #params.buttons
+    local totalButtonWidth = numButtons * (buttonWidth + buttonSpacing)
+    local scrollbarMargin = 40 -- Reserve more space for scrollbar + safety margin
+    local selectableWidth = params.availableWidth - totalButtonWidth - scrollbarMargin
+
+    -- Draw expansion arrow if needed
+    if params.hasArrow then
+        local arrowIcon = params.isOpen and "▼" or "▶"
+        imgui.Text(ctx, arrowIcon)
+
+        -- Check if arrow was clicked
+        if imgui.IsItemClicked(ctx) then
+            if params.onToggle then
+                params.onToggle()
+            end
+        end
+
+        imgui.SameLine(ctx, 0, 5)
+        selectableWidth = selectableWidth - 20 -- Reduce width to account for arrow
+    end
+
+    -- Draw selectable with fixed width (like imported items)
+    local clicked = imgui.Selectable(
+        ctx,
+        params.text,
+        params.isSelected,
+        imgui.SelectableFlags_AllowDoubleClick,
+        selectableWidth,
+        0
+    )
+
+    -- DRAG SOURCE: Must be IMMEDIATELY after Selectable (ImGui requirement)
+    if params.dragSource then
+        if imgui.BeginDragDropSource(ctx) then
+            imgui.SetDragDropPayload(ctx, params.dragSource.type, params.dragSource.data)
+            imgui.Text(ctx, params.dragSource.preview)
+
+            -- Initialize drag state
+            if params.dragSource.onStart then
+                params.dragSource.onStart()
+            end
+
+            imgui.EndDragDropSource(ctx)
+        end
+    end
+
+    -- DROP TARGET: Can be on the same widget
+    if params.dropTarget then
+        if imgui.BeginDragDropTarget(ctx) then
+            -- Visual indicator when hovering with valid payload
+            local min_x, min_y = imgui.GetItemRectMin(ctx)
+            local max_x, max_y = imgui.GetItemRectMax(ctx)
+            local drawList = imgui.GetWindowDrawList(ctx)
+
+            -- Get button color from settings for highlight
+            local buttonColor = globals.Settings.getSetting("buttonColor")
+            local highlightColor = buttonColor & 0xFFFFFF40 -- Semi-transparent
+            local borderColor = globals.Utils.brightenColor(buttonColor, 0.3)
+
+            -- Draw highlight background
+            imgui.DrawList_AddRectFilled(drawList, min_x, min_y, max_x, max_y, highlightColor)
+            imgui.DrawList_AddRect(drawList, min_x, min_y, max_x, max_y, borderColor, 0, 0, 2)
+
+            -- Try to accept each specified payload type
+            for _, acceptType in ipairs(params.dropTarget.accept) do
+                if imgui.AcceptDragDropPayload(ctx, acceptType) then
+                    if params.dropTarget.onDrop then
+                        params.dropTarget.onDrop(acceptType)
+                    end
+                end
+            end
+            imgui.EndDragDropTarget(ctx)
+        end
+    end
+
+    -- Handle selection clicks
+    if clicked then
+        if params.hasArrow and imgui.IsMouseDoubleClicked(ctx, 0) and params.onToggle then
+            params.onToggle()
+        elseif params.onSelect then
+            params.onSelect()
+        end
+    end
+
+    -- Draw buttons aligned to the right
+    for i, button in ipairs(params.buttons) do
+        imgui.SameLine(ctx, 0, buttonSpacing)
+
+        -- For first button, position it at the right edge
+        if i == 1 then
+            local currentX = imgui.GetCursorPosX(ctx)
+            local contentAvail = imgui.GetContentRegionAvail(ctx)
+            -- Reserve space for scrollbar (16px) + safety margin (8px)
+            local scrollbarReserve = 24
+            local rightX = currentX + contentAvail - totalButtonWidth - scrollbarReserve
+            imgui.SetCursorPosX(ctx, rightX)
+        end
+
+        -- Draw the appropriate button based on icon type
+        if button.icon == "+" then
+            if globals.Icons.createAddButton(ctx, button.id, button.tooltip) then
+                button.onClick()
+            end
+        elseif button.icon == "X" then
+            if globals.Icons.createDeleteButton(ctx, button.id, button.tooltip) then
+                button.onClick()
+            end
+        elseif button.icon == "↻" then
+            if globals.Icons.createRegenButton(ctx, button.id, button.tooltip) then
+                button.onClick()
+            end
+        end
+    end
+
+    return clicked
+end
+
 
 -- Create a drop zone with insertion line for groups (only during drag)
 local function createGroupInsertionLine(insertIndex)
@@ -399,83 +538,112 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
     local ctrlPressed = imgui.GetKeyMods(globals.ctx) & imgui.Mod_Ctrl ~= 0
     local groupToDelete = nil
 
-    -- Drop zone before first group
-    createGroupInsertionLine(1)
-
     -- Loop through groups
     for i, group in ipairs(globals.groups) do
         local groupId = "group" .. i
+        local isSelected = (globals.selectedGroupIndex == i and globals.selectedContainerIndex == nil)
+        local isOpen = group.expanded or false
 
-        -- TreeNode flags for group selection and expansion
-        local groupFlags = group.expanded and imgui.TreeNodeFlags_DefaultOpen or 0
-        groupFlags = groupFlags + imgui.TreeNodeFlags_OpenOnArrow + imgui.TreeNodeFlags_SpanTextWidth
-        if globals.selectedGroupIndex == i and globals.selectedContainerIndex == nil then
-            groupFlags = groupFlags + imgui.TreeNodeFlags_Selected
-        end
-
-        -- Create tree node for the group with regeneration indicator
+        -- Prepare display name with regeneration indicator
         local groupDisplayName = group.name
         if group.needsRegeneration then
             groupDisplayName = "• " .. group.name
         end
-        local groupOpen = imgui.TreeNodeEx(globals.ctx, groupId, groupDisplayName, groupFlags)
-        group.expanded = groupOpen
 
-        -- Make group draggable
-        if imgui.BeginDragDropSource(globals.ctx) then
-            local payloadData = string.format("GROUP:%d", i)
-            imgui.SetDragDropPayload(globals.ctx, "DND_GROUP", payloadData)
-            imgui.Text(globals.ctx, "📁 " .. group.name)
-            
-            -- Store drag info in global variable
-            globals.draggedItem = {
-                type = "GROUP",
-                index = i,
-                name = group.name
+        -- Draw group using the new helper function
+        drawListItemWithButtons({
+            id = groupId,
+            text = groupDisplayName,
+            isSelected = isSelected,
+            hasArrow = true,
+            isOpen = isOpen,
+            availableWidth = width,
+
+            -- Drag source: groups can be dragged
+            dragSource = {
+                type = "DND_GROUP",
+                data = string.format("GROUP:%d", i),
+                preview = "📁 " .. group.name,
+                onStart = function()
+                    globals.draggedItem = {
+                        type = "GROUP",
+                        index = i,
+                        name = group.name
+                    }
+                end
+            },
+
+            -- Drop target: groups and containers can be dropped on groups
+            dropTarget = {
+                accept = {"DND_GROUP", "DND_CONTAINER"},
+                onDrop = function(payloadType)
+                    if payloadType == "DND_CONTAINER" then
+                        -- Drop container at the end of the group
+                        if globals.draggedItem and globals.draggedItem.type == "CONTAINER" then
+                            local sourceGroupIndex = globals.draggedItem.groupIndex
+                            local sourceContainerIndex = globals.draggedItem.containerIndex
+
+                            if sourceGroupIndex ~= i then
+                                globals.pendingContainerMove = {
+                                    sourceGroupIndex = sourceGroupIndex,
+                                    sourceContainerIndex = sourceContainerIndex,
+                                    targetGroupIndex = i,
+                                    targetContainerIndex = #globals.groups[i].containers + 1
+                                }
+                            end
+                        end
+                    elseif payloadType == "DND_GROUP" then
+                        -- Reorder groups
+                        if globals.draggedItem and globals.draggedItem.type == "GROUP" then
+                            local sourceIndex = globals.draggedItem.index
+                            if sourceIndex ~= i then
+                                globals.pendingGroupMove = {
+                                    sourceIndex = sourceIndex,
+                                    targetIndex = i
+                                }
+                            end
+                        end
+                    end
+                end
+            },
+
+            onSelect = function()
+                globals.selectedGroupIndex = i
+                globals.selectedContainerIndex = nil
+                if not ctrlPressed then
+                    clearContainerSelections()
+                end
+            end,
+
+            onToggle = function()
+                group.expanded = not group.expanded
+            end,
+
+            buttons = {
+                {icon = "+", id = groupId, tooltip = "Add container", onClick = function()
+                    table.insert(group.containers, globals.Structures.createContainer())
+                    clearContainerSelections()
+                    local newContainerIndex = #group.containers
+                    toggleContainerSelection(i, newContainerIndex)
+                    globals.selectedGroupIndex = i
+                    globals.selectedContainerIndex = newContainerIndex
+                    globals.inMultiSelectMode = false
+                    globals.shiftAnchorGroupIndex = i
+                    globals.shiftAnchorContainerIndex = newContainerIndex
+                    -- Ensure the group is expanded to show the new container
+                    group.expanded = true
+                end},
+                {icon = "X", id = groupId, tooltip = "Delete group", onClick = function()
+                    groupToDelete = i
+                end},
+                {icon = "↻", id = groupId, tooltip = "Regenerate group", onClick = function()
+                    globals.Generation.generateSingleGroup(i)
+                end}
             }
-            
-            imgui.EndDragDropSource(globals.ctx)
-        end
-
-        -- Make group a drop target for containers
-        createGroupDropZone(i)
-
-        -- Handle selection on click
-        if imgui.IsItemClicked(globals.ctx) then
-            globals.selectedGroupIndex = i
-            globals.selectedContainerIndex = nil
-            if not ctrlPressed then
-                clearContainerSelections()
-            end
-        end
-
-        -- Action buttons: Add, Delete, and Regenerate
-        imgui.SameLine(globals.ctx)
-        if globals.Icons.createAddButton(globals.ctx, groupId, "Add container") then
-            table.insert(group.containers, globals.Structures.createContainer())
-            clearContainerSelections()
-            local newContainerIndex = #group.containers
-            toggleContainerSelection(i, newContainerIndex)
-            globals.selectedGroupIndex = i
-            globals.selectedContainerIndex = newContainerIndex
-            globals.inMultiSelectMode = false
-            globals.shiftAnchorGroupIndex = i
-            globals.shiftAnchorContainerIndex = newContainerIndex
-            -- Ensure the group is expanded to show the new container
-            group.expanded = true
-        end
-        
-        imgui.SameLine(globals.ctx)
-        if globals.Icons.createDeleteButton(globals.ctx, groupId, "Delete group") then
-            groupToDelete = i
-        end
-        imgui.SameLine(globals.ctx)
-        if globals.Icons.createRegenButton(globals.ctx, groupId, "Regenerate group") then
-            globals.Generation.generateSingleGroup(i)
-        end
+        })
 
         -- If the group is open, display its content
-        if groupOpen then
+        if group.expanded then
 
             -- Help marker
             imgui.SameLine(globals.ctx)
@@ -487,104 +655,110 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
             local containerToDelete = nil
 
-            -- Drop zone before first container
-            if #group.containers > 0 then
-                createContainerInsertionLine(i, 1)
-            end
-
             -- Loop through containers in this group
             for j, container in ipairs(group.containers) do
                 local containerId = groupId .. "_container" .. j
-                local containerFlags = imgui.TreeNodeFlags_Leaf + imgui.TreeNodeFlags_NoTreePushOnOpen
-                containerFlags = containerFlags + imgui.TreeNodeFlags_SpanTextWidth
-                if isContainerSelected(i, j) then
-                    containerFlags = containerFlags + imgui.TreeNodeFlags_Selected
-                end
+                local isSelected = isContainerSelected(i, j)
 
-                -- Indent containers visually
-                local startX = imgui.GetCursorPosX(globals.ctx)
-                imgui.Indent(globals.ctx, Constants.UI.CONTAINER_INDENT)
-                local nameWidth = width * 0.45
-                imgui.PushItemWidth(globals.ctx, nameWidth)
-                -- Add regeneration indicator to container name
+                -- Prepare display name with regeneration indicator
                 local containerDisplayName = container.name
                 if container.needsRegeneration then
                     containerDisplayName = "• " .. container.name
                 end
-                imgui.TreeNodeEx(globals.ctx, containerId, containerDisplayName, containerFlags)
-                imgui.PopItemWidth(globals.ctx)
 
-                -- Make container draggable
-                if imgui.BeginDragDropSource(globals.ctx) then
-                    local payloadData = string.format("CONTAINER:%d:%d", i, j)
-                    imgui.SetDragDropPayload(globals.ctx, "DND_CONTAINER", payloadData)
-                    imgui.Text(globals.ctx, "📦 " .. container.name)
-                    
-                    -- Store drag info in global variable
-                    globals.draggedItem = {
-                        type = "CONTAINER",
-                        groupIndex = i,
-                        containerIndex = j,
-                        name = container.name
-                    }
-                    
-                    imgui.EndDragDropSource(globals.ctx)
-                end
+                -- Indent containers visually
+                imgui.Indent(globals.ctx, Constants.UI.CONTAINER_INDENT)
 
-                -- Handle selection with multi-selection support
-                if imgui.IsItemClicked(globals.ctx) then
-                    local shiftPressed = imgui.GetKeyMods(globals.ctx) & imgui.Mod_Shift ~= 0
-                    if ctrlPressed then
-                        toggleContainerSelection(i, j)
-                        globals.inMultiSelectMode = UI_Groups.getSelectedContainersCount() > 1
-                        globals.shiftAnchorGroupIndex = i
-                        globals.shiftAnchorContainerIndex = j
-                    elseif shiftPressed and globals.shiftAnchorGroupIndex then
-                        selectContainerRange(globals.shiftAnchorGroupIndex, globals.shiftAnchorContainerIndex, i, j)
-                    else
-                        clearContainerSelections()
-                        -- Stop any playing audio when selecting a different container
-                        if globals.Waveform then
-                            globals.Waveform.stopPlayback()
+                -- Get actual available width after indentation
+                local containerAvailWidth = imgui.GetContentRegionAvail(globals.ctx)
+
+                -- Draw container using the new helper function
+                drawListItemWithButtons({
+                    id = containerId,
+                    text = containerDisplayName,
+                    isSelected = isSelected,
+                    hasArrow = false, -- Containers don't have expansion arrow
+                    isOpen = false,
+                    availableWidth = containerAvailWidth,
+
+                    -- Drag source: containers can be dragged
+                    dragSource = {
+                        type = "DND_CONTAINER",
+                        data = string.format("CONTAINER:%d:%d", i, j),
+                        preview = "📦 " .. container.name,
+                        onStart = function()
+                            globals.draggedItem = {
+                                type = "CONTAINER",
+                                groupIndex = i,
+                                containerIndex = j,
+                                name = container.name
+                            }
                         end
-                        toggleContainerSelection(i, j)
-                        globals.inMultiSelectMode = false
-                        globals.shiftAnchorGroupIndex = i
-                        globals.shiftAnchorContainerIndex = j
-                    end
-                end
+                    },
 
-                -- Position buttons for container actions - align to the right (avoiding scrollbar)
-                local currentX = imgui.GetCursorPosX(globals.ctx)
-                local availableWidth = imgui.GetContentRegionAvail(globals.ctx)
-                local buttonWidth = 16 -- Icon size
-                local buttonSpacing = 4 -- Space between buttons
-                local totalButtonWidth = (buttonWidth * 2) + buttonSpacing
-                
-                -- Reserve space for scrollbar to avoid overlap
-                local scrollbarWidth = 16 -- Standard scrollbar width
-                local scrollbarMargin = 8  -- Safety margin
-                local safeWidth = availableWidth - scrollbarWidth - scrollbarMargin
-                local rightmostX = currentX + safeWidth - totalButtonWidth
-                
-                imgui.SameLine(globals.ctx)
-                imgui.SetCursorPosX(globals.ctx, rightmostX)
+                    -- Drop target: containers can be dropped on other containers
+                    dropTarget = {
+                        accept = {"DND_CONTAINER"},
+                        onDrop = function(payloadType)
+                            if globals.draggedItem and globals.draggedItem.type == "CONTAINER" then
+                                local sourceGroupIndex = globals.draggedItem.groupIndex
+                                local sourceContainerIndex = globals.draggedItem.containerIndex
 
-                -- Delete container button
-                if globals.Icons.createDeleteButton(globals.ctx, containerId, "Delete container") then
-                    containerToDelete = j
-                end
+                                if sourceGroupIndex == i then
+                                    -- Reorder within same group
+                                    if sourceContainerIndex ~= j then
+                                        globals.pendingContainerReorder = {
+                                            groupIndex = i,
+                                            sourceIndex = sourceContainerIndex,
+                                            targetIndex = j
+                                        }
+                                    end
+                                else
+                                    -- Move between groups
+                                    globals.pendingContainerMove = {
+                                        sourceGroupIndex = sourceGroupIndex,
+                                        sourceContainerIndex = sourceContainerIndex,
+                                        targetGroupIndex = i,
+                                        targetContainerIndex = j
+                                    }
+                                end
+                            end
+                        end
+                    },
 
-                -- Regenerate container button
-                imgui.SameLine(globals.ctx)
-                if globals.Icons.createRegenButton(globals.ctx, containerId, "Regenerate container") then
-                    globals.Generation.generateSingleContainer(i, j)
-                end
+                    onSelect = function()
+                        local shiftPressed = imgui.GetKeyMods(globals.ctx) & imgui.Mod_Shift ~= 0
+                        if ctrlPressed then
+                            toggleContainerSelection(i, j)
+                            globals.inMultiSelectMode = UI_Groups.getSelectedContainersCount() > 1
+                            globals.shiftAnchorGroupIndex = i
+                            globals.shiftAnchorContainerIndex = j
+                        elseif shiftPressed and globals.shiftAnchorGroupIndex then
+                            selectContainerRange(globals.shiftAnchorGroupIndex, globals.shiftAnchorContainerIndex, i, j)
+                        else
+                            clearContainerSelections()
+                            -- Stop any playing audio when selecting a different container
+                            if globals.Waveform then
+                                globals.Waveform.stopPlayback()
+                            end
+                            toggleContainerSelection(i, j)
+                            globals.inMultiSelectMode = false
+                            globals.shiftAnchorGroupIndex = i
+                            globals.shiftAnchorContainerIndex = j
+                        end
+                    end,
+
+                    buttons = {
+                        {icon = "X", id = containerId, tooltip = "Delete container", onClick = function()
+                            containerToDelete = j
+                        end},
+                        {icon = "↻", id = containerId, tooltip = "Regenerate container", onClick = function()
+                            globals.Generation.generateSingleContainer(i, j)
+                        end}
+                    }
+                })
 
                 imgui.Unindent(globals.ctx, Constants.UI.CONTAINER_INDENT)
-
-                -- Drop zone after each container
-                createContainerInsertionLine(i, j + 1)
             end
 
             -- Delete the marked container if any
@@ -604,12 +778,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                     end
                 end
             end
-
-            imgui.TreePop(globals.ctx)
         end
-
-        -- Drop zone after each group
-        createGroupInsertionLine(i + 1)
     end
 
     -- Delete the marked group if any
