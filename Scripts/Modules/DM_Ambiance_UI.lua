@@ -36,6 +36,10 @@ function UI.initModule(g)
     globals.shiftAnchorGroupIndex = nil
     globals.shiftAnchorContainerIndex = nil
 
+    -- Initialize splitter state
+    globals.splitterDragging = false
+    globals.leftPanelWidth = nil  -- Will be loaded from settings
+
     -- Initialize UI submodules with globals
     UI_Preset.initModule(globals)
     UI_Container.initModule(globals)
@@ -1043,6 +1047,28 @@ local function detectAndFixImGuiImbalance()
     end
 end
 
+-- Get the left panel width (with resizing support)
+local function getLeftPanelWidth(windowWidth)
+    local Constants = require("DM_Ambiance_Constants")
+
+    -- Load saved width from settings or use default
+    if globals.leftPanelWidth == nil then
+        local savedWidth = globals.Settings.getSetting("leftPanelWidth")
+        if savedWidth then
+            globals.leftPanelWidth = savedWidth
+        else
+            globals.leftPanelWidth = windowWidth * Constants.UI.LEFT_PANEL_DEFAULT_WIDTH
+        end
+    end
+
+    -- Ensure minimum width and adjust for window size
+    local minWidth = Constants.UI.MIN_LEFT_PANEL_WIDTH
+    local maxWidth = windowWidth - 200  -- Leave at least 200px for right panel
+    globals.leftPanelWidth = math.max(minWidth, math.min(globals.leftPanelWidth, maxWidth))
+
+    return globals.leftPanelWidth
+end
+
 -- Main window rendering function
 function UI.ShowMainWindow(open)
     local windowFlags = imgui.WindowFlags_None
@@ -1072,7 +1098,7 @@ function UI.ShowMainWindow(open)
                         })
                     end
                 end
-                
+
                 -- Sort in reverse order (highest indices first)
                 table.sort(toDelete, function(a, b)
                     if a.groupIndex == b.groupIndex then
@@ -1080,7 +1106,7 @@ function UI.ShowMainWindow(open)
                     end
                     return a.groupIndex > b.groupIndex
                 end)
-                
+
                 -- Delete containers
                 for _, item in ipairs(toDelete) do
                     local group = globals.groups[item.groupIndex]
@@ -1088,31 +1114,31 @@ function UI.ShowMainWindow(open)
                         table.remove(group.containers, item.containerIndex)
                     end
                 end
-                
+
                 -- Clear selections
                 globals.selectedContainers = {}
                 globals.inMultiSelectMode = false
                 globals.selectedContainerIndex = nil
-                
+
             -- Check if a single container is selected
             elseif globals.selectedGroupIndex and globals.selectedContainerIndex then
                 local group = globals.groups[globals.selectedGroupIndex]
                 if group and group.containers[globals.selectedContainerIndex] then
                     -- Store current indices
                     local containerIdx = globals.selectedContainerIndex
-                    
+
                     -- Remove the container
                     table.remove(group.containers, containerIdx)
-                    
+
                     -- Clear selection
                     globals.selectedContainerIndex = nil
-                    
+
                     -- Clear from multi-selection if present
                     local selectionKey = globals.selectedGroupIndex .. "_" .. containerIdx
                     if globals.selectedContainers[selectionKey] then
                         globals.selectedContainers[selectionKey] = nil
                     end
-                    
+
                     -- Update selection indices for containers after the deleted one
                     for k = containerIdx + 1, #group.containers + 1 do
                         local oldKey = globals.selectedGroupIndex .. "_" .. k
@@ -1126,13 +1152,13 @@ function UI.ShowMainWindow(open)
             -- Check if only a group is selected (no container selected)
             elseif globals.selectedGroupIndex and not globals.selectedContainerIndex then
                 local groupIdx = globals.selectedGroupIndex
-                
+
                 -- Remove the group and all its containers
                 table.remove(globals.groups, groupIdx)
-                
+
                 -- Clear selection
                 globals.selectedGroupIndex = nil
-                
+
                 -- Clear any selected containers from this group
                 for key in pairs(globals.selectedContainers) do
                     local t, c = key:match("(%d+)_(%d+)")
@@ -1146,21 +1172,21 @@ function UI.ShowMainWindow(open)
                         globals.selectedContainers[key] = nil
                     end
                 end
-                
+
                 -- Update selected group index if needed
                 if globals.selectedGroupIndex and globals.selectedGroupIndex > groupIdx then
                     globals.selectedGroupIndex = globals.selectedGroupIndex - 1
                 end
             end
         end
-        
+
         -- Top section: preset controls and generation button
         UI_Preset.drawPresetControls()
         globals.imgui.SameLine(globals.ctx)
         if globals.Icons.createSettingsButton(globals.ctx, "main", "Open settings") then
             globals.showSettingsWindow = true
         end
-        
+
         if globals.Utils.checkTimeSelection() then
             UI_Generation.drawMainGenerationButton()
             globals.imgui.SameLine(globals.ctx)
@@ -1171,21 +1197,57 @@ function UI.ShowMainWindow(open)
 
         globals.imgui.Separator(globals.ctx)
 
-        -- Two-panel layout dimensions
+        -- Two-panel layout dimensions with resizable splitter
         local windowWidth = globals.imgui.GetWindowWidth(globals.ctx)
-        local leftPanelWidth = windowWidth * 0.35
-        local rightPanelWidth = windowWidth * 0.63
+        local Constants = require("DM_Ambiance_Constants")
+
+        -- Get the left panel width
+        local leftPanelWidth = getLeftPanelWidth(windowWidth)
 
         -- Left panel: groups and containers
-        local leftVisible = globals.imgui.BeginChild(globals.ctx, "LeftPanel", leftPanelWidth, 0)
+        local leftVisible = globals.imgui.BeginChild(globals.ctx, "LeftPanel", leftPanelWidth, 0, imgui.WindowFlags_None)
         if leftVisible then
             drawLeftPanel(leftPanelWidth)
             globals.imgui.EndChild(globals.ctx)
         end
 
+        -- Splitter between panels
+        globals.imgui.SameLine(globals.ctx)
+
+        -- Style the splitter to look like a separator
+        local separatorColor = globals.imgui.GetStyleColor(globals.ctx, globals.imgui.Col_Separator)
+        globals.imgui.PushStyleColor(globals.ctx, globals.imgui.Col_Button, separatorColor)
+        globals.imgui.PushStyleColor(globals.ctx, globals.imgui.Col_ButtonHovered, separatorColor)
+        globals.imgui.PushStyleColor(globals.ctx, globals.imgui.Col_ButtonActive, separatorColor)
+
+        globals.imgui.Button(globals.ctx, "##vsplitter", 2, -1)
+
+        globals.imgui.PopStyleColor(globals.ctx, 3)
+
+        -- Check if splitter is being dragged
+        if globals.imgui.IsItemActive(globals.ctx) then
+            local delta = globals.imgui.GetMouseDragDelta(globals.ctx, 0)
+            if delta ~= 0 then
+                globals.leftPanelWidth = globals.leftPanelWidth + delta
+                globals.imgui.ResetMouseDragDelta(globals.ctx, 0)
+
+                -- Clamp and save
+                local minWidth = Constants.UI.MIN_LEFT_PANEL_WIDTH
+                local maxWidth = windowWidth - 200
+                globals.leftPanelWidth = math.max(minWidth, math.min(globals.leftPanelWidth, maxWidth))
+                globals.Settings.setSetting("leftPanelWidth", globals.leftPanelWidth)
+            end
+        end
+
+        -- Change cursor on hover
+        if globals.imgui.IsItemHovered(globals.ctx) then
+            globals.imgui.SetMouseCursor(globals.ctx, globals.imgui.MouseCursor_ResizeEW)
+        end
+
         -- Right panel: container or group details
         globals.imgui.SameLine(globals.ctx)
-        local rightVisible = globals.imgui.BeginChild(globals.ctx, "RightPanel", rightPanelWidth, 0)
+        local rightPanelWidth = windowWidth - leftPanelWidth - Constants.UI.SPLITTER_WIDTH - 20
+        local rightVisible = globals.imgui.BeginChild(globals.ctx, "RightPanel", rightPanelWidth, 0, imgui.WindowFlags_None)
         if rightVisible then
             drawRightPanel(rightPanelWidth)
             globals.imgui.EndChild(globals.ctx)
@@ -1212,13 +1274,13 @@ function UI.ShowMainWindow(open)
 
     -- Handle other popups
     handlePopups()
-    
+
     -- Process any queued fade updates after ImGui frame is complete
     globals.Utils.processQueuedFadeUpdates()
-    
+
     -- Process any queued randomization updates after ImGui frame is complete
     globals.Utils.processQueuedRandomizationUpdates()
-    
+
     return open
 end
 

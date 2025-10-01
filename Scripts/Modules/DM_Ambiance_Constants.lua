@@ -17,6 +17,9 @@ Constants.UI = {
     CONTAINER_DROP_ZONE_HEIGHT = 6,     -- Height of container drop zones
     MIN_WINDOW_HEIGHT = 100,            -- Minimum window height
     MIN_WINDOW_WIDTH = 200,             -- Minimum window width
+    LEFT_PANEL_DEFAULT_WIDTH = 0.35,    -- Default left panel width as percentage of window
+    MIN_LEFT_PANEL_WIDTH = 150,         -- Minimum left panel width in pixels
+    SPLITTER_WIDTH = 4,                 -- Width of the splitter/divider
 }
 
 -- Color Constants
