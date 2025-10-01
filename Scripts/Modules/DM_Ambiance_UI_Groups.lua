@@ -165,6 +165,9 @@ local function drawListItemWithButtons(params)
 
     -- DROP TARGET: Show insertion line indicator with smart positioning
     if params.dropTarget then
+        -- Disable DragDropTarget highlight (yellow border)
+        imgui.PushStyleColor(ctx, imgui.Col_DragDropTarget, 0x00000000) -- Transparent
+
         if imgui.BeginDragDropTarget(ctx) then
             local min_x, min_y = imgui.GetItemRectMin(ctx)
             local max_x, max_y = imgui.GetItemRectMax(ctx)
@@ -214,6 +217,8 @@ local function drawListItemWithButtons(params)
             end
             imgui.EndDragDropTarget(ctx)
         end
+
+        imgui.PopStyleColor(ctx, 1) -- Pop DragDropTarget color
     end
 
     -- Handle selection clicks (simple click, not double click)
@@ -751,12 +756,29 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                         end
                     },
 
-                    -- Drop target: containers can be dropped on other containers
+                    -- Drop target: containers accept both containers AND groups
+                    -- Groups dropped on containers will be placed after the parent group
                     dropTarget = {
-                        accept = {"DND_CONTAINER"},
+                        accept = {"DND_CONTAINER", "DND_GROUP"},
                         allowDropInto = false, -- Containers don't accept items INTO them
                         onDrop = function(payloadType, dropPosition)
-                            if globals.draggedItem and globals.draggedItem.type == "CONTAINER" then
+                            if payloadType == "DND_GROUP" then
+                                -- Group dropped on a container - treat as dropping after the parent group
+                                if globals.draggedItem and globals.draggedItem.type == "GROUP" then
+                                    local sourceIndex = globals.draggedItem.index
+                                    local targetIndex = i + 1 -- Always drop after parent group
+
+                                    if sourceIndex ~= targetIndex and sourceIndex ~= targetIndex - 1 then
+                                        local hasPendingOp = globals.pendingGroupMove or globals.pendingContainerMove or globals.pendingContainerReorder
+                                        if not hasPendingOp then
+                                            globals.pendingGroupMove = {
+                                                sourceIndex = sourceIndex,
+                                                targetIndex = targetIndex
+                                            }
+                                        end
+                                    end
+                                end
+                            elseif globals.draggedItem and globals.draggedItem.type == "CONTAINER" then
                                 local sourceGroupIndex = globals.draggedItem.groupIndex
                                 local sourceContainerIndex = globals.draggedItem.containerIndex
 
