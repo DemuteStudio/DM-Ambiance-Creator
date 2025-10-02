@@ -1761,7 +1761,7 @@ function RoutingValidator.renderModal()
     end
 
     -- SetNextWindowSize must be called before BeginPopupModal
-    imgui.SetNextWindowSize(ctx, 1000, 800, imgui.Cond_FirstUseEver)
+    imgui.SetNextWindowSize(ctx, 1400, 800, imgui.Cond_FirstUseEver)
 
     -- BeginPopupModal must be called every frame, it only shows if OpenPopup was called
     if imgui.BeginPopupModal(ctx, "Project Routing Validator", true, imgui.WindowFlags_NoCollapse) then
@@ -1862,6 +1862,32 @@ function RoutingValidator.renderHeader(ctx, imgui)
     imgui.Spacing(ctx)
 end
 
+--- Get a human-readable description of what the fix will do
+local function getFixDescription(issue)
+    if issue.type == ISSUE_TYPES.CHANNEL_ORDER_CONFLICT then
+        return "Requires user choice between channel order variants"
+    elseif issue.type == ISSUE_TYPES.CHANNEL_CONFLICT then
+        if issue.conflictData and issue.conflictData.masterFormat then
+            local masterName = issue.conflictData.masterFormat.config.name or "Master"
+            return string.format("Realign routing to match %s format", masterName)
+        end
+        return "Realign routing to match master format"
+    elseif issue.type == ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS then
+        if issue.suggestedFix and issue.suggestedFix.requiredChannels then
+            return string.format("Increase parent track to %d channels", issue.suggestedFix.requiredChannels)
+        end
+        return "Increase parent track channel count"
+    elseif issue.type == ISSUE_TYPES.ORPHAN_SEND then
+        if issue.sendData then
+            local channelNum = RoutingValidator.parseDstChannel(issue.sendData.dstChannel)
+            return string.format("Increase destination track to %d channels", channelNum)
+        end
+        return "Increase destination track channel count"
+    end
+
+    return "Apply automatic fix"
+end
+
 -- Render issues overview tab
 function RoutingValidator.renderIssuesOverview(ctx, imgui)
     if not globals.pendingIssuesList or #globals.pendingIssuesList == 0 then
@@ -1876,14 +1902,15 @@ function RoutingValidator.renderIssuesOverview(ctx, imgui)
     imgui.Spacing(ctx)
 
     -- Issues table
-    if imgui.BeginTable(ctx, "IssuesTable", 5,
+    if imgui.BeginTable(ctx, "IssuesTable", 6,
         imgui.TableFlags_Borders | imgui.TableFlags_RowBg | imgui.TableFlags_Resizable | imgui.TableFlags_Sortable) then
 
         -- Headers
         imgui.TableSetupColumn(ctx, "Severity", imgui.TableColumnFlags_WidthFixed, 80)
         imgui.TableSetupColumn(ctx, "Type", imgui.TableColumnFlags_WidthFixed, 120)
-        imgui.TableSetupColumn(ctx, "Track")
-        imgui.TableSetupColumn(ctx, "Description")
+        imgui.TableSetupColumn(ctx, "Track", imgui.TableColumnFlags_WidthStretch, 0)
+        imgui.TableSetupColumn(ctx, "Description", imgui.TableColumnFlags_WidthStretch, 0)
+        imgui.TableSetupColumn(ctx, "Proposed Fix", imgui.TableColumnFlags_WidthStretch, 0)
         imgui.TableSetupColumn(ctx, "Action", imgui.TableColumnFlags_WidthFixed, 100)
         imgui.TableHeadersRow(ctx)
 
@@ -1919,6 +1946,13 @@ function RoutingValidator.renderIssuesOverview(ctx, imgui)
             -- Description
             imgui.TableNextColumn(ctx)
             imgui.TextWrapped(ctx, issue.description)
+
+            -- Proposed Fix
+            imgui.TableNextColumn(ctx)
+            local fixDescription = getFixDescription(issue)
+            imgui.PushStyleColor(ctx, imgui.Col_Text, 0x88CCFFFF)
+            imgui.TextWrapped(ctx, fixDescription)
+            imgui.PopStyleColor(ctx)
 
             -- Action
             imgui.TableNextColumn(ctx)
