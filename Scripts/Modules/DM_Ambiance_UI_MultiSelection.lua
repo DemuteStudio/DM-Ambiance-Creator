@@ -431,7 +431,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
             -- Add a range slider to set all values to the same value
             imgui.PushItemWidth(globals.ctx, width * 0.7)
-            local rv, newPitchMin, newPitchMax = imgui.DragFloatRange2(globals.ctx,
+            local rv, newPitchMin, newPitchMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                       "Set all to##PitchRange",
                                                                       -12, 12, 0.1, -48, 48)
             if rv then
@@ -448,7 +448,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         else
             -- All containers have the same value - normal edit
             imgui.PushItemWidth(globals.ctx, width * 0.7)
-            local rv, newPitchMin, newPitchMax = imgui.DragFloatRange2(globals.ctx,
+            local rv, newPitchMin, newPitchMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                       "Pitch Range (semitones)",
                                                                       commonPitchMin, commonPitchMax, 0.1, -48, 48)
             if rv then
@@ -504,7 +504,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
             -- Add a range slider to set all values to the same value
             imgui.PushItemWidth(globals.ctx, width * 0.7)
-            local rv, newVolumeMin, newVolumeMax = imgui.DragFloatRange2(globals.ctx,
+            local rv, newVolumeMin, newVolumeMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                        "Set all to##VolumeRange",
                                                                        -6, 6, 0.1, -24, 24)
             if rv then
@@ -521,7 +521,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         else
             -- All containers have the same value - normal edit
             imgui.PushItemWidth(globals.ctx, width * 0.7)
-            local rv, newVolumeMin, newVolumeMax = imgui.DragFloatRange2(globals.ctx,
+            local rv, newVolumeMin, newVolumeMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                        "Volume Range (dB)",
                                                                        commonVolumeMin, commonVolumeMax, 0.1, -24, 24)
             if rv then
@@ -579,7 +579,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
             -- Add a range slider to set all values to the same value
             imgui.PushItemWidth(globals.ctx, width * 0.7)
-            local rv, newPanMin, newPanMax = imgui.DragFloatRange2(globals.ctx,
+            local rv, newPanMin, newPanMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                  "Set all to##PanRange",
                                                                  -50, 50, 1, -100, 100)
             if rv then
@@ -596,7 +596,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         else
             -- All containers have the same value - normal edit
             imgui.PushItemWidth(globals.ctx, width * 0.7)
-            local rv, newPanMin, newPanMax = imgui.DragFloatRange2(globals.ctx,
+            local rv, newPanMin, newPanMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                  "Pan Range (-100/+100)",
                                                                  commonPanMin, commonPanMax, 1, -100, 100)
             if rv then

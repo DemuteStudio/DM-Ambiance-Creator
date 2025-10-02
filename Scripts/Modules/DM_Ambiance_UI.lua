@@ -575,7 +575,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     imgui.SameLine(globals.ctx)
     imgui.BeginDisabled(globals.ctx, not obj.randomizePitch)
     imgui.PushItemWidth(globals.ctx, controlWidth)
-    local rv, newPitchMin, newPitchMax = imgui.DragFloatRange2(globals.ctx, "##PitchRange", 
+    local rv, newPitchMin, newPitchMax = globals.UndoWrappers.DragFloatRange2(globals.ctx, "##PitchRange",
         obj.pitchRange.min, obj.pitchRange.max, 0.1, -48, 48, "%.1f", "%.1f")
     if rv then
         -- Apply linked slider logic
@@ -622,7 +622,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     imgui.SameLine(globals.ctx)
     imgui.BeginDisabled(globals.ctx, not obj.randomizeVolume)
     imgui.PushItemWidth(globals.ctx, controlWidth)
-    local rv, newVolumeMin, newVolumeMax = imgui.DragFloatRange2(globals.ctx, "##VolumeRange", 
+    local rv, newVolumeMin, newVolumeMax = globals.UndoWrappers.DragFloatRange2(globals.ctx, "##VolumeRange",
         obj.volumeRange.min, obj.volumeRange.max, 0.1, -24, 24, "%.1f", "%.1f")
     if rv then
         -- Apply linked slider logic
@@ -680,7 +680,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
         imgui.SameLine(globals.ctx)
         imgui.BeginDisabled(globals.ctx, not obj.randomizePan)
         imgui.PushItemWidth(globals.ctx, controlWidth)
-        local rv, newPanMin, newPanMax = imgui.DragFloatRange2(globals.ctx, "##PanRange",
+        local rv, newPanMin, newPanMax = globals.UndoWrappers.DragFloatRange2(globals.ctx, "##PanRange",
             obj.panRange.min, obj.panRange.max, 1, -100, 100, "%.0f", "%.0f")
         if rv then
             -- Apply linked slider logic

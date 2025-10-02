@@ -159,6 +159,24 @@ function UndoWrappers.Combo(ctx, label, current_item, items, popup_max_height_in
     return rv, newItem
 end
 
+-- Wrapper for DragFloatRange2 with automatic undo (used for randomization ranges)
+-- @param ctx ImGui context
+-- @param label Widget label
+-- @param v_current_min Current minimum value
+-- @param v_current_max Current maximum value
+-- @param v_speed Drag speed
+-- @param v_min Minimum allowed value
+-- @param v_max Maximum allowed value
+-- @param format Display format (optional)
+-- @param format_max Display format for max (optional)
+-- @param flags ImGui slider flags (optional)
+-- @return changed (boolean), new min (number), new max (number)
+function UndoWrappers.DragFloatRange2(ctx, label, v_current_min, v_current_max, v_speed, v_min, v_max, format, format_max, flags)
+    local rv, newMin, newMax = globals.imgui.DragFloatRange2(ctx, label, v_current_min, v_current_max, v_speed, v_min, v_max, format, format_max, flags)
+    setupDeferredCapture(ctx, label, "Edit range: " .. label)
+    return rv, newMin, newMax
+end
+
 -- Wrapper for DragDouble with automatic undo
 function UndoWrappers.DragDouble(ctx, label, value, v_speed, v_min, v_max, format)
     local rv, newValue = globals.imgui.DragDouble(ctx, label, value, v_speed, v_min, v_max, format)
