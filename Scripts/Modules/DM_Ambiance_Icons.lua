@@ -378,17 +378,64 @@ function Icons.getIconSize()
     return 14, 14  -- Display at 14x14 for compact size
 end
 
--- Helper function to create an icon button with tint color
+-- Helper function to adjust the alpha channel of a color
+local function adjustAlpha(color, alphaMultiplier)
+    -- Extract current alpha (last 8 bits)
+    local currentAlpha = color & 0xFF
+    -- Calculate new alpha
+    local newAlpha = math.floor((currentAlpha / 255) * alphaMultiplier * 255)
+    -- Return color with new alpha
+    return (color & 0xFFFFFF00) | newAlpha
+end
+
+-- Helper function to create an icon button with tint color and visual feedback
 local function createTintedIconButton(ctx, texture, buttonId, tooltip)
     local width, height = Icons.getIconSize()
 
-    -- Apply icon tint color - ImageButton uses tint_col parameter (5th parameter)
+    -- Initialize icon button states table if needed
+    if not globals.iconButtonStates then
+        globals.iconButtonStates = {}
+    end
+
+    -- Get the previous state for this button
+    local stateKey = buttonId
+    local previousState = globals.iconButtonStates[stateKey] or "normal"
+
+    -- Get base colors
     local iconColor = globals.Settings.getSetting("iconColor")
+    local backgroundColor = globals.Settings.getSetting("backgroundColor")
 
-    -- ImageButton signature: ImageButton(ctx, str_id, image, size_x, size_y, uv0_x=0, uv0_y=0, uv1_x=1, uv1_y=1, bg_col=0, tint_col=0xFFFFFFFF)
-    -- We need to pass default UV coordinates and background, then our tint color
-    local result = globals.imgui.ImageButton(ctx, buttonId, texture, width, height, 0, 0, 1, 1, 0, iconColor)
+    -- Calculate tint color based on previous state
+    local tintColor = iconColor
+    if previousState == "active" then
+        -- Active: darken and reduce opacity
+        tintColor = globals.Utils.brightenColor(iconColor, -0.2)
+        tintColor = adjustAlpha(tintColor, 0.8)
+    elseif previousState == "hovered" then
+        -- Hover: brighten
+        tintColor = globals.Utils.brightenColor(iconColor, 0.3)
+    end
 
+    -- Override button colors to match background (no visual change on button itself)
+    globals.imgui.PushStyleColor(ctx, globals.imgui.Col_Button, backgroundColor)
+    globals.imgui.PushStyleColor(ctx, globals.imgui.Col_ButtonHovered, backgroundColor)
+    globals.imgui.PushStyleColor(ctx, globals.imgui.Col_ButtonActive, backgroundColor)
+
+    -- Render the button with calculated tint
+    local result = globals.imgui.ImageButton(ctx, buttonId, texture, width, height, 0, 0, 1, 1, 0, tintColor)
+
+    globals.imgui.PopStyleColor(ctx, 3)
+
+    -- Update state for next frame
+    if globals.imgui.IsItemActive(ctx) then
+        globals.iconButtonStates[stateKey] = "active"
+    elseif globals.imgui.IsItemHovered(ctx) then
+        globals.iconButtonStates[stateKey] = "hovered"
+    else
+        globals.iconButtonStates[stateKey] = "normal"
+    end
+
+    -- Show tooltip
     if globals.imgui.IsItemHovered(ctx) then
         globals.imgui.SetTooltip(ctx, tooltip)
     end
