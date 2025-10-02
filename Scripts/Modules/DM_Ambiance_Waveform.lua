@@ -841,7 +841,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
                     pos_x + playPos, pos_y,
                     pos_x + playPos, pos_y + height,
                     0xFFFFFFFF,
-                    2
+                    0.5  -- Very thin line (half pixel)
                 )
             end
         end
@@ -1106,7 +1106,32 @@ function Waveform.drawWaveform(filePath, width, height, options)
                     if options.onWaveformClick then
                         options.onWaveformClick(clickPosition, waveformData)
                     end
+
+                    -- Start tracking playback marker drag in lower half
+                    if not isUpperHalf then
+                        globals.waveformAreaDrag.isDraggingPlayback = true
+                        globals.waveformAreaDrag.playbackDragItemKey = itemKey
+                    end
                 end
+            end
+        end
+
+        -- Handle playback marker dragging in lower half
+        if globals.waveformAreaDrag.isDraggingPlayback and globals.waveformAreaDrag.playbackDragItemKey == itemKey then
+            if imgui.IsMouseDragging(ctx, 0) and not isUpperHalf then
+                -- Update playback position as mouse moves
+                if relative_x >= 0 and relative_x <= width then
+                    local dragRatio = relative_x / width
+                    local dragPosition = dragRatio * waveformData.length
+
+                    if options.onWaveformClick then
+                        options.onWaveformClick(dragPosition, waveformData)
+                    end
+                end
+            elseif imgui.IsMouseReleased(ctx, 0) then
+                -- Stop tracking when mouse is released
+                globals.waveformAreaDrag.isDraggingPlayback = false
+                globals.waveformAreaDrag.playbackDragItemKey = nil
             end
         end
 
@@ -1342,26 +1367,12 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
             -- Draw marker line (this is the starting point)
             if markerPos >= 0 and markerPos <= width then
-                -- Draw a slightly thicker line with a glow effect
-                -- First draw a wider semi-transparent line for glow
-                imgui.DrawList_AddLine(draw_list,
-                    pos_x + markerPos - 1, pos_y,
-                    pos_x + markerPos - 1, pos_y + height,
-                    0x44FF8888,  -- Semi-transparent red
-                    1
-                )
-                imgui.DrawList_AddLine(draw_list,
-                    pos_x + markerPos + 1, pos_y,
-                    pos_x + markerPos + 1, pos_y + height,
-                    0x44FF8888,  -- Semi-transparent red
-                    1
-                )
-                -- Then draw the main marker
+                -- Draw a thin, precise marker line
                 imgui.DrawList_AddLine(draw_list,
                     pos_x + markerPos, pos_y,
                     pos_x + markerPos, pos_y + height,
                     0xFF8888FF,  -- Light red color for click marker
-                    2  -- Make it slightly thicker
+                    0.5  -- Very thin line (half pixel)
                 )
             end
         end
