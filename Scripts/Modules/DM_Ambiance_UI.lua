@@ -1221,7 +1221,14 @@ function UI.ShowMainWindow(open)
 
         -- Top section: preset controls and generation button
         UI_Preset.drawPresetControls()
+
+        -- Settings button positioned at the far right
+        local settingsButtonWidth = 14  -- Icon size
+        local windowWidth = globals.imgui.GetWindowWidth(globals.ctx)
+        local cursorX = globals.imgui.GetCursorPosX(globals.ctx)
+        local spacing = globals.imgui.GetStyleVar(globals.ctx, globals.imgui.StyleVar_ItemSpacing)
         globals.imgui.SameLine(globals.ctx)
+        globals.imgui.SetCursorPosX(globals.ctx, windowWidth - settingsButtonWidth - spacing - 10)
         if globals.Icons.createSettingsButton(globals.ctx, "main", "Open settings") then
             globals.showSettingsWindow = true
         end

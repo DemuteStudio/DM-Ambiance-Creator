@@ -51,7 +51,10 @@ local function getIconPaths()
                 add = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_+_add_increase_icon.png",
                 link = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_link_icon.png",
                 unlink = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_unlink_icon.png",
-                mirror = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_arrow_left_right_icon.png"
+                mirror = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_arrow_left_right_icon.png",
+                undo = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_undo_icon.png",
+                redo = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_redo_icon.png",
+                history = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_undo_history_icon.png"
             }
         end
     end
@@ -68,7 +71,10 @@ local function getIconPaths()
         add = "",
         link = "",
         unlink = "",
-        mirror = ""
+        mirror = "",
+        undo = "",
+        redo = "",
+        history = ""
     }
 end
 
@@ -295,7 +301,7 @@ function Icons.loadIcons()
             end
             return img
         end)
-        
+
         if success and result then
             iconTextures.mirror = result
         else
@@ -304,8 +310,65 @@ function Icons.loadIcons()
     else
         iconTextures.mirror = nil
     end
-    
-    return iconTextures.delete ~= nil or iconTextures.regen ~= nil or iconTextures.upload ~= nil or iconTextures.download ~= nil or iconTextures.settings ~= nil or iconTextures.folder ~= nil or iconTextures.conflict ~= nil or iconTextures.add ~= nil or iconTextures.link ~= nil or iconTextures.unlink ~= nil or iconTextures.mirror ~= nil
+
+    -- Try to load undo icon from file
+    if fileExists(iconPaths.undo) then
+        local success, result = pcall(function()
+            local img = globals.imgui.CreateImage(iconPaths.undo)
+            if img then
+                globals.imgui.Attach(globals.ctx, img)
+            end
+            return img
+        end)
+
+        if success and result then
+            iconTextures.undo = result
+        else
+            iconTextures.undo = nil
+        end
+    else
+        iconTextures.undo = nil
+    end
+
+    -- Try to load redo icon from file
+    if fileExists(iconPaths.redo) then
+        local success, result = pcall(function()
+            local img = globals.imgui.CreateImage(iconPaths.redo)
+            if img then
+                globals.imgui.Attach(globals.ctx, img)
+            end
+            return img
+        end)
+
+        if success and result then
+            iconTextures.redo = result
+        else
+            iconTextures.redo = nil
+        end
+    else
+        iconTextures.redo = nil
+    end
+
+    -- Try to load history icon from file
+    if fileExists(iconPaths.history) then
+        local success, result = pcall(function()
+            local img = globals.imgui.CreateImage(iconPaths.history)
+            if img then
+                globals.imgui.Attach(globals.ctx, img)
+            end
+            return img
+        end)
+
+        if success and result then
+            iconTextures.history = result
+        else
+            iconTextures.history = nil
+        end
+    else
+        iconTextures.history = nil
+    end
+
+    return iconTextures.delete ~= nil or iconTextures.regen ~= nil or iconTextures.upload ~= nil or iconTextures.download ~= nil or iconTextures.settings ~= nil or iconTextures.folder ~= nil or iconTextures.conflict ~= nil or iconTextures.add ~= nil or iconTextures.link ~= nil or iconTextures.unlink ~= nil or iconTextures.mirror ~= nil or iconTextures.undo ~= nil or iconTextures.redo ~= nil or iconTextures.history ~= nil
 end
 
 -- Get icon size (48x48 based on actual icon files)
@@ -555,12 +618,13 @@ end
 
 -- Check if all icons are loaded successfully
 function Icons.areAllLoaded()
-    return iconTextures.delete ~= nil and iconTextures.regen ~= nil and 
+    return iconTextures.delete ~= nil and iconTextures.regen ~= nil and
            iconTextures.upload ~= nil and iconTextures.download ~= nil and
            iconTextures.settings ~= nil and iconTextures.folder ~= nil and
-           iconTextures.conflict ~= nil and iconTextures.add ~= nil and 
-           iconTextures.link ~= nil and iconTextures.unlink ~= nil and 
-           iconTextures.mirror ~= nil
+           iconTextures.conflict ~= nil and iconTextures.add ~= nil and
+           iconTextures.link ~= nil and iconTextures.unlink ~= nil and
+           iconTextures.mirror ~= nil and iconTextures.undo ~= nil and
+           iconTextures.redo ~= nil and iconTextures.history ~= nil
 end
 
 -- Create a link/unlink/mirror cycling button that changes mode on click
@@ -612,6 +676,88 @@ end
 
 function Icons.getMirrorIcon()
     return iconTextures.mirror
+end
+
+-- Create an undo icon button
+function Icons.createUndoButton(ctx, id, tooltip)
+    if not iconTextures.undo then
+        -- Fallback to text button if icon failed to load
+        local result = globals.imgui.Button(ctx, "Undo##" .. id)
+        if globals.imgui.IsItemHovered(ctx) then
+            globals.imgui.SetTooltip(ctx, tooltip or "Undo")
+        end
+        return result
+    end
+
+    local width, height = Icons.getIconSize()
+
+    local buttonId = "##ImgUndo_" .. id
+    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.undo, width, height)
+
+    if globals.imgui.IsItemHovered(ctx) then
+        globals.imgui.SetTooltip(ctx, tooltip or "Undo")
+    end
+
+    return result
+end
+
+-- Create a redo icon button
+function Icons.createRedoButton(ctx, id, tooltip)
+    if not iconTextures.redo then
+        -- Fallback to text button if icon failed to load
+        local result = globals.imgui.Button(ctx, "Redo##" .. id)
+        if globals.imgui.IsItemHovered(ctx) then
+            globals.imgui.SetTooltip(ctx, tooltip or "Redo")
+        end
+        return result
+    end
+
+    local width, height = Icons.getIconSize()
+
+    local buttonId = "##ImgRedo_" .. id
+    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.redo, width, height)
+
+    if globals.imgui.IsItemHovered(ctx) then
+        globals.imgui.SetTooltip(ctx, tooltip or "Redo")
+    end
+
+    return result
+end
+
+-- Create a history icon button
+function Icons.createHistoryButton(ctx, id, tooltip)
+    if not iconTextures.history then
+        -- Fallback to text button if icon failed to load
+        local result = globals.imgui.Button(ctx, "History##" .. id)
+        if globals.imgui.IsItemHovered(ctx) then
+            globals.imgui.SetTooltip(ctx, tooltip or "History")
+        end
+        return result
+    end
+
+    local width, height = Icons.getIconSize()
+
+    local buttonId = "##ImgHistory_" .. id
+    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.history, width, height)
+
+    if globals.imgui.IsItemHovered(ctx) then
+        globals.imgui.SetTooltip(ctx, tooltip or "History")
+    end
+
+    return result
+end
+
+-- Get raw undo/redo/history icon textures (for advanced usage)
+function Icons.getUndoIcon()
+    return iconTextures.undo
+end
+
+function Icons.getRedoIcon()
+    return iconTextures.redo
+end
+
+function Icons.getHistoryIcon()
+    return iconTextures.history
 end
 
 return Icons
