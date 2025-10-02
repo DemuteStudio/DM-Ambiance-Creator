@@ -850,21 +850,21 @@ function Waveform.drawWaveform(filePath, width, height, options)
     -- Pop clipping rectangle
     imgui.DrawList_PopClipRect(draw_list)
 
-    -- Draw waveform areas/regions before the border
+    -- Draw waveform areas/regions before the border (full height visual, upper half interaction)
     if globals.waveformAreas[itemKey] then
         for i, area in ipairs(globals.waveformAreas[itemKey]) do
             local areaStartX = pos_x + (area.startPos / waveformData.length) * width
             local areaEndX = pos_x + (area.endPos / waveformData.length) * width
             local areaWidth = areaEndX - areaStartX
 
-            -- Draw quasi-transparent area with very subtle gradient effect
+            -- Draw quasi-transparent area with very subtle gradient effect (full height)
             imgui.DrawList_AddRectFilled(draw_list,
                 areaStartX, pos_y,
                 areaEndX, pos_y + height,
                 0x15856D50  -- Quasi-transparent blue (5% opacity)
             )
 
-            -- Draw very subtle gradient overlay (barely visible darker at edges)
+            -- Draw very subtle gradient overlay (barely visible darker at edges) (full height)
             imgui.DrawList_AddRectFilled(draw_list,
                 areaStartX, pos_y,
                 areaStartX + 3, pos_y + height,
@@ -876,7 +876,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 0x15856D50  -- Very slightly darker blue
             )
 
-            -- Draw area borders (more subtle)
+            -- Draw area borders (more subtle) (full height)
             imgui.DrawList_AddLine(draw_list,
                 areaStartX, pos_y,
                 areaStartX, pos_y + height,
@@ -928,7 +928,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 imgui.DrawList_AddText(draw_list, durationX, durationY, 0xCCFFFFFF, durationText)
             end
 
-            -- Draw resize handles (subtle, only visible on hover)
+            -- Draw resize handles in upper half (subtle, only visible on hover)
             local handleWidth = 4
             local handleHeight = 20
             local handleColor = 0x40FFFFFF  -- Very subtle semi-transparent white
@@ -939,41 +939,43 @@ function Waveform.drawWaveform(filePath, width, height, options)
             local leftHandleHover = math.abs(relative_x - (areaStartX - pos_x)) < 5
             local rightHandleHover = math.abs(relative_x - (areaEndX - pos_x)) < 5
 
-            -- Left handle
+            local halfHeight = height / 2
+
+            -- Left handle (positioned in upper half)
             local leftHandleColor = leftHandleHover and 0xA0FFFFFF or handleColor
             imgui.DrawList_AddRectFilled(draw_list,
-                areaStartX - handleWidth/2, pos_y + height/2 - handleHeight/2,
-                areaStartX + handleWidth/2, pos_y + height/2 + handleHeight/2,
+                areaStartX - handleWidth/2, pos_y + halfHeight/2 - handleHeight/2,
+                areaStartX + handleWidth/2, pos_y + halfHeight/2 + handleHeight/2,
                 leftHandleColor
             )
             -- Add subtle grip lines on handle when hovering
             if leftHandleHover then
                 imgui.DrawList_AddLine(draw_list,
-                    areaStartX, pos_y + height/2 - 5,
-                    areaStartX, pos_y + height/2 + 5,
+                    areaStartX, pos_y + halfHeight/2 - 5,
+                    areaStartX, pos_y + halfHeight/2 + 5,
                     0x60000000, 1
                 )
             end
 
-            -- Right handle
+            -- Right handle (positioned in upper half)
             local rightHandleColor = rightHandleHover and 0xA0FFFFFF or handleColor
             imgui.DrawList_AddRectFilled(draw_list,
-                areaEndX - handleWidth/2, pos_y + height/2 - handleHeight/2,
-                areaEndX + handleWidth/2, pos_y + height/2 + handleHeight/2,
+                areaEndX - handleWidth/2, pos_y + halfHeight/2 - handleHeight/2,
+                areaEndX + handleWidth/2, pos_y + halfHeight/2 + handleHeight/2,
                 rightHandleColor
             )
             -- Add subtle grip lines on handle when hovering
             if rightHandleHover then
                 imgui.DrawList_AddLine(draw_list,
-                    areaEndX, pos_y + height/2 - 5,
-                    areaEndX, pos_y + height/2 + 5,
+                    areaEndX, pos_y + halfHeight/2 - 5,
+                    areaEndX, pos_y + halfHeight/2 + 5,
                     0x60000000, 1
                 )
             end
         end
     end
 
-    -- Draw area being created
+    -- Draw area being created (full height visual, upper half interaction)
     if globals.waveformAreaDrag.isDragging and globals.waveformAreaDrag.currentItemKey == itemKey then
         local dragStartX = math.min(globals.waveformAreaDrag.startX, globals.waveformAreaDrag.endX)
         local dragEndX = math.max(globals.waveformAreaDrag.startX, globals.waveformAreaDrag.endX)
@@ -991,6 +993,15 @@ function Waveform.drawWaveform(filePath, width, height, options)
             0, 0, 1
         )
     end
+
+    -- Draw horizontal separator line at midpoint (subtle visual indicator)
+    local halfHeight = height / 2
+    imgui.DrawList_AddLine(draw_list,
+        pos_x, pos_y + halfHeight,
+        pos_x + width, pos_y + halfHeight,
+        0x30FFFFFF,  -- Very subtle white line (20% opacity)
+        1
+    )
 
     -- Draw border
     imgui.DrawList_AddRect(draw_list,
@@ -1014,6 +1025,8 @@ function Waveform.drawWaveform(filePath, width, height, options)
     -- Get mouse position for all interactions
     local mouse_x, mouse_y = imgui.GetMousePos(ctx)
     local relative_x = mouse_x - pos_x
+    local relative_y = mouse_y - pos_y
+    local isUpperHalf = relative_y < (height / 2)
 
     -- Check for interactions
     if imgui.IsItemHovered(ctx) then
@@ -1021,7 +1034,7 @@ function Waveform.drawWaveform(filePath, width, height, options)
         local hoverOnHandle = false
         local hoverOnArea = false
 
-        if globals.waveformAreas[itemKey] and not globals.waveformAreaDrag.isDragging then
+        if globals.waveformAreas[itemKey] and not globals.waveformAreaDrag.isDragging and isUpperHalf then
             for i, area in ipairs(globals.waveformAreas[itemKey]) do
                 local areaStartX = (area.startPos / waveformData.length) * width
                 local areaEndX = (area.endPos / waveformData.length) * width
@@ -1054,8 +1067,8 @@ function Waveform.drawWaveform(filePath, width, height, options)
             globals.waveformVerticalZoom = options.verticalZoom
         end
 
-        -- Check for Ctrl+Click to delete area
-        if ctrlPressed and imgui.IsMouseClicked(ctx, 0) and not globals.waveformAreaDrag.isResizing then
+        -- Check for Ctrl+Click to delete area (only in upper half)
+        if ctrlPressed and imgui.IsMouseClicked(ctx, 0) and not globals.waveformAreaDrag.isResizing and isUpperHalf then
             -- Check if clicking on an area to delete it
             local clickPos = (relative_x / width) * waveformData.length
             local clickedArea, clickedAreaIndex = Waveform.getAreaAtPosition(itemKey, clickPos, waveformData.length)
@@ -1064,9 +1077,9 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 -- Delete the area with Ctrl+Click
                 Waveform.deleteArea(itemKey, clickedAreaIndex)
             end
-        -- Check for Shift+Click to create new area
+        -- Check for Shift+Click to create new area (only in upper half)
         elseif shiftPressed and imgui.IsMouseClicked(ctx, 0) and not hoverOnHandle and not hoverOnArea and
-               not globals.waveformAreaDrag.isResizing and not globals.waveformAreaDrag.isMoving then
+               not globals.waveformAreaDrag.isResizing and not globals.waveformAreaDrag.isMoving and isUpperHalf then
             -- Start dragging to create new area with Shift+LeftClick
             globals.waveformAreaDrag.isDragging = true
             globals.waveformAreaDrag.startX = mouse_x
@@ -1087,26 +1100,28 @@ function Waveform.drawWaveform(filePath, width, height, options)
                 options.onWaveformClick(0, waveformData)  -- Start from beginning
             end
         elseif imgui.IsMouseClicked(ctx, 0) and not ctrlPressed and not shiftPressed and
-                not hoverOnArea and not hoverOnHandle and not globals.waveformAreaDrag.interactingWithArea then  -- Single left click (only on empty space)
-            -- Get mouse position relative to waveform
-            local mouse_x, mouse_y = imgui.GetMousePos(ctx)
-            local relative_x = mouse_x - pos_x
+                not globals.waveformAreaDrag.interactingWithArea then  -- Single left click
+            -- Lower half: ALWAYS allow playback (ignore areas)
+            -- Upper half: Only on empty space (no areas)
+            local allowPlayback = (not isUpperHalf) or (not hoverOnArea and not hoverOnHandle)
 
-            -- Calculate position in the audio file
-            if relative_x >= 0 and relative_x <= width then
-                local clickRatio = relative_x / width
-                local clickPosition = clickRatio * waveformData.length
+            if allowPlayback then
+                -- Calculate position in the audio file
+                if relative_x >= 0 and relative_x <= width then
+                    local clickRatio = relative_x / width
+                    local clickPosition = clickRatio * waveformData.length
 
-                -- Store click information for starting playback
-                if options.onWaveformClick then
-                    options.onWaveformClick(clickPosition, waveformData)
+                    -- Store click information for starting playback
+                    if options.onWaveformClick then
+                        options.onWaveformClick(clickPosition, waveformData)
+                    end
                 end
             end
         end
 
-        -- Handle area interactions (resize/move)
+        -- Handle area interactions (resize/move) - only in upper half
         if globals.waveformAreas[itemKey] and not globals.waveformAreaDrag.isDragging and
-           not shiftPressed and imgui.IsMouseClicked(ctx, 0) then
+           not shiftPressed and imgui.IsMouseClicked(ctx, 0) and isUpperHalf then
             for i, area in ipairs(globals.waveformAreas[itemKey]) do
                 local areaStartX = (area.startPos / waveformData.length) * width
                 local areaEndX = (area.endPos / waveformData.length) * width
