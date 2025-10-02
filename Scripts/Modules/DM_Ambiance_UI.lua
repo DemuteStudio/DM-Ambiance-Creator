@@ -359,7 +359,9 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         imgui.PopItemWidth(globals.ctx)
         imgui.SameLine(globals.ctx)
-        imgui.Text(globals.ctx, "Var")
+        -- Show "Drift" for Coverage mode, "Var" for other modes
+        local driftLabel = (dataObj.intervalMode == 2) and "Drift" or "Var"
+        imgui.Text(globals.ctx, driftLabel)
     end
 
     -- Chunk mode specific controls

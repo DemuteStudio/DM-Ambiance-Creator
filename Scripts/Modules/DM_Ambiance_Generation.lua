@@ -824,6 +824,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
         local lastItemRef = nil
         local isFirstItem = true
         local lastItemEnd = globals.startTime
+        local theoreticalPosition = globals.startTime  -- Track theoretical position for coverage drift
 
         while lastItemEnd < globals.endTime do
             -- Select a random item from the container
@@ -927,16 +928,20 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             -- Placement spécial pour le premier item
             -- Coverage mode: check interval > 0 OR intervalMode == 2
             if isFirstItem and (interval > 0 or effectiveParams.intervalMode == 2) then
-                -- Coverage mode: place first item at startTime with optional variance
+                -- Coverage mode: place first item at startTime with optional drift
                 if effectiveParams.intervalMode == 2 then
                     position = globals.startTime
-                    -- Apply variance if triggerDrift > 0
+                    -- Apply drift if triggerDrift > 0
                     if effectiveParams.triggerDrift > 0 and interval > 0 then
-                        -- Calculate variance range based on silence duration
-                        local silenceDuration = interval - itemData.length
-                        local varianceRange = silenceDuration * (effectiveParams.triggerDrift / 100)
-                        local variance = Utils.randomInRange(-varianceRange/2, varianceRange/2)
-                        position = position + variance
+                        -- Calculate drift range based on interval
+                        -- At 100% drift, item can move ±100% of the interval (full interval range)
+                        local driftRange = interval * (effectiveParams.triggerDrift / 100)
+                        local drift = Utils.randomInRange(-driftRange, driftRange)
+                        position = position + drift
+                        -- Clamp to startTime (can't go before timeline start)
+                        if position < globals.startTime then
+                            position = globals.startTime
+                        end
                     end
                 else
                     -- Other modes: place randomly between startTime and startTime+interval
@@ -951,14 +956,23 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                     drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
                     position = lastItemEnd + interval + drift
                 elseif effectiveParams.intervalMode == 2 then
-                    -- Coverage mode: place after previous item with optional variance
-                    position = lastItemEnd
-                    -- Apply variance based on silence duration
-                    if effectiveParams.triggerDrift > 0 then
-                        local silenceDuration = interval - itemData.length
-                        local varianceRange = silenceDuration * (effectiveParams.triggerDrift / 100)
-                        local variance = Utils.randomInRange(-varianceRange/2, varianceRange/2)
-                        position = position + variance
+                    -- Coverage mode: drift moves items around theoretical position, but prevents overlap
+                    -- Start from theoretical position (advances by interval regardless of drift)
+                    local idealPosition = theoreticalPosition
+
+                    if effectiveParams.triggerDrift > 0 and interval > 0 then
+                        -- At 100% drift, item can move ±100% of the interval (full interval range)
+                        local driftRange = interval * (effectiveParams.triggerDrift / 100)
+                        local drift = Utils.randomInRange(-driftRange, driftRange)
+                        idealPosition = idealPosition + drift
+                    end
+
+                    -- COLLISION DETECTION: Items cannot overlap with the ACTUAL previous item
+                    -- If drift would cause overlap, push item to touch previous item (creating chunks)
+                    if idealPosition < lastItemEnd then
+                        position = lastItemEnd  -- Push against previous item (no gap)
+                    else
+                        position = idealPosition  -- Use drifted position
                     end
                 else
                     -- Regular spacing from the end of the last item
@@ -1103,11 +1117,14 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
 
                 -- Update references for next iteration (only from first track)
                 if trackIdx == 1 then
-                    -- Coverage mode: lastItemEnd should be position + interval (item + silence)
-                    -- Other modes: lastItemEnd is position + item length
+                    -- Coverage mode with drift:
+                    -- - lastItemEnd = actual end of placed item (for collision detection)
+                    -- - theoreticalPosition = ideal next position (advances by interval, ignores drift)
                     if effectiveParams.intervalMode == 2 then
-                        lastItemEnd = position + interval
+                        lastItemEnd = position + actualLen  -- Actual end of this item
+                        theoreticalPosition = theoreticalPosition + interval  -- Advance by interval for next item's drift base
                     else
+                        -- Other modes: standard behavior
                         lastItemEnd = position + actualLen
                     end
                     lastItemRef = newItem
