@@ -405,12 +405,11 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         imgui.Separator(globals.ctx)
 
         -- Display selected item info
-        imgui.Text(globals.ctx, "Selected: " .. selectedItem.name)
-        
         -- Check if file path exists and is valid
         local filePathValid = selectedItem.filePath and selectedItem.filePath ~= ""
         local fileExists = false
-        
+        local numChannels = 0
+
         if filePathValid then
             local file = io.open(selectedItem.filePath, "rb")  -- Use binary mode for better compatibility
             if file then
@@ -428,18 +427,30 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     -- reaper.ShowConsoleMsg(string.format("[UI] File NOT found: %s\n", selectedItem.filePath))
                 end
             end
-        end
-        
-        if filePathValid then
+
+            -- Get channel count if file exists
             if fileExists then
-                local durationText = selectedItem.length and string.format("Duration: %.2f s", selectedItem.length) or "Duration: Unknown"
-                imgui.Text(globals.ctx, durationText)
-                imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x00FF00FF)
-                -- imgui.Text(globals.ctx, "File: Available")
-                imgui.PopStyleColor(globals.ctx, 1)
-            else
-                local durationText = selectedItem.length and string.format("Duration: %.2f s", selectedItem.length) or "Duration: Unknown"
-                imgui.Text(globals.ctx, durationText)
+                local source = reaper.PCM_Source_CreateFromFile(selectedItem.filePath)
+                if source then
+                    numChannels = reaper.GetMediaSourceNumChannels(source)
+                    reaper.PCM_Source_Destroy(source)
+                end
+            end
+        end
+
+        -- Display info on single line
+        local durationText = selectedItem.length and string.format("%.2f s", selectedItem.length) or "Unknown"
+        local channelText = numChannels > 0 and string.format("%d ch", numChannels) or "? ch"
+
+        imgui.Text(globals.ctx, "Selected: " .. selectedItem.name)
+        imgui.SameLine(globals.ctx, 0, 20)
+        imgui.Text(globals.ctx, "Duration: " .. durationText)
+        imgui.SameLine(globals.ctx, 0, 20)
+        imgui.Text(globals.ctx, "Channels: " .. channelText)
+
+        -- Display file status on separate line if needed
+        if filePathValid then
+            if not fileExists then
                 imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFF0000FF)
                 imgui.Text(globals.ctx, "File: Not found")
                 imgui.PopStyleColor(globals.ctx, 1)
