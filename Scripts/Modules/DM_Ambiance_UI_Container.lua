@@ -408,7 +408,6 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         -- Check if file path exists and is valid
         local filePathValid = selectedItem.filePath and selectedItem.filePath ~= ""
         local fileExists = false
-        local numChannels = 0
 
         if filePathValid then
             local file = io.open(selectedItem.filePath, "rb")  -- Use binary mode for better compatibility
@@ -427,28 +426,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     -- reaper.ShowConsoleMsg(string.format("[UI] File NOT found: %s\n", selectedItem.filePath))
                 end
             end
-
-            -- Get channel count if file exists
-            if fileExists then
-                local source = reaper.PCM_Source_CreateFromFile(selectedItem.filePath)
-                if source then
-                    numChannels = reaper.GetMediaSourceNumChannels(source)
-                    reaper.PCM_Source_Destroy(source)
-                end
-            end
         end
 
-        -- Display info on single line
-        local durationText = selectedItem.length and string.format("%.2f s", selectedItem.length) or "Unknown"
-        local channelText = numChannels > 0 and string.format("%d ch", numChannels) or "? ch"
-
-        imgui.Text(globals.ctx, "Selected: " .. selectedItem.name)
-        imgui.SameLine(globals.ctx, 0, 20)
-        imgui.Text(globals.ctx, "Duration: " .. durationText)
-        imgui.SameLine(globals.ctx, 0, 20)
-        imgui.Text(globals.ctx, "Channels: " .. channelText)
-
-        -- Display file status on separate line if needed
+        -- Display file status (item info now shown in waveform)
         if filePathValid then
             if not fileExists then
                 imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFF0000FF)
@@ -691,7 +671,14 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                             end
                             -- The marker is already set above, nothing more to do
                         end
-                    end
+                    end,
+
+                    -- Pass item info to display in waveform
+                    itemInfo = {
+                        name = selectedItem.name,
+                        duration = selectedItem.length,
+                        channels = selectedItem.numChannels
+                    }
                 }
 
                 -- Debug: Show what portion we're displaying (commented for production)

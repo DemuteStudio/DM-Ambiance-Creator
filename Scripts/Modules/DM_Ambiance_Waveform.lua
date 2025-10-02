@@ -1002,6 +1002,40 @@ function Waveform.drawWaveform(filePath, width, height, options)
         0, 0, 1
     )
 
+    -- Draw item info in bottom-right corner
+    if options.itemInfo then
+        local info = options.itemInfo
+        local padding = 5
+        local lineHeight = 12
+        local infoY = pos_y + height - padding - lineHeight
+
+        -- Build info text (compact format)
+        local durationText = info.duration and string.format("%.2fs", info.duration) or "?"
+        local channelText = info.channels and string.format("%dch", info.channels) or "?"
+        local infoText = string.format("%s | %s | %s", info.name or "Unknown", durationText, channelText)
+
+        -- Calculate text width for background
+        local textWidth = imgui.CalcTextSize(ctx, infoText)
+        local bgX1 = pos_x + width - textWidth - padding * 2
+        local bgY1 = infoY - padding / 2
+        local bgX2 = pos_x + width - padding
+        local bgY2 = infoY + lineHeight + padding / 2
+
+        -- Draw semi-transparent background
+        imgui.DrawList_AddRectFilled(draw_list,
+            bgX1, bgY1,
+            bgX2, bgY2,
+            0xC0000000  -- Semi-transparent black
+        )
+
+        -- Draw text
+        imgui.DrawList_AddText(draw_list,
+            pos_x + width - textWidth - padding, infoY,
+            0xFFFFFFFF,  -- White text
+            infoText
+        )
+    end
+
     -- Store waveform bounds for interaction detection
     globals.waveformBounds[itemKey] = {
         x = pos_x,
