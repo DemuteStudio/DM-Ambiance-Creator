@@ -1404,7 +1404,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Enable 'Override Parent Settings' to customize parameters for this container instead of inheriting from the group.")
     if rv and newOverrideParent ~= overrideParent then
-        globals.History.captureState("Toggle override parent settings")
+        -- UndoWrappers.Checkbox already captures state - no need for manual capture
         container.overrideParent = newOverrideParent
         container.needsRegeneration = true
     end

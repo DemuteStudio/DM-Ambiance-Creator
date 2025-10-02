@@ -569,6 +569,9 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     -- Ensure link mode is initialized
     if not obj.pitchLinkMode then obj.pitchLinkMode = "mirror" end
     if globals.Icons.createLinkModeButton(globals.ctx, "pitchLink" .. objId, obj.pitchLinkMode, "Link mode: " .. obj.pitchLinkMode) then
+        if globals.History then
+            globals.History.captureState("Change pitch link mode")
+        end
         obj.pitchLinkMode = cycleLinkMode(obj.pitchLinkMode)
     end
     
@@ -616,6 +619,9 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     -- Ensure link mode is initialized
     if not obj.volumeLinkMode then obj.volumeLinkMode = "mirror" end
     if globals.Icons.createLinkModeButton(globals.ctx, "volumeLink" .. objId, obj.volumeLinkMode, "Link mode: " .. obj.volumeLinkMode) then
+        if globals.History then
+            globals.History.captureState("Change volume link mode")
+        end
         obj.volumeLinkMode = cycleLinkMode(obj.volumeLinkMode)
     end
     
@@ -674,6 +680,9 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
         -- Ensure link mode is initialized
         if not obj.panLinkMode then obj.panLinkMode = "mirror" end
         if globals.Icons.createLinkModeButton(globals.ctx, "panLink" .. objId, obj.panLinkMode, "Link mode: " .. obj.panLinkMode) then
+            if globals.History then
+                globals.History.captureState("Change pan link mode")
+            end
             obj.panLinkMode = cycleLinkMode(obj.panLinkMode)
         end
 
@@ -734,6 +743,9 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
     -- Ensure link mode is initialized
     if not obj.fadeLinkMode then obj.fadeLinkMode = "link" end
     if globals.Icons.createLinkModeButton(globals.ctx, "fadeLink" .. objId, obj.fadeLinkMode, "Fade link mode: " .. obj.fadeLinkMode) then
+        if globals.History then
+            globals.History.captureState("Change fade link mode")
+        end
         obj.fadeLinkMode = cycleFadeLinkMode(obj.fadeLinkMode)
     end
     imgui.EndGroup(globals.ctx)
@@ -796,6 +808,10 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
                 globals.Utils.queueFadeUpdate(groupIndex, containerIndex, modifiedFade)
             elseif groupIndex then
                 globals.Utils.queueFadeUpdate(groupIndex, nil, modifiedFade)
+            end
+            -- Capture AFTER value change (simple buttons don't need deferred capture)
+            if globals.History then
+                globals.History.captureState("Toggle " .. (isIn and "fade in" or "fade out") .. " unit mode")
             end
         end
         
