@@ -721,18 +721,45 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     imgui.SetMouseCursor(globals.ctx, imgui.MouseCursor_ResizeNS)
                 end
 
-                -- Add gain control slider
+                -- Add gain control slider (compact)
                 imgui.Spacing(globals.ctx)
-                imgui.PushItemWidth(globals.ctx, waveformWidth)
 
                 -- Initialize gainDB if not set (for legacy items)
                 if selectedItem.gainDB == nil then
                     selectedItem.gainDB = 0.0
                 end
 
-                local changed, newGain = imgui.SliderDouble(globals.ctx, "Gain (dB)##" .. itemKey, selectedItem.gainDB, -24.0, 24.0, "%.1f dB")
-                if changed then
-                    selectedItem.gainDB = newGain
+                imgui.Text(globals.ctx, "Gain:")
+                imgui.SameLine(globals.ctx)
+                imgui.PushItemWidth(globals.ctx, 150)
+
+                -- Use logarithmic scale for gain fader (similar to volume faders)
+                -- Map slider position (0-1) to dB range (-60 to +24)
+                local sliderPos = (selectedItem.gainDB + 60) / 84  -- Normalize to 0-1
+                local changedSlider, newSliderPos = imgui.SliderDouble(globals.ctx, "##Gain" .. itemKey, sliderPos, 0.0, 1.0, "")
+
+                -- Convert back to dB with logarithmic curve
+                if changedSlider then
+                    local gainDB
+                    if newSliderPos <= 0.0 then
+                        gainDB = -60.0
+                    elseif newSliderPos >= 1.0 then
+                        gainDB = 24.0
+                    else
+                        -- Logarithmic mapping: more precision around 0 dB
+                        -- Center at 0 dB (slider position ~0.714)
+                        if newSliderPos < 0.714 then
+                            -- Map 0.0-0.714 to -60dB to 0dB with logarithmic curve
+                            local normalized = newSliderPos / 0.714
+                            gainDB = -60.0 * (1.0 - normalized * normalized)
+                        else
+                            -- Map 0.714-1.0 to 0dB to +24dB with logarithmic curve
+                            local normalized = (newSliderPos - 0.714) / 0.286
+                            gainDB = 24.0 * (normalized * normalized)
+                        end
+                    end
+
+                    selectedItem.gainDB = gainDB
                     -- Invalidate waveform cache to force redraw with new gain
                     if globals.waveformCache then
                         globals.waveformCache[selectedItem.filePath] = nil
@@ -740,6 +767,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 end
 
                 imgui.PopItemWidth(globals.ctx)
+
+                -- Display current gain value
+                imgui.SameLine(globals.ctx)
+                imgui.Text(globals.ctx, string.format("%.1f dB", selectedItem.gainDB))
 
                 -- Synchronize areas from waveformAreas back to the item after any changes
                 if globals.waveformAreas[itemKey] then
