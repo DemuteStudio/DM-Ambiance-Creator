@@ -775,25 +775,14 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             -- Relative mode: Interval is a percentage of time selection length
             interval = (globals.timeSelectionLength * effectiveParams.triggerRate) / 100
         elseif effectiveParams.intervalMode == 2 then
-            -- Coverage mode: Calculate interval based on average item length and desired coverage
-            local totalItemLength = 0
-            local itemCount = #effectiveParams.items
-
-            if itemCount > 0 then
-                for _, item in ipairs(effectiveParams.items) do
-                    totalItemLength = totalItemLength + item.length
-                end
-
-                local averageItemLength = totalItemLength / itemCount
-                local desiredCoverage = effectiveParams.triggerRate / 100 -- Convert percentage to ratio
-                local totalNumberOfItems = (globals.timeSelectionLength * desiredCoverage) / averageItemLength
-
-                if totalNumberOfItems > 0 then
-                    interval = globals.timeSelectionLength / totalNumberOfItems
-                else
-                    interval = globals.timeSelectionLength -- Fallback
-                end
-            end
+            -- Coverage mode: Interval will be calculated dynamically per item
+            -- Formula: interval = itemLength × (100 / coverage%)
+            -- This ensures the coverage percentage represents the actual audio duration
+            -- Examples:
+            --   50% coverage → item + equal silence → interval = itemLength × 2
+            --   100% coverage → no silence → interval = itemLength × 1
+            --   25% coverage → item + 3× silence → interval = itemLength × 4
+            interval = 0 -- Will be calculated per item in the loop
         elseif effectiveParams.intervalMode == 3 then
             -- Chunk mode: Generate chunks with sound periods followed by silence periods
             -- For multi-channel, generate on each track
@@ -924,12 +913,36 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             local position
             local maxDrift
             local drift
-            
-            -- Placement spécial pour le premier item avec intervalle > 0
-            if isFirstItem and interval > 0 then
-                -- Placer directement entre startTime et startTime+interval
-                position = globals.startTime + math.random() * interval
-                isFirstItem = false
+
+            -- Coverage mode: calculate interval based on current item length BEFORE placement
+            if effectiveParams.intervalMode == 2 then
+                local coveragePercent = effectiveParams.triggerRate
+                if coveragePercent > 0 then
+                    interval = itemData.length * (100 / coveragePercent)
+                else
+                    interval = globals.timeSelectionLength -- Fallback for 0% coverage
+                end
+            end
+
+            -- Placement spécial pour le premier item
+            -- Coverage mode: check interval > 0 OR intervalMode == 2
+            if isFirstItem and (interval > 0 or effectiveParams.intervalMode == 2) then
+                -- Coverage mode: place first item at startTime with optional variance
+                if effectiveParams.intervalMode == 2 then
+                    position = globals.startTime
+                    -- Apply variance if triggerDrift > 0
+                    if effectiveParams.triggerDrift > 0 and interval > 0 then
+                        -- Calculate variance range based on silence duration
+                        local silenceDuration = interval - itemData.length
+                        local varianceRange = silenceDuration * (effectiveParams.triggerDrift / 100)
+                        local variance = Utils.randomInRange(-varianceRange/2, varianceRange/2)
+                        position = position + variance
+                    end
+                else
+                    -- Other modes: place randomly between startTime and startTime+interval
+                    position = globals.startTime + math.random() * interval
+                end
+                -- Don't set isFirstItem = false yet - let it be set after lastItemEnd is updated
             else
                 -- Calcul standard de position pour les items suivants
                 if effectiveParams.intervalMode == 0 and interval < 0 then
@@ -937,13 +950,23 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                     maxDrift = math.abs(interval) * (effectiveParams.triggerDrift / 100)
                     drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
                     position = lastItemEnd + interval + drift
+                elseif effectiveParams.intervalMode == 2 then
+                    -- Coverage mode: place after previous item with optional variance
+                    position = lastItemEnd
+                    -- Apply variance based on silence duration
+                    if effectiveParams.triggerDrift > 0 then
+                        local silenceDuration = interval - itemData.length
+                        local varianceRange = silenceDuration * (effectiveParams.triggerDrift / 100)
+                        local variance = Utils.randomInRange(-varianceRange/2, varianceRange/2)
+                        position = position + variance
+                    end
                 else
                     -- Regular spacing from the end of the last item
                     maxDrift = interval * (effectiveParams.triggerDrift / 100)
                     drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
                     position = lastItemEnd + interval + drift
                 end
-                
+
                 -- Ensure no item starts before time selection
                 if position < globals.startTime then
                     position = globals.startTime
@@ -974,6 +997,17 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 -- Trim item so it never exceeds the selection end
                 local maxLen = globals.endTime - position
                 local actualLen = math.min(itemData.length, maxLen)
+
+                -- Coverage mode: calculate interval based on ACTUAL item length (after trimming)
+                -- This ensures accurate coverage even when items are trimmed at timeline end
+                if effectiveParams.intervalMode == 2 and trackIdx == 1 then
+                    local coveragePercent = effectiveParams.triggerRate
+                    if coveragePercent > 0 then
+                        interval = actualLen * (100 / coveragePercent)
+                    else
+                        interval = globals.timeSelectionLength -- Fallback for 0% coverage
+                    end
+                end
 
                 reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
                 reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
@@ -1069,8 +1103,18 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
 
                 -- Update references for next iteration (only from first track)
                 if trackIdx == 1 then
-                    lastItemEnd = position + actualLen
+                    -- Coverage mode: lastItemEnd should be position + interval (item + silence)
+                    -- Other modes: lastItemEnd is position + item length
+                    if effectiveParams.intervalMode == 2 then
+                        lastItemEnd = position + interval
+                    else
+                        lastItemEnd = position + actualLen
+                    end
                     lastItemRef = newItem
+                    -- Mark first item as placed after lastItemEnd is updated
+                    if isFirstItem then
+                        isFirstItem = false
+                    end
                 end
             end  -- End of for loop for target tracks
 
