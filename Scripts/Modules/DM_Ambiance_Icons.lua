@@ -378,6 +378,24 @@ function Icons.getIconSize()
     return 14, 14  -- Display at 14x14 for compact size
 end
 
+-- Helper function to create an icon button with tint color
+local function createTintedIconButton(ctx, texture, buttonId, tooltip)
+    local width, height = Icons.getIconSize()
+
+    -- Apply icon tint color - ImageButton uses tint_col parameter (5th parameter)
+    local iconColor = globals.Settings.getSetting("iconColor")
+
+    -- ImageButton signature: ImageButton(ctx, str_id, image, size_x, size_y, uv0_x=0, uv0_y=0, uv1_x=1, uv1_y=1, bg_col=0, tint_col=0xFFFFFFFF)
+    -- We need to pass default UV coordinates and background, then our tint color
+    local result = globals.imgui.ImageButton(ctx, buttonId, texture, width, height, 0, 0, 1, 1, 0, iconColor)
+
+    if globals.imgui.IsItemHovered(ctx) then
+        globals.imgui.SetTooltip(ctx, tooltip)
+    end
+
+    return result
+end
+
 -- Create a delete icon button
 function Icons.createDeleteButton(ctx, id, tooltip)
     if not iconTextures.delete then
@@ -388,20 +406,9 @@ function Icons.createDeleteButton(ctx, id, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
-    
-    -- Use ImageButton with proper parameters
-    -- The ID should not have ## prefix - that's for regular buttons
-    local buttonId = "##ImgDel_" .. id  -- ## prefix hides the label
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.delete, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Delete")
-    end
-    
-    return result
+
+    local buttonId = "##ImgDel_" .. id
+    return createTintedIconButton(ctx, iconTextures.delete, buttonId, tooltip or "Delete")
 end
 
 -- Create a regenerate icon button
@@ -414,20 +421,9 @@ function Icons.createRegenButton(ctx, id, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
-    
-    -- Use ImageButton with proper parameters
-    -- The ID should not have ## prefix - that's for regular buttons
-    local buttonId = "##ImgReg_" .. id  -- ## prefix hides the label
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.regen, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Regenerate")
-    end
-    
-    return result
+
+    local buttonId = "##ImgReg_" .. id
+    return createTintedIconButton(ctx, iconTextures.regen, buttonId, tooltip or "Regenerate")
 end
 
 -- Create an upload icon button (for save)
@@ -440,17 +436,9 @@ function Icons.createUploadButton(ctx, id, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
+
     local buttonId = "##ImgSave_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.upload, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Save")
-    end
-    
-    return result
+    return createTintedIconButton(ctx, iconTextures.upload, buttonId, tooltip or "Save")
 end
 
 -- Create a download icon button (for load)
@@ -463,17 +451,9 @@ function Icons.createDownloadButton(ctx, id, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
+
     local buttonId = "##ImgLoad_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.download, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Load")
-    end
-    
-    return result
+    return createTintedIconButton(ctx, iconTextures.download, buttonId, tooltip or "Load")
 end
 
 -- Create a settings icon button
@@ -486,17 +466,9 @@ function Icons.createSettingsButton(ctx, id, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
+
     local buttonId = "##ImgSettings_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.settings, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Settings")
-    end
-    
-    return result
+    return createTintedIconButton(ctx, iconTextures.settings, buttonId, tooltip or "Settings")
 end
 
 -- Create a folder icon button
@@ -509,17 +481,9 @@ function Icons.createFolderButton(ctx, id, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
+
     local buttonId = "##ImgFolder_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.folder, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Open folder")
-    end
-    
-    return result
+    return createTintedIconButton(ctx, iconTextures.folder, buttonId, tooltip or "Open folder")
 end
 
 -- Create a conflict resolution icon button
@@ -532,17 +496,9 @@ function Icons.createConflictButton(ctx, id, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
+
     local buttonId = "##ImgConflict_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.conflict, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Channel Routing Conflicts")
-    end
-    
-    return result
+    return createTintedIconButton(ctx, iconTextures.conflict, buttonId, tooltip or "Channel Routing Conflicts")
 end
 
 -- Create a delete button with text fallback
@@ -597,18 +553,9 @@ function Icons.createAddButton(ctx, id, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
-    -- Use ImageButton with proper parameters (same format as other buttons)
-    local buttonId = "##ImgAdd_" .. id  -- ## prefix hides the label
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.add, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Add")
-    end
-    
-    return result
+
+    local buttonId = "##ImgAdd_" .. id
+    return createTintedIconButton(ctx, iconTextures.add, buttonId, tooltip or "Add")
 end
 
 -- Check if icons are loaded successfully
@@ -634,15 +581,15 @@ function Icons.createLinkModeButton(ctx, id, currentMode, tooltip)
         ["link"] = iconTextures.link,
         ["mirror"] = iconTextures.mirror
     }
-    
+
     local modeTexts = {
         ["unlink"] = "UL",
-        ["link"] = "LK", 
+        ["link"] = "LK",
         ["mirror"] = "MR"
     }
-    
+
     local currentIcon = modeIcons[currentMode]
-    
+
     if not currentIcon then
         -- Fallback to text button if icon failed to load
         local text = modeTexts[currentMode] or "UL"
@@ -652,17 +599,9 @@ function Icons.createLinkModeButton(ctx, id, currentMode, tooltip)
         end
         return result
     end
-    
-    local width, height = Icons.getIconSize()
-    
+
     local buttonId = "##ImgLink_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, currentIcon, width, height)
-    
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or ("Mode: " .. currentMode))
-    end
-    
-    return result
+    return createTintedIconButton(ctx, currentIcon, buttonId, tooltip or ("Mode: " .. currentMode))
 end
 
 -- Get raw link mode icon textures (for advanced usage)
@@ -689,16 +628,8 @@ function Icons.createUndoButton(ctx, id, tooltip)
         return result
     end
 
-    local width, height = Icons.getIconSize()
-
     local buttonId = "##ImgUndo_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.undo, width, height)
-
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Undo")
-    end
-
-    return result
+    return createTintedIconButton(ctx, iconTextures.undo, buttonId, tooltip or "Undo")
 end
 
 -- Create a redo icon button
@@ -712,16 +643,8 @@ function Icons.createRedoButton(ctx, id, tooltip)
         return result
     end
 
-    local width, height = Icons.getIconSize()
-
     local buttonId = "##ImgRedo_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.redo, width, height)
-
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "Redo")
-    end
-
-    return result
+    return createTintedIconButton(ctx, iconTextures.redo, buttonId, tooltip or "Redo")
 end
 
 -- Create a history icon button
@@ -735,16 +658,8 @@ function Icons.createHistoryButton(ctx, id, tooltip)
         return result
     end
 
-    local width, height = Icons.getIconSize()
-
     local buttonId = "##ImgHistory_" .. id
-    local result = globals.imgui.ImageButton(ctx, buttonId, iconTextures.history, width, height)
-
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, tooltip or "History")
-    end
-
-    return result
+    return createTintedIconButton(ctx, iconTextures.history, buttonId, tooltip or "History")
 end
 
 -- Get raw undo/redo/history icon textures (for advanced usage)

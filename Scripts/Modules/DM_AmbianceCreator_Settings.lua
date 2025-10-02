@@ -23,6 +23,7 @@ local defaultSettings = {
     backgroundColor = 0x2E2E2EFF, -- Dark gray background
     textColor = 0xD5D5D5FF, -- White text
     waveformColor = 0x00CCA0FF, -- Default blue color
+    iconColor = 0xD5D5D5FF, -- Same as text color by default
     uiRounding = 2.0, -- Default rounding for UI elements
     itemSpacing = 8, -- Default item spacing
     crossfadeMargin = 0.2, -- Default crossfade margin in seconds
@@ -150,11 +151,21 @@ local function initTempSettings()
         originalSettings.itemSpacing = globals.settings.itemSpacing
         originalSettings.crossfadeMargin = globals.settings.crossfadeMargin
         originalSettings.waveformAutoPlayOnSelect = globals.settings.waveformAutoPlayOnSelect
+        originalSettings.buttonColor = globals.settings.buttonColor
+        originalSettings.backgroundColor = globals.settings.backgroundColor
+        originalSettings.textColor = globals.settings.textColor
+        originalSettings.waveformColor = globals.settings.waveformColor
+        originalSettings.iconColor = globals.settings.iconColor
         -- Initialize temporary variables
         tempSettings.uiRounding = globals.settings.uiRounding
         tempSettings.itemSpacing = globals.settings.itemSpacing
         tempSettings.crossfadeMargin = globals.settings.crossfadeMargin
         tempSettings.waveformAutoPlayOnSelect = globals.settings.waveformAutoPlayOnSelect
+        tempSettings.buttonColor = globals.settings.buttonColor
+        tempSettings.backgroundColor = globals.settings.backgroundColor
+        tempSettings.textColor = globals.settings.textColor
+        tempSettings.waveformColor = globals.settings.waveformColor
+        tempSettings.iconColor = globals.settings.iconColor
         tempSettings.initialized = true
     end
 end
@@ -173,6 +184,11 @@ local function restoreOriginalSettings()
     globals.settings.itemSpacing = originalSettings.itemSpacing
     globals.settings.crossfadeMargin = originalSettings.crossfadeMargin
     globals.settings.waveformAutoPlayOnSelect = originalSettings.waveformAutoPlayOnSelect
+    globals.settings.buttonColor = originalSettings.buttonColor
+    globals.settings.backgroundColor = originalSettings.backgroundColor
+    globals.settings.textColor = originalSettings.textColor
+    globals.settings.waveformColor = originalSettings.waveformColor
+    globals.settings.iconColor = originalSettings.iconColor
 end
 
 -- Applies all temporary changes to the real settings
@@ -182,6 +198,11 @@ local function applyTempSettings()
     Settings.setSetting("itemSpacing", tempSettings.itemSpacing)
     Settings.setSetting("crossfadeMargin", tempSettings.crossfadeMargin)
     Settings.setSetting("waveformAutoPlayOnSelect", tempSettings.waveformAutoPlayOnSelect)
+    Settings.setSetting("buttonColor", tempSettings.buttonColor)
+    Settings.setSetting("backgroundColor", tempSettings.backgroundColor)
+    Settings.setSetting("textColor", tempSettings.textColor)
+    Settings.setSetting("waveformColor", tempSettings.waveformColor)
+    Settings.setSetting("iconColor", tempSettings.iconColor)
     Settings.saveSettings()
 end
 
@@ -488,17 +509,20 @@ function Settings.rgbaToColor(r, g, b, a)
     return (r << 24) | (g << 16) | (b << 8) | a
 end
 
--- Display a color picker UI element for a specific color setting
+-- Display a color picker UI element for a specific color setting (using temp settings)
 
 function Settings.colorPicker(label, colorKey)
     local ctx = globals.ctx
     local imgui = globals.imgui
-    local currentColor = Settings.getSetting(colorKey)
-    local r, g, b, a = Settings.colorToRGBA(currentColor)
+
+    -- Use temporary settings instead of actual settings
+    local currentColor = tempSettings[colorKey] or Settings.getSetting(colorKey)
     local rv, newColor = imgui.ColorEdit4(ctx, label, currentColor)
     if rv then
-        Settings.setSetting(colorKey, newColor)
-        Settings.saveSettings() -- Immediate save for colors
+        -- Update temporary settings
+        tempSettings[colorKey] = newColor
+        -- Update actual settings for immediate UI preview
+        globals.settings[colorKey] = newColor
         return true
     end
     return false
@@ -531,11 +555,12 @@ function Settings.showAppearanceSettings()
     end
     imgui.SameLine(ctx)
     globals.Utils.HelpMarker("Controls the space between UI elements.")
-    -- Add color pickers for the three color settings (immediate save)
+    -- Add color pickers for the color settings
     Settings.colorPicker("Button Color", "buttonColor")
     Settings.colorPicker("Background Color", "backgroundColor")
     Settings.colorPicker("Text Color", "textColor")
     Settings.colorPicker("Waveform Color", "waveformColor")
+    Settings.colorPicker("Icon Color", "iconColor")
     imgui.Separator(ctx)
 end
 
