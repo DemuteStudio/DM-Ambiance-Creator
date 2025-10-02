@@ -54,13 +54,25 @@ function UI_UndoHistory.showWindow()
                     imgui.TableSetBgColor(ctx, imgui.TableBgTarget_RowBg0, 0x3366FFFF)
                 end
 
-                -- Description column
+                -- Description column (make it selectable for double-click detection)
                 imgui.TableSetColumnIndex(ctx, 0)
                 local displayText = entry.description or "Unnamed action"
                 if i == currentIndex then
                     displayText = "● " .. displayText  -- Marker for current state
                 end
-                imgui.Text(ctx, displayText)
+
+                -- Use Selectable to detect clicks
+                local clicked = imgui.Selectable(ctx, displayText .. "##row" .. i, isCurrent, imgui.SelectableFlags_SpanAllColumns)
+
+                -- Detect double-click to jump to this state
+                if imgui.IsItemHovered(ctx) and imgui.IsMouseDoubleClicked(ctx, 0) then
+                    globals.History.jumpToState(i)
+                end
+
+                -- Show tooltip on hover
+                if imgui.IsItemHovered(ctx) and not isCurrent then
+                    imgui.SetTooltip(ctx, "Double-click to jump to this state")
+                end
 
                 -- Time column
                 imgui.TableSetColumnIndex(ctx, 1)

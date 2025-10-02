@@ -191,6 +191,23 @@ function History.redo()
     return restoreState(snapshot)
 end
 
+-- Jump directly to a specific state in history
+-- @param targetIndex number: The index to jump to (1-based)
+-- @return boolean: true if jump was successful, false otherwise
+function History.jumpToState(targetIndex)
+    -- Validate target index
+    if targetIndex < 1 or targetIndex > #historyStack then
+        return false
+    end
+
+    -- Update history index
+    historyIndex = targetIndex
+
+    -- Restore the state at this position
+    local snapshot = historyStack[historyIndex]
+    return restoreState(snapshot)
+end
+
 -- Check if undo is available
 -- @return boolean: true if there are states to undo
 function History.canUndo()
