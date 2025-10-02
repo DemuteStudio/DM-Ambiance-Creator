@@ -801,10 +801,11 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             -- Add hint about spacebar and clicking
             imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x808080FF)
             if globals.Settings.getSetting("waveformAutoPlayOnSelect") then
-                imgui.Text(globals.ctx, "Tip: [Space] play/pause • Click to set position & play • Double-click to reset")
+                imgui.Text(globals.ctx, "Playback: [Space] play/pause • Click lower half to set position & play • Double-click to reset")
             else
-                imgui.Text(globals.ctx, "Tip: [Space] play/pause • Click to set position • Double-click to reset")
+                imgui.Text(globals.ctx, "Playback: [Space] play/pause • Click lower half to set position • Double-click to reset")
             end
+            imgui.Text(globals.ctx, "Areas: Shift+Drag upper half to create • Ctrl+Click upper half to delete")
             imgui.PopStyleColor(globals.ctx, 1)
 
             -- Initialize audio preview volume if needed

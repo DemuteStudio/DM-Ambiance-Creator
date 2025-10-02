@@ -994,15 +994,6 @@ function Waveform.drawWaveform(filePath, width, height, options)
         )
     end
 
-    -- Draw horizontal separator line at midpoint (subtle visual indicator)
-    local halfHeight = height / 2
-    imgui.DrawList_AddLine(draw_list,
-        pos_x, pos_y + halfHeight,
-        pos_x + width, pos_y + halfHeight,
-        0x30FFFFFF,  -- Very subtle white line (20% opacity)
-        1
-    )
-
     -- Draw border
     imgui.DrawList_AddRect(draw_list,
         pos_x, pos_y,
