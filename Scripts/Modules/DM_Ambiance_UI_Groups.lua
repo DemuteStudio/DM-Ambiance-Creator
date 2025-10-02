@@ -602,7 +602,6 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
     -- Add group button
     if imgui.Button(globals.ctx, "Add Group") then
-        globals.History.captureState("Add group")
         table.insert(globals.groups, globals.Structures.createGroup())
         local newGroupIndex = #globals.groups
         globals.selectedGroupIndex = newGroupIndex
@@ -611,6 +610,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
         globals.inMultiSelectMode = false
         globals.shiftAnchorGroupIndex = newGroupIndex
         globals.shiftAnchorContainerIndex = nil
+        -- Capture AFTER all changes
+        globals.History.captureState("Add group")
     end
 
     -- Help marker for drag and drop
@@ -751,7 +752,6 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
             buttons = {
                 {icon = "+", id = groupId, tooltip = "Add container", onClick = function()
-                    globals.History.captureState("Add container")
                     table.insert(group.containers, globals.Structures.createContainer())
                     clearContainerSelections()
                     local newContainerIndex = #group.containers
@@ -763,6 +763,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                     globals.shiftAnchorContainerIndex = newContainerIndex
                     -- Ensure the group is expanded to show the new container
                     group.expanded = true
+                    -- Capture AFTER all changes
+                    globals.History.captureState("Add container")
                 end},
                 {icon = "X", id = groupId, tooltip = "Delete group", onClick = function()
                     groupToDelete = i
@@ -952,7 +954,6 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
 
             -- Delete the marked container if any
             if containerToDelete then
-                globals.History.captureState("Delete container")
                 globals.selectedContainers[i .. "_" .. containerToDelete] = nil
                 table.remove(group.containers, containerToDelete)
                 if globals.selectedGroupIndex == i and globals.selectedContainerIndex == containerToDelete then
@@ -967,13 +968,14 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                         globals.selectedContainers[i .. "_" .. k] = nil
                     end
                 end
+                -- Capture AFTER all changes
+                globals.History.captureState("Delete container")
             end
         end
     end
 
     -- Delete the marked group if any
     if groupToDelete then
-        globals.History.captureState("Delete group")
         -- Remove any selected containers from this group
         for key in pairs(globals.selectedContainers) do
             local t, c = key:match("(%d+)_(%d+)")
@@ -997,6 +999,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 globals.selectedContainers[key] = nil
             end
         end
+        -- Capture AFTER all changes
+        globals.History.captureState("Delete group")
     end
 
     -- Update the multi-select mode flag
