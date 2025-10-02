@@ -784,8 +784,11 @@ function Waveform.drawWaveform(filePath, width, height, options)
 
                 -- Draw vertical line from min to max (only if showPeaks is enabled)
                 local verticalZoom = options.verticalZoom or globals.waveformVerticalZoom or 1.0
-                local topY = centerY - (maxVal * channelDrawHeight / 2 * verticalZoom)
-                local bottomY = centerY - (minVal * channelDrawHeight / 2 * verticalZoom)
+                local gainDB = options.gainDB or 0.0
+                local gainScale = 10 ^ (gainDB / 20)  -- Convert dB to linear scale
+
+                local topY = centerY - (maxVal * channelDrawHeight / 2 * verticalZoom * gainScale)
+                local bottomY = centerY - (minVal * channelDrawHeight / 2 * verticalZoom * gainScale)
 
                 if options.showPeaks ~= false then
                     imgui.DrawList_AddLine(draw_list,
@@ -801,8 +804,8 @@ function Waveform.drawWaveform(filePath, width, height, options)
                     local rmsVal = channelPeaks.rms[sampleIndex] or 0
                     if math.abs(rmsVal) > 0.01 then
                         imgui.DrawList_AddLine(draw_list,
-                            x, centerY - (rmsVal * channelDrawHeight / 2 * verticalZoom),
-                            x, centerY + (rmsVal * channelDrawHeight / 2 * verticalZoom),
+                            x, centerY - (rmsVal * channelDrawHeight / 2 * verticalZoom * gainScale),
+                            x, centerY + (rmsVal * channelDrawHeight / 2 * verticalZoom * gainScale),
                             waveformColor,
                             1
                         )
@@ -1878,7 +1881,13 @@ function Waveform.startPlayback(filePath, startOffset, length, relativePosition)
             end
         end
 
-        reaper.CF_Preview_SetValue(preview, 'D_VOLUME', globals.audioPreview.volume or 0.7)
+        -- Apply gain scaling to preview volume
+        local baseVolume = globals.audioPreview.volume or 0.7
+        local gainDB = globals.audioPreview.gainDB or 0.0
+        local gainScale = 10 ^ (gainDB / 20)  -- Convert dB to linear
+        local scaledVolume = baseVolume * gainScale
+
+        reaper.CF_Preview_SetValue(preview, 'D_VOLUME', scaledVolume)
         reaper.CF_Preview_SetValue(preview, 'D_POSITION', actualStartPos)
         reaper.CF_Preview_SetValue(preview, 'B_LOOP', 0)
 
@@ -1987,7 +1996,12 @@ function Waveform.setPreviewVolume(volume)
     globals.audioPreview.volume = volume
 
     if globals.audioPreview.cfPreview then
-        reaper.CF_Preview_SetValue(globals.audioPreview.cfPreview, 'D_VOLUME', volume)
+        -- Apply gain scaling to volume
+        local gainDB = globals.audioPreview.gainDB or 0.0
+        local gainScale = 10 ^ (gainDB / 20)  -- Convert dB to linear
+        local scaledVolume = volume * gainScale
+
+        reaper.CF_Preview_SetValue(globals.audioPreview.cfPreview, 'D_VOLUME', scaledVolume)
     end
 end
 

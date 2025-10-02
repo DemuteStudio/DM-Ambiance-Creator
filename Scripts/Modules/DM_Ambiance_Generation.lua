@@ -987,11 +987,15 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                     reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
                 end
 
+                -- Apply gain from item settings
+                local gainDB = itemData.gainDB or 0.0
+                local gainScale = 10 ^ (gainDB / 20)  -- Convert dB to linear
+
                 if effectiveParams.randomizeVolume then
-                    local randomVolume = itemData.originalVolume * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
+                    local randomVolume = itemData.originalVolume * gainScale * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
                     reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", randomVolume)
                 else
-                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume)
+                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume * gainScale)
                 end
 
                 -- Apply pan randomization for stereo items
@@ -1794,11 +1798,15 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
             reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
         end
 
+        -- Apply gain from item settings
+        local gainDB = itemData.gainDB or 0.0
+        local gainScale = 10 ^ (gainDB / 20)  -- Convert dB to linear
+
         if effectiveParams.randomizeVolume then
-            local randomVolume = itemData.originalVolume * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
+            local randomVolume = itemData.originalVolume * gainScale * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
             reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", randomVolume)
         else
-            reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume)
+            reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume * gainScale)
         end
 
         -- Apply pan randomization only for stereo containers (channelMode = 0 or nil)
@@ -2737,12 +2745,16 @@ function Generation.applyRandomization(newItem, newTake, effectiveParams, itemDa
         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
     end
 
+    -- Apply gain from item settings
+    local gainDB = itemData.gainDB or 0.0
+    local gainScale = 10 ^ (gainDB / 20)  -- Convert dB to linear
+
     -- Apply volume randomization
     if effectiveParams.randomizeVolume then
-        local randomVolume = itemData.originalVolume * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
+        local randomVolume = itemData.originalVolume * gainScale * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
         reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", randomVolume)
     else
-        reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume)
+        reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume * gainScale)
     end
 
     -- Apply pan randomization (only for stereo contexts)

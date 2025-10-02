@@ -54,7 +54,8 @@ function Items.getSelectedItems()
         originalPitch = reaper.GetMediaItemTakeInfo_Value(take, "D_PITCH"),
         originalVolume = reaper.GetMediaItemTakeInfo_Value(take, "D_VOL"),
         originalPan = reaper.GetMediaItemTakeInfo_Value(take, "D_PAN"),
-        numChannels = numChannels
+        numChannels = numChannels,
+        gainDB = 0.0  -- Default gain offset in dB
       }
       table.insert(items, itemData)
     end
@@ -273,7 +274,8 @@ function Items.createItemFromFilePath(filePath)
     originalPitch = 0,
     originalVolume = 1.0,
     originalPan = 0.0,
-    numChannels = numChannels
+    numChannels = numChannels,
+    gainDB = 0.0  -- Default gain offset in dB
   }
 
   return itemData

@@ -654,6 +654,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                         -- Store the clicked position as the marker
                         globals.audioPreview.clickedPosition = clickPosition
 
+                        -- Store gain for playback
+                        globals.audioPreview.gainDB = selectedItem.gainDB or 0.0
+
                         -- Only start playback if auto-play is enabled
                         if globals.Settings.getSetting("waveformAutoPlayOnSelect") then
                             -- Start playback from the clicked position
@@ -678,7 +681,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                         name = selectedItem.name,
                         duration = selectedItem.length,
                         channels = selectedItem.numChannels
-                    }
+                    },
+
+                    -- Pass gain for waveform visual scaling
+                    gainDB = selectedItem.gainDB or 0.0
                 }
 
                 -- Debug: Show what portion we're displaying (commented for production)
@@ -714,6 +720,26 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 if imgui.IsItemHovered(globals.ctx) then
                     imgui.SetMouseCursor(globals.ctx, imgui.MouseCursor_ResizeNS)
                 end
+
+                -- Add gain control slider
+                imgui.Spacing(globals.ctx)
+                imgui.PushItemWidth(globals.ctx, waveformWidth)
+
+                -- Initialize gainDB if not set (for legacy items)
+                if selectedItem.gainDB == nil then
+                    selectedItem.gainDB = 0.0
+                end
+
+                local changed, newGain = imgui.SliderDouble(globals.ctx, "Gain (dB)##" .. itemKey, selectedItem.gainDB, -24.0, 24.0, "%.1f dB")
+                if changed then
+                    selectedItem.gainDB = newGain
+                    -- Invalidate waveform cache to force redraw with new gain
+                    if globals.waveformCache then
+                        globals.waveformCache[selectedItem.filePath] = nil
+                    end
+                end
+
+                imgui.PopItemWidth(globals.ctx)
 
                 -- Synchronize areas from waveformAreas back to the item after any changes
                 if globals.waveformAreas[itemKey] then
