@@ -24,6 +24,7 @@ function Structures.createGroup(name)
         containers = {},
         expanded = true,
         -- Randomization parameters using constants
+        pitchMode = Constants.DEFAULTS.PITCH_MODE,
         pitchRange = {min = Constants.DEFAULTS.PITCH_RANGE_MIN, max = Constants.DEFAULTS.PITCH_RANGE_MAX},
         volumeRange = {min = Constants.DEFAULTS.VOLUME_RANGE_MIN, max = Constants.DEFAULTS.VOLUME_RANGE_MAX},
         panRange = {min = Constants.DEFAULTS.PAN_RANGE_MIN, max = Constants.DEFAULTS.PAN_RANGE_MAX},
@@ -69,6 +70,7 @@ function Structures.createContainer(name)
         name = name or "New Container",
         items = {},
         expanded = true,
+        pitchMode = Constants.DEFAULTS.PITCH_MODE,
         pitchRange = {min = Constants.DEFAULTS.PITCH_RANGE_MIN, max = Constants.DEFAULTS.PITCH_RANGE_MAX},
         volumeRange = {min = Constants.DEFAULTS.VOLUME_RANGE_MIN, max = Constants.DEFAULTS.VOLUME_RANGE_MAX},
         panRange = {min = Constants.DEFAULTS.PAN_RANGE_MIN, max = Constants.DEFAULTS.PAN_RANGE_MAX},
@@ -165,10 +167,11 @@ function Structures.getEffectiveContainerParams(group, container)
     end
     
     -- Override with parent group randomization settings
+    effectiveParams.pitchMode = group.pitchMode
     effectiveParams.randomizePitch = group.randomizePitch
     effectiveParams.randomizeVolume = group.randomizeVolume
     effectiveParams.randomizePan = group.randomizePan
-    
+
     -- Copy parent range values (creating new tables to avoid reference issues)
     effectiveParams.pitchRange = {min = group.pitchRange.min, max = group.pitchRange.max}
     effectiveParams.volumeRange = {min = group.volumeRange.min, max = group.volumeRange.max}

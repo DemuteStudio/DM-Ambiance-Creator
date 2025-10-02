@@ -422,6 +422,83 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         end
     end
 
+    -- Pitch mode toggle button (similar to main UI)
+    imgui.SameLine(globals.ctx)
+    imgui.Dummy(globals.ctx, 20, 0)  -- Add some spacing
+    imgui.SameLine(globals.ctx)
+
+    -- Determine common pitch mode
+    local commonPitchMode = containers[1] and globals.groups[containers[1].groupIndex].containers[containers[1].containerIndex].pitchMode or Constants.PITCH_MODES.PITCH
+    local hasMixedPitchModes = false
+    for _, c in ipairs(containers) do
+        local container = globals.groups[c.groupIndex].containers[c.containerIndex]
+        if not container.pitchMode then container.pitchMode = Constants.PITCH_MODES.PITCH end
+        if container.pitchMode ~= commonPitchMode then
+            hasMixedPitchModes = true
+            break
+        end
+    end
+
+    local pitchModeLabel = hasMixedPitchModes and "Pitch Mode (Mixed)" or
+                          (commonPitchMode == Constants.PITCH_MODES.STRETCH and "Stretch" or "Pitch")
+
+    -- State tracking for text color feedback (similar to icon buttons)
+    if not globals.pitchModeButtonStates then
+        globals.pitchModeButtonStates = {}
+    end
+    local stateKey = "pitchMode_multi"
+    local previousState = globals.pitchModeButtonStates[stateKey] or "normal"
+
+    -- Get base text color
+    local baseTextColor = imgui.GetStyleColor(globals.ctx, imgui.Col_Text)
+
+    -- Calculate text color based on previous state
+    local textColor = baseTextColor
+    if previousState == "active" then
+        -- Active: darken
+        textColor = globals.Utils.brightenColor(baseTextColor, -0.2)
+    elseif previousState == "hovered" then
+        -- Hover: brighten
+        textColor = globals.Utils.brightenColor(baseTextColor, 0.3)
+    end
+
+    -- Apply text color
+    imgui.PushStyleColor(globals.ctx, imgui.Col_Text, textColor)
+
+    -- Make button background invisible (no highlight on hover/active)
+    imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0x00000000)
+    imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0x00000000)
+    imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonActive, 0x00000000)
+
+    local clicked = imgui.Button(globals.ctx, pitchModeLabel .. "##MultiPitchModeToggle")
+
+    imgui.PopStyleColor(globals.ctx, 4)
+
+    -- Update state for next frame
+    if imgui.IsItemActive(globals.ctx) then
+        globals.pitchModeButtonStates[stateKey] = "active"
+    elseif imgui.IsItemHovered(globals.ctx) then
+        globals.pitchModeButtonStates[stateKey] = "hovered"
+    else
+        globals.pitchModeButtonStates[stateKey] = "normal"
+    end
+
+    if clicked then
+        -- Toggle all selected containers
+        local newMode = (commonPitchMode == Constants.PITCH_MODES.PITCH) and Constants.PITCH_MODES.STRETCH or Constants.PITCH_MODES.PITCH
+        for _, c in ipairs(containers) do
+            globals.groups[c.groupIndex].containers[c.containerIndex].pitchMode = newMode
+            globals.groups[c.groupIndex].containers[c.containerIndex].needsRegeneration = true
+        end
+        if globals.History then
+            globals.History.captureState("Toggle pitch mode (multi-selection)")
+        end
+    end
+
+    if imgui.IsItemHovered(globals.ctx) then
+        imgui.SetTooltip(globals.ctx, "Click to toggle between Pitch and Stretch modes for all selected containers")
+    end
+
     -- Only show pitch range if any container uses pitch randomization
     if anyRandomizePitch then
         if commonPitchMin == -999 or commonPitchMax == -999 then

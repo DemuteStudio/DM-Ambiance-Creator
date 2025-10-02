@@ -596,9 +596,68 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     end
     imgui.PopItemWidth(globals.ctx)
     imgui.EndDisabled(globals.ctx)
-    
+
     imgui.SameLine(globals.ctx)
-    imgui.Text(globals.ctx, "Pitch (semitones)")
+
+    -- Pitch mode toggle button (transparent button to switch between Pitch and Stretch)
+    if not obj.pitchMode then obj.pitchMode = Constants.PITCH_MODES.PITCH end
+    local pitchModeLabel = obj.pitchMode == Constants.PITCH_MODES.STRETCH and "Stretch (semitones)" or "Pitch (semitones)"
+
+    -- State tracking for text color feedback (similar to icon buttons)
+    if not globals.pitchModeButtonStates then
+        globals.pitchModeButtonStates = {}
+    end
+    local stateKey = "pitchMode_" .. objId
+    local previousState = globals.pitchModeButtonStates[stateKey] or "normal"
+
+    -- Get base text color
+    local baseTextColor = imgui.GetStyleColor(globals.ctx, imgui.Col_Text)
+
+    -- Calculate text color based on previous state
+    local textColor = baseTextColor
+    if previousState == "active" then
+        -- Active: darken
+        textColor = globals.Utils.brightenColor(baseTextColor, -0.2)
+    elseif previousState == "hovered" then
+        -- Hover: brighten
+        textColor = globals.Utils.brightenColor(baseTextColor, 0.3)
+    end
+
+    -- Apply text color
+    imgui.PushStyleColor(globals.ctx, imgui.Col_Text, textColor)
+
+    -- Make button background invisible (no highlight on hover/active)
+    imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0x00000000)
+    imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0x00000000)
+    imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonActive, 0x00000000)
+
+    local clicked = imgui.Button(globals.ctx, pitchModeLabel .. "##PitchModeToggle" .. objId)
+
+    imgui.PopStyleColor(globals.ctx, 4)
+
+    -- Update state for next frame
+    if imgui.IsItemActive(globals.ctx) then
+        globals.pitchModeButtonStates[stateKey] = "active"
+    elseif imgui.IsItemHovered(globals.ctx) then
+        globals.pitchModeButtonStates[stateKey] = "hovered"
+    else
+        globals.pitchModeButtonStates[stateKey] = "normal"
+    end
+
+    if clicked then
+        -- Toggle between PITCH and STRETCH modes
+        obj.pitchMode = (obj.pitchMode == Constants.PITCH_MODES.PITCH) and Constants.PITCH_MODES.STRETCH or Constants.PITCH_MODES.PITCH
+        obj.needsRegeneration = true
+        if globals.History then
+            globals.History.captureState("Toggle pitch mode")
+        end
+    end
+
+    -- Add tooltip to explain the modes
+    if imgui.IsItemHovered(globals.ctx) then
+        imgui.SetTooltip(globals.ctx, "Click to toggle between:\n• Pitch: Standard pitch shift (may have artifacts)\n• Stretch: Time-stretch pitch (better quality, changes duration)")
+    end
+
     imgui.EndGroup(globals.ctx)
 
     -- Volume randomization (checkbox + link button + slider on same line)

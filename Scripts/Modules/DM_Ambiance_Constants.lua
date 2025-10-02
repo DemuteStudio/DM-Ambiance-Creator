@@ -126,15 +126,22 @@ Constants.FADE_SHAPES = {
     FAST_START = 1,                     -- Fast start (log)
     FAST_END = 2,                       -- Fast end (exp)
     FAST_START_END = 3,                 -- Fast start/end
-    SLOW_START_END = 4,                 -- Slow start/end  
+    SLOW_START_END = 4,                 -- Slow start/end
     BEZIER = 5,                         -- Bezier curve
     S_CURVE = 6,                        -- S-curve
+}
+
+-- Pitch Mode Constants
+Constants.PITCH_MODES = {
+    PITCH = 0,                          -- Standard pitch shift (D_PITCH)
+    STRETCH = 1,                        -- Time stretch (D_PLAYRATE)
 }
 
 -- Default Values
 Constants.DEFAULTS = {
     TRIGGER_RATE = 10.0,                -- Default trigger rate
     TRIGGER_DRIFT = 30,                 -- Default trigger drift percentage
+    PITCH_MODE = 0,                     -- Default pitch mode (PITCH)
     PITCH_RANGE_MIN = -3,               -- Default min pitch range
     PITCH_RANGE_MAX = 3,                -- Default max pitch range
     VOLUME_RANGE_MIN = -3,              -- Default min volume range (dB)

@@ -982,9 +982,24 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 -- Apply randomizations using effective parameters
                 if effectiveParams.randomizePitch then
                     local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
-                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+
+                    if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                        -- Use time stretch (D_PLAYRATE)
+                        local playrate = Utils.semitonesToPlayrate(randomPitch)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)  -- Enable preserve pitch
+                    else
+                        -- Use standard pitch shift (D_PITCH)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+                    end
                 else
-                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+                    if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                        local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+                    else
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+                    end
                 end
 
                 -- Apply gain from item settings
@@ -1793,9 +1808,24 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
         -- Apply randomizations using effective parameters
         if effectiveParams.randomizePitch then
             local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
-            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+
+            if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                -- Use time stretch (D_PLAYRATE)
+                local playrate = Utils.semitonesToPlayrate(randomPitch)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)  -- Enable preserve pitch
+            else
+                -- Use standard pitch shift (D_PITCH)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+            end
         else
-            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+            if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+            else
+                reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+            end
         end
 
         -- Apply gain from item settings
@@ -2740,9 +2770,24 @@ function Generation.applyRandomization(newItem, newTake, effectiveParams, itemDa
     -- Apply pitch randomization
     if effectiveParams.randomizePitch then
         local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
-        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+
+        if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+            -- Use time stretch (D_PLAYRATE)
+            local playrate = Utils.semitonesToPlayrate(randomPitch)
+            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+            reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)  -- Enable preserve pitch
+        else
+            -- Use standard pitch shift (D_PITCH)
+            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+        end
     else
-        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+        if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+            local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
+            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+            reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+        else
+            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+        end
     end
 
     -- Apply gain from item settings

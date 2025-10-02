@@ -628,6 +628,13 @@ function Utils.randomInRange(min, max)
     return min + math.random() * (max - min)
 end
 
+-- Convert semitones to playrate for time stretching
+-- @param semitones number: Pitch shift in semitones
+-- @return number: Playrate value (1.0 = normal speed)
+function Utils.semitonesToPlayrate(semitones)
+    return 2 ^ (semitones / 12)
+end
+
 -- Format a time value in seconds as HH:MM:SS
 function Utils.formatTime(seconds)
     seconds = tonumber(seconds) or 0
@@ -1580,12 +1587,35 @@ function Utils.applyRandomizationToItem(item, take, itemData, effectiveParams, m
         if effectiveParams.randomizePitch then
             -- Check if current pitch is different from original (indicating it was randomized)
             local isPitchRandomized = math.abs(currentPitch - itemData.originalPitch) > 0.001
-            
+
             local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
-            reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", randomPitch)
+
+            if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                -- Use time stretch (D_PLAYRATE)
+                local playrate = Utils.semitonesToPlayrate(randomPitch)
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", playrate)
+                reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1)  -- Enable preserve pitch
+                -- Reset D_PITCH to 0 to avoid conflicts
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", 0)
+            else
+                -- Use standard pitch shift (D_PITCH)
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", randomPitch)
+                -- Reset D_PLAYRATE to 1.0 to avoid conflicts
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", 1.0)
+                reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 0)
+            end
         else
             -- Randomization disabled, return to original value
-            reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", itemData.originalPitch)
+            if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", playrate)
+                reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1)
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", 0)
+            else
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", itemData.originalPitch)
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", 1.0)
+                reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 0)
+            end
         end
     end
     

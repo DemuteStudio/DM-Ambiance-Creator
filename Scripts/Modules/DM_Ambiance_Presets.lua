@@ -164,16 +164,26 @@ function Presets.loadPreset(name)
     globals.groups = presetData
     globals.currentPresetName = name
 
-    -- Apply track volumes for all groups and containers if they have tracks
+    -- Apply backward compatibility and track volumes for all groups and containers
     for groupIndex, group in ipairs(presetData) do
+      -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
+      if group.pitchMode == nil then
+        group.pitchMode = globals.Constants.PITCH_MODES.PITCH
+      end
+
       -- Apply group track volume if it exists
       if group.trackVolume then
         globals.Utils.setGroupTrackVolume(groupIndex, group.trackVolume)
       end
 
-      -- Apply container track volumes if they exist
+      -- Apply container track volumes and backward compatibility
       if group.containers then
         for containerIndex, container in ipairs(group.containers) do
+          -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
+          if container.pitchMode == nil then
+            container.pitchMode = globals.Constants.PITCH_MODES.PITCH
+          end
+
           if container.trackVolume then
             globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, container.trackVolume)
           end
@@ -260,12 +270,22 @@ function Presets.loadGroupPreset(name, groupIndex)
   local success, presetData = pcall(dofile, path)
 
   if success and type(presetData) == "table" then
+    -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
+    if presetData.pitchMode == nil then
+      presetData.pitchMode = globals.Constants.PITCH_MODES.PITCH
+    end
+
     globals.groups[groupIndex] = presetData
 
     -- Set regeneration flag since preset loading changes parameters
     globals.groups[groupIndex].needsRegeneration = true
     if presetData.containers then
       for _, container in ipairs(presetData.containers) do
+        -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
+        if container.pitchMode == nil then
+          container.pitchMode = globals.Constants.PITCH_MODES.PITCH
+        end
+
         container.needsRegeneration = true
         -- Force disable pan randomization for multichannel containers from old presets
         if container.channelMode and container.channelMode > 0 then
@@ -341,6 +361,11 @@ function Presets.loadContainerPreset(name, groupIndex, containerIndex)
   local success, presetData = pcall(dofile, path)
 
   if success and type(presetData) == "table" then
+    -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
+    if presetData.pitchMode == nil then
+      presetData.pitchMode = globals.Constants.PITCH_MODES.PITCH
+    end
+
     -- Apply the preset data to the container
     globals.groups[groupIndex].containers[containerIndex] = presetData
 
