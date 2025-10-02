@@ -184,8 +184,8 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     -- Initialize backward compatibility for container volumes
     Utils.initializeContainerVolumes()
 
-    -- Capture initial state for undo/redo system
-    History.captureState("Initial state")
+    -- DON'T capture initial state - let the first change create the first snapshot
+    -- This prevents duplicate states in the undo stack
 
     -- Start the main UI loop
     reaper.defer(loop)

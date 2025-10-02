@@ -40,15 +40,12 @@ local function deepCopy(orig)
     return copy
 end
 
--- Capture the current state and add it to the history stack
--- @param description string: Optional description of the action (for debugging)
-function History.captureState(description)
-    -- Create a deep copy of the current groups state
-    local snapshot = {
-        groups = deepCopy(globals.groups),
-        timestamp = reaper.time_precise(),
-        description = description or "Unnamed action"
-    }
+-- Add a snapshot to the history stack
+-- @param snapshot table: Pre-built snapshot {groups, timestamp, description}
+function History.addSnapshot(snapshot)
+    if not snapshot or not snapshot.groups then
+        error("History.addSnapshot: invalid snapshot")
+    end
 
     -- If we're not at the end of history, remove all states after current position
     -- (this happens when user does: action -> undo -> new action)
@@ -67,10 +64,19 @@ function History.captureState(description)
         table.remove(historyStack, 1)
         historyIndex = historyIndex - 1
     end
+end
 
-    -- Debug logging (can be enabled for debugging)
-    -- reaper.ShowConsoleMsg(string.format("[History] Captured: %s (Index: %d, Stack: %d)\n",
-    --     description or "Unnamed", historyIndex, #historyStack))
+-- Capture the current state and add it to the history stack
+-- @param description string: Optional description of the action (for debugging)
+function History.captureState(description)
+    -- Create a deep copy of the current groups state
+    local snapshot = {
+        groups = deepCopy(globals.groups),
+        timestamp = reaper.time_precise(),
+        description = description or "Unnamed action"
+    }
+
+    History.addSnapshot(snapshot)
 end
 
 -- Restore a state from history

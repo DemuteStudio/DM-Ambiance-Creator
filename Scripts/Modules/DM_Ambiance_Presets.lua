@@ -181,7 +181,7 @@ function Presets.loadPreset(name)
       end
     end
 
-    -- Recapture state after loading preset (new starting point for undo)
+    -- Clear history and capture the loaded preset state as the starting point
     if globals.History then
       globals.History.clear()
       globals.History.captureState("Loaded preset: " .. name)
