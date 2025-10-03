@@ -52,6 +52,9 @@ local function getIconPaths()
                 link = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_link_icon.png",
                 unlink = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_unlink_icon.png",
                 mirror = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_arrow_left_right_icon.png",
+                arrow_left = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_left_arrow_icon.png",
+                arrow_right = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_right_arrow_icon.png",
+                arrow_both = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_left_right_arrow_icon.png",
                 undo = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_undo_icon.png",
                 redo = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_redo_icon.png",
                 history = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_undo_history_icon.png"
