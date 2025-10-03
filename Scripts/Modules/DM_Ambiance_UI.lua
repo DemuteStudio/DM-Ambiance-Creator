@@ -211,42 +211,6 @@ local function applyLinkedSliderChange(obj, paramType, newMin, newMax, linkMode)
     return newMin, newMax
 end
 
---- Draw a direction toggle button for variation parameters
--- Returns: changed (boolean), newDirection (0=negative, 1=bipolar, 2=positive)
-function UI.drawVariationDirectionButton(id, currentDirection, width)
-    width = width or 30
-    local Constants = require("DM_Ambiance_Constants")
-
-    -- Initialize direction if nil (backward compatibility)
-    if currentDirection == nil then
-        currentDirection = Constants.VARIATION_DIRECTIONS.BIPOLAR
-    end
-
-    -- Direction symbols
-    local symbols = {"←", "↔", "→"}
-    local tooltips = {
-        "Negative only: variation reduces value",
-        "Bipolar: variation can increase or decrease",
-        "Positive only: variation increases value"
-    }
-
-    local buttonLabel = symbols[currentDirection + 1] .. "##" .. id
-    local changed = false
-    local newDirection = currentDirection
-
-    if imgui.Button(globals.ctx, buttonLabel, width, 0) then
-        -- Cycle through directions: Negative -> Bipolar -> Positive -> Negative
-        newDirection = (currentDirection + 1) % 3
-        changed = true
-    end
-
-    if imgui.IsItemHovered(globals.ctx) then
-        imgui.SetTooltip(globals.ctx, tooltips[currentDirection + 1])
-    end
-
-    return changed, newDirection
-end
-
 --- Helper to draw a slider row with automatic variation controls using table layout
 -- This provides consistent alignment without pixel-perfect positioning
 local function drawSliderWithVariation(params)
@@ -311,11 +275,11 @@ local function drawSliderWithVariation(params)
     if variationEnabled and variationValue ~= nil then
         imgui.TableSetColumnIndex(globals.ctx, 2)
 
-        -- Direction button
-        local dirChanged, newDirection = UI.drawVariationDirectionButton(
+        -- Direction button (using icon button)
+        local dirChanged, newDirection = globals.Icons.createVariationDirectionButton(
+            globals.ctx,
             trackingKey .. "_dir",
-            variationDirection,
-            24
+            variationDirection
         )
         if dirChanged and variationCallbacks.setDirection then
             variationCallbacks.setDirection(newDirection)

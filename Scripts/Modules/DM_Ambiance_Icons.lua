@@ -792,6 +792,12 @@ end
 -- @param tooltip Tooltip text
 -- @return clicked (boolean), newDirection (0, 1, or 2)
 function Icons.createVariationDirectionButton(ctx, id, direction, tooltip)
+    -- Initialize direction if nil (backward compatibility)
+    if direction == nil then
+        local Constants = require("DM_Ambiance_Constants")
+        direction = Constants.VARIATION_DIRECTIONS.BIPOLAR
+    end
+
     local textures = {
         [0] = iconTextures.arrow_left,
         [1] = iconTextures.arrow_both,
