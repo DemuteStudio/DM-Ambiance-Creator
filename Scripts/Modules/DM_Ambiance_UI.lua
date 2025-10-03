@@ -684,7 +684,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.Text(globals.ctx, "Noise Preview:")
         if not globals.timeSelectionValid then
             imgui.SameLine(globals.ctx)
-            imgui.TextColored(globals.ctx, 0xAAAA00FF, "(preview mode - 10s)")
+            imgui.TextColored(globals.ctx, 0xAAAA00FF, "(preview mode - 60s - Add time selection to better tweak)")
         end
 
         local previewWidth = controlWidth + padding + 200
@@ -1453,7 +1453,7 @@ function UI.drawNoisePreview(dataObj, width, height)
         endTime = globals.endTime
     else
         startTime = 0
-        endTime = 10  -- 10 seconds preview
+        endTime = 60  -- 60 seconds preview
     end
 
     -- Generate noise curve data
