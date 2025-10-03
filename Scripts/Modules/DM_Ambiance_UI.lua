@@ -159,7 +159,20 @@ local function cycleFadeLinkMode(currentMode)
 end
 
 -- Apply linked slider changes
+-- Hold Shift to temporarily override link mode and adjust sliders independently
+-- Hold Alt to temporarily use mirror mode
 local function applyLinkedSliderChange(obj, paramType, newMin, newMax, linkMode)
+    -- Keyboard overrides for temporary mode changes
+    -- Shift: force unlink mode (independent adjustment)
+    if imgui.IsKeyDown(globals.ctx, imgui.Mod_Shift) then
+        linkMode = "unlink"
+    end
+
+    -- Alt: force mirror mode (symmetric adjustment)
+    if imgui.IsKeyDown(globals.ctx, imgui.Mod_Alt) then
+        linkMode = "mirror"
+    end
+
     if linkMode == "unlink" then
         -- Independent sliders - just apply the new values
         return newMin, newMax
@@ -205,7 +218,14 @@ local function applyLinkedSliderChange(obj, paramType, newMin, newMax, linkMode)
 end
 
 -- Apply linked fade changes
+-- Hold Shift to temporarily override link mode and adjust fades independently
+-- Note: Fades only support "link" and "unlink" modes (mirror doesn't make sense for fades)
 local function applyLinkedFadeChange(obj, fadeType, newValue, linkMode)
+    -- Shift override: force unlink mode when Shift is held
+    if imgui.IsKeyDown(globals.ctx, imgui.Mod_Shift) then
+        linkMode = "unlink"
+    end
+
     if linkMode == "unlink" then
         -- Independent fades - keep the other fade unchanged
         if fadeType == "In" then
@@ -486,72 +506,46 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.Spacing(globals.ctx)
 
         -- Noise Density Range (Min Density + Max Density with link mode)
+        -- Using LinkedSliders component for reusability
         do
-            -- Link mode button
             if not dataObj.densityLinkMode then dataObj.densityLinkMode = "unlink" end
-            if globals.Icons.createLinkModeButton(globals.ctx, "densityLink" .. trackingKey, dataObj.densityLinkMode, "Link mode: " .. dataObj.densityLinkMode) then
-                dataObj.densityLinkMode = cycleLinkMode(dataObj.densityLinkMode)
-                if globals.History then
-                    globals.History.captureState("Change density link mode")
+
+            -- Simplified using the LinkedSliders component
+            globals.LinkedSliders.draw({
+                id = trackingKey .. "_density",
+                sliders = {
+                    {value = dataObj.noiseThreshold, min = 0.0, max = 100.0, format = "%.1f%%"},
+                    {value = dataObj.noiseDensity, min = 0.0, max = 100.0, format = "%.1f%%"}
+                },
+                linkMode = dataObj.densityLinkMode,
+                width = controlWidth,
+                label = "Density",
+                helpText =
+                    "Density range: Min to Max values for item placement probability.\n\n" ..
+                    "• Min Density (left): Floor below which no items are placed\n" ..
+                    "• Max Density (right): Average/peak density of item placement\n\n" ..
+                    "Link modes:\n" ..
+                    "• Unlink: Adjust Min and Max independently (allows Min > Max)\n" ..
+                    "• Link: Maintain range width when adjusting (default)\n" ..
+                    "• Mirror: Move both values symmetrically from center\n\n" ..
+                    "Keyboard shortcuts:\n" ..
+                    "• Hold Shift: Temporarily unlink sliders (independent)\n" ..
+                    "• Hold Alt: Temporarily use mirror mode (symmetric)",
+                onChange = function(values)
+                    -- Update values immediately during drag (visual feedback)
+                    callbacks.setNoiseThreshold(values[1])
+                    callbacks.setNoiseDensity(values[2])
+                end,
+                onChangeComplete = function()
+                    -- Trigger auto-regen only when slider is released
+                    if checkAutoRegen then
+                        checkAutoRegen("densityRange", trackingKey .. "_density", nil, {dataObj.noiseThreshold, dataObj.noiseDensity})
+                    end
+                end,
+                onLinkModeChange = function(newMode)
+                    dataObj.densityLinkMode = newMode
                 end
-            end
-
-            imgui.SameLine(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
-            local densityKey = trackingKey .. "_densityRange"
-            local rv, newMinDensity, newMaxDensity = globals.UndoWrappers.DragFloatRange2(
-                globals.ctx,
-                "##DensityRange",
-                dataObj.noiseThreshold,
-                dataObj.noiseDensity,
-                0.1,
-                0.0,
-                100.0,
-                "Min: %.1f%%",
-                "Max: %.1f%%"
-            )
-
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[densityKey] then
-                globals.autoRegenTracking[densityKey] = {min = dataObj.noiseThreshold, max = dataObj.noiseDensity}
-            end
-
-            if rv then
-                -- Apply linked slider logic
-                local linkedMin, linkedMax = applyLinkedSliderChange(
-                    {densityRange = {min = dataObj.noiseThreshold, max = dataObj.noiseDensity}},
-                    "density",
-                    newMinDensity,
-                    newMaxDensity,
-                    dataObj.densityLinkMode
-                )
-                callbacks.setNoiseThreshold(linkedMin)
-                callbacks.setNoiseDensity(linkedMax)
-            end
-
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[densityKey] then
-                local oldMin = globals.autoRegenTracking[densityKey].min
-                local oldMax = globals.autoRegenTracking[densityKey].max
-                if math.abs(oldMin - dataObj.noiseThreshold) > 0.01 or math.abs(oldMax - dataObj.noiseDensity) > 0.01 then
-                    checkAutoRegen("densityRange", densityKey, {min = oldMin, max = oldMax}, {min = dataObj.noiseThreshold, max = dataObj.noiseDensity})
-                end
-                globals.autoRegenTracking[densityKey] = nil
-            end
-
-            imgui.PopItemWidth(globals.ctx)
-
-            imgui.SameLine(globals.ctx)
-            imgui.Text(globals.ctx, "Density")
-            imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker(
-                "Density range: Min to Max values for item placement probability.\n\n" ..
-                "• Min Density: Floor below which no items are placed (creates silence zones)\n" ..
-                "• Max Density: Average/peak density of item placement\n\n" ..
-                "Link modes:\n" ..
-                "• Unlink: Adjust Min and Max independently\n" ..
-                "• Link: Maintain range width when adjusting\n" ..
-                "• Mirror: Move both values symmetrically from center"
-            )
+            })
         end
 
         -- Noise Frequency slider

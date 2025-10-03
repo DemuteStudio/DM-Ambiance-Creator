@@ -49,7 +49,7 @@ function Structures.createGroup(name)
         noiseLacunarity = Constants.DEFAULTS.NOISE_LACUNARITY,
         noiseDensity = Constants.DEFAULTS.NOISE_DENSITY,
         noiseThreshold = Constants.DEFAULTS.NOISE_THRESHOLD,
-        densityLinkMode = "unlink", -- "unlink", "link", "mirror"
+        densityLinkMode = "link", -- "unlink", "link", "mirror"
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -120,7 +120,7 @@ function Structures.createContainer(name)
         noiseLacunarity = Constants.DEFAULTS.NOISE_LACUNARITY,
         noiseDensity = Constants.DEFAULTS.NOISE_DENSITY,
         noiseThreshold = Constants.DEFAULTS.NOISE_THRESHOLD,
-        densityLinkMode = "unlink", -- "unlink", "link", "mirror"
+        densityLinkMode = "link", -- "unlink", "link", "mirror"
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -252,7 +252,7 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.noiseLacunarity = group.noiseLacunarity
     effectiveParams.noiseDensity = group.noiseDensity
     effectiveParams.noiseThreshold = group.noiseThreshold
-    effectiveParams.densityLinkMode = group.densityLinkMode or "unlink"
+    effectiveParams.densityLinkMode = group.densityLinkMode or "link"
 
     -- Force disable pan randomization for multichannel containers (channelMode > 0)
     -- This ensures old presets don't apply pan in multichannel mode

@@ -34,6 +34,7 @@ local Items = dofile(script_path .. "Modules/DM_Ambiance_Items.lua")
 local Presets = dofile(script_path .. "Modules/DM_Ambiance_Presets.lua")
 local Generation = dofile(script_path .. "Modules/DM_Ambiance_Generation.lua")
 local UI = dofile(script_path .. "Modules/DM_Ambiance_UI.lua")
+local LinkedSliders = dofile(script_path .. "Modules/DM_Ambiance_UI_LinkedSliders.lua")
 local Settings = dofile(script_path .. "Modules/DM_AmbianceCreator_Settings.lua")
 local RoutingValidator = dofile(script_path .. "Modules/DM_Ambiance_RoutingValidator.lua")
 local Waveform = dofile(script_path .. "Modules/DM_Ambiance_Waveform.lua")
@@ -169,6 +170,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.UndoWrappers = UndoWrappers
     globals.UI_UndoHistory = UI_UndoHistory
     globals.Noise = Noise
+    globals.LinkedSliders = LinkedSliders
 
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
@@ -177,6 +179,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     Presets.initModule(globals)
     Generation.initModule(globals)
     UI.initModule(globals)
+    LinkedSliders.initModule(globals)
     Settings.initModule(globals)
     RoutingValidator.initModule(globals)
     Waveform.initModule(globals)

@@ -2147,7 +2147,7 @@ function Utils.ensureNoiseDefaults(params)
     params.noiseLacunarity = params.noiseLacunarity or Constants.DEFAULTS.NOISE_LACUNARITY
     params.noiseDensity = params.noiseDensity or Constants.DEFAULTS.NOISE_DENSITY
     params.noiseThreshold = params.noiseThreshold or Constants.DEFAULTS.NOISE_THRESHOLD
-    params.densityLinkMode = params.densityLinkMode or "unlink"
+    params.densityLinkMode = params.densityLinkMode or "link"
 
     return params
 end
