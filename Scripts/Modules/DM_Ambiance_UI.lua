@@ -269,15 +269,17 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.TextColored(globals.ctx, 0xFFAA00FF, "Relative: Interval as percentage of time selection")
     elseif dataObj.intervalMode == 2 then
         imgui.TextColored(globals.ctx, 0xFFAA00FF, "Coverage: Percentage of time selection to be filled")
-    else
+    elseif dataObj.intervalMode == 3 then
         imgui.TextColored(globals.ctx, 0xFFAA00FF, "Chunk: Structured sound/silence periods")
+    elseif dataObj.intervalMode == 4 then
+        imgui.TextColored(globals.ctx, 0xFFAA00FF, "Noise: Organic placement based on Perlin noise")
     end
 
     -- Interval mode selection (Combo box)
     do
         imgui.BeginGroup(globals.ctx)
         imgui.PushItemWidth(globals.ctx, controlWidth)
-        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0"
+        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0Noise\0"
         local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "##IntervalMode", dataObj.intervalMode, intervalModes)
         if rv then callbacks.setIntervalMode(newIntervalMode) end
         imgui.EndGroup(globals.ctx)
@@ -289,12 +291,13 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             "Absolute: Fixed interval in seconds\n" ..
             "Relative: Interval as percentage of time selection\n" ..
             "Coverage: Percentage of time selection to be filled\n" ..
-            "Chunk: Create structured sound/silence periods"
+            "Chunk: Create structured sound/silence periods\n" ..
+            "Noise: Place items based on Perlin noise function"
         )
     end
 
-    -- Interval value (slider)
-    do
+    -- Interval value (slider) - Not shown in Noise mode
+    if dataObj.intervalMode ~= 4 then
         local rateLabel = "Interval (sec)"
         local rateMin = -10.0
         local rateMax = 60.0
@@ -336,7 +339,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         imgui.SameLine(globals.ctx, controlWidth + padding)
         imgui.Text(globals.ctx, rateLabel)
-        
+
         -- Compact random variation control on same line
         imgui.SameLine(globals.ctx)
         imgui.PushItemWidth(globals.ctx, 60)
@@ -473,6 +476,234 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         end
     end
 
+    -- Noise mode specific controls
+    if dataObj.intervalMode == 4 then
+        -- Ensure noise parameters exist (backwards compatibility with old presets)
+        dataObj.noiseSeed = dataObj.noiseSeed or math.random(1, 999999)
+        dataObj.noiseFrequency = dataObj.noiseFrequency or 1.0
+        dataObj.noiseAmplitude = dataObj.noiseAmplitude or 100.0
+        dataObj.noiseOctaves = dataObj.noiseOctaves or 2
+        dataObj.noisePersistence = dataObj.noisePersistence or 0.5
+        dataObj.noiseLacunarity = dataObj.noiseLacunarity or 2.0
+        dataObj.noiseDensity = dataObj.noiseDensity or 50.0
+        dataObj.noiseThreshold = dataObj.noiseThreshold or 0.0
+
+        imgui.Spacing(globals.ctx)
+        imgui.Separator(globals.ctx)
+        imgui.Spacing(globals.ctx)
+
+        -- Noise Density slider (main parameter)
+        do
+            imgui.BeginGroup(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local densityKey = trackingKey .. "_noiseDensity"
+            local rv, newDensity = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseDensity", dataObj.noiseDensity, 1.0, 100.0, "%.1f%%")
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[densityKey] then
+                globals.autoRegenTracking[densityKey] = dataObj.noiseDensity
+            end
+
+            if rv then callbacks.setNoiseDensity(newDensity) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[densityKey] then
+                checkAutoRegen("noiseDensity", densityKey, globals.autoRegenTracking[densityKey], dataObj.noiseDensity)
+                globals.autoRegenTracking[densityKey] = nil
+            end
+
+            imgui.PopItemWidth(globals.ctx)
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Density")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Average probability of item placement (0-100%)")
+        end
+
+        -- Noise Frequency slider
+        do
+            imgui.BeginGroup(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local freqKey = trackingKey .. "_noiseFrequency"
+            local rv, newFreq = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseFrequency", dataObj.noiseFrequency, 0.1, 10.0, "%.2f")
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[freqKey] then
+                globals.autoRegenTracking[freqKey] = dataObj.noiseFrequency
+            end
+
+            if rv then callbacks.setNoiseFrequency(newFreq) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[freqKey] then
+                checkAutoRegen("noiseFrequency", freqKey, globals.autoRegenTracking[freqKey], dataObj.noiseFrequency)
+                globals.autoRegenTracking[freqKey] = nil
+            end
+
+            imgui.PopItemWidth(globals.ctx)
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Frequency")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Speed of noise variations (low = slow waves, high = rapid changes)")
+        end
+
+        -- Noise Amplitude slider
+        do
+            imgui.BeginGroup(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local ampKey = trackingKey .. "_noiseAmplitude"
+            local rv, newAmp = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseAmplitude", dataObj.noiseAmplitude, 0.0, 100.0, "%.1f%%")
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[ampKey] then
+                globals.autoRegenTracking[ampKey] = dataObj.noiseAmplitude
+            end
+
+            if rv then callbacks.setNoiseAmplitude(newAmp) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[ampKey] then
+                checkAutoRegen("noiseAmplitude", ampKey, globals.autoRegenTracking[ampKey], dataObj.noiseAmplitude)
+                globals.autoRegenTracking[ampKey] = nil
+            end
+
+            imgui.PopItemWidth(globals.ctx)
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Amplitude")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Intensity of density variation around average")
+        end
+
+        -- Noise Octaves slider
+        do
+            imgui.BeginGroup(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local octKey = trackingKey .. "_noiseOctaves"
+            local rv, newOct = globals.UndoWrappers.SliderInt(globals.ctx, "##NoiseOctaves", dataObj.noiseOctaves, 1, 6, "%d")
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[octKey] then
+                globals.autoRegenTracking[octKey] = dataObj.noiseOctaves
+            end
+
+            if rv then callbacks.setNoiseOctaves(newOct) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[octKey] then
+                checkAutoRegen("noiseOctaves", octKey, globals.autoRegenTracking[octKey], dataObj.noiseOctaves)
+                globals.autoRegenTracking[octKey] = nil
+            end
+
+            imgui.PopItemWidth(globals.ctx)
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Octaves")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Number of noise layers (more = more detail/complexity)")
+        end
+
+        -- Noise Persistence slider
+        do
+            imgui.BeginGroup(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local persKey = trackingKey .. "_noisePersistence"
+            local rv, newPers = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoisePersistence", dataObj.noisePersistence, 0.1, 1.0, "%.2f")
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[persKey] then
+                globals.autoRegenTracking[persKey] = dataObj.noisePersistence
+            end
+
+            if rv then callbacks.setNoisePersistence(newPers) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[persKey] then
+                checkAutoRegen("noisePersistence", persKey, globals.autoRegenTracking[persKey], dataObj.noisePersistence)
+                globals.autoRegenTracking[persKey] = nil
+            end
+
+            imgui.PopItemWidth(globals.ctx)
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Persistence")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("How much each octave contributes (0.5 = balanced)")
+        end
+
+        -- Noise Lacunarity slider
+        do
+            imgui.BeginGroup(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local lacKey = trackingKey .. "_noiseLacunarity"
+            local rv, newLac = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseLacunarity", dataObj.noiseLacunarity, 1.5, 4.0, "%.2f")
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[lacKey] then
+                globals.autoRegenTracking[lacKey] = dataObj.noiseLacunarity
+            end
+
+            if rv then callbacks.setNoiseLacunarity(newLac) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[lacKey] then
+                checkAutoRegen("noiseLacunarity", lacKey, globals.autoRegenTracking[lacKey], dataObj.noiseLacunarity)
+                globals.autoRegenTracking[lacKey] = nil
+            end
+
+            imgui.PopItemWidth(globals.ctx)
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Lacunarity")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Frequency multiplier between octaves (2.0 = standard)")
+        end
+
+        -- Noise Seed control with randomize button
+        do
+            imgui.BeginGroup(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth - 50)
+
+            local seedKey = trackingKey .. "_noiseSeed"
+            local rv, newSeed = globals.UndoWrappers.InputInt(globals.ctx, "##NoiseSeed", dataObj.noiseSeed)
+
+            if rv then callbacks.setNoiseSeed(newSeed) end
+
+            imgui.PopItemWidth(globals.ctx)
+            imgui.SameLine(globals.ctx)
+
+            -- Randomize button
+            if imgui.Button(globals.ctx, "🎲##RandomizeSeed", 40, 0) then
+                local randomSeed = math.random(1, 999999)
+                callbacks.setNoiseSeed(randomSeed)
+            end
+            if imgui.IsItemHovered(globals.ctx) then
+                imgui.SetTooltip(globals.ctx, "Generate random seed")
+            end
+
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Seed")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Random seed for reproducible noise patterns")
+        end
+
+        -- Noise Visualization
+        imgui.Spacing(globals.ctx)
+        imgui.Text(globals.ctx, "Noise Preview:")
+        if not globals.timeSelectionValid then
+            imgui.SameLine(globals.ctx)
+            imgui.TextColored(globals.ctx, 0xAAAA00FF, "(preview mode - 10s)")
+        end
+
+        local previewWidth = controlWidth + padding + 200
+        local previewHeight = 120
+
+        UI.drawNoisePreview(dataObj, previewWidth, previewHeight)
+    end
+
     -- Fade in/out controls are commented out but can be enabled if needed
 end
 
@@ -537,6 +768,14 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setChunkSilence = function(v) obj.chunkSilence = v; obj.needsRegeneration = true end,
             setChunkDurationVariation = function(v) obj.chunkDurationVariation = v; obj.needsRegeneration = true end,
             setChunkSilenceVariation = function(v) obj.chunkSilenceVariation = v; obj.needsRegeneration = true end,
+            -- Noise mode callbacks
+            setNoiseSeed = function(v) obj.noiseSeed = v; obj.needsRegeneration = true end,
+            setNoiseFrequency = function(v) obj.noiseFrequency = v; obj.needsRegeneration = true end,
+            setNoiseAmplitude = function(v) obj.noiseAmplitude = v; obj.needsRegeneration = true end,
+            setNoiseOctaves = function(v) obj.noiseOctaves = v; obj.needsRegeneration = true end,
+            setNoisePersistence = function(v) obj.noisePersistence = v; obj.needsRegeneration = true end,
+            setNoiseLacunarity = function(v) obj.noiseLacunarity = v; obj.needsRegeneration = true end,
+            setNoiseDensity = function(v) obj.noiseDensity = v; obj.needsRegeneration = true end,
         },
         width,
         titlePrefix,
@@ -1148,6 +1387,111 @@ local function getLeftPanelWidth(windowWidth)
     globals.leftPanelWidth = math.max(minWidth, math.min(globals.leftPanelWidth, maxWidth))
 
     return globals.leftPanelWidth
+end
+
+-- Draw noise preview visualization
+-- @param dataObj table: Container or group object with noise parameters
+-- @param width number: Width of preview area
+-- @param height number: Height of preview area
+function UI.drawNoisePreview(dataObj, width, height)
+    -- Ensure noise parameters exist (for backwards compatibility with old presets)
+    local noiseSeed = dataObj.noiseSeed or math.random(1, 999999)
+    local noiseFrequency = dataObj.noiseFrequency or 1.0
+    local noiseAmplitude = dataObj.noiseAmplitude or 100.0
+    local noiseOctaves = dataObj.noiseOctaves or 2
+    local noisePersistence = dataObj.noisePersistence or 0.5
+    local noiseLacunarity = dataObj.noiseLacunarity or 2.0
+    local noiseDensity = dataObj.noiseDensity or 50.0
+
+    local drawList = imgui.GetWindowDrawList(globals.ctx)
+    local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
+
+    -- Background
+    local bgColor = 0x202020FF
+    imgui.DrawList_AddRectFilled(drawList, cursorX, cursorY, cursorX + width, cursorY + height, bgColor)
+
+    -- Border
+    local borderColor = 0x666666FF
+    imgui.DrawList_AddRect(drawList, cursorX, cursorY, cursorX + width, cursorY + height, borderColor)
+
+    -- Use time selection if available, otherwise use 10 seconds preview
+    local startTime, endTime
+    if globals.timeSelectionValid then
+        startTime = globals.startTime
+        endTime = globals.endTime
+    else
+        startTime = 0
+        endTime = 10  -- 10 seconds preview
+    end
+
+    -- Generate noise curve data
+    local sampleCount = math.floor(width)
+    local curve = globals.Noise.generateCurve(
+        startTime,
+        endTime,
+        sampleCount,
+        noiseFrequency,
+        noiseOctaves,
+        noisePersistence,
+        noiseLacunarity,
+        noiseSeed
+    )
+
+    -- Calculate amplitude scaling based on noiseAmplitude parameter
+    local amplitudeScale = noiseAmplitude / 100.0
+    local density = noiseDensity / 100.0
+
+    -- Draw the noise curve
+    local prevX, prevY = nil, nil
+
+    for i, point in ipairs(curve) do
+        -- Apply same formula as generation algorithm
+        local rawValue = point.value  -- 0-1
+        local centered = (rawValue - 0.5) * 2  -- -1 to 1
+        -- Amplitude is relative to density
+        local variation = centered * amplitudeScale * density
+        local final = density + variation
+
+        -- Clamp to 0-1
+        final = math.max(0, math.min(1, final))
+
+        -- Convert to screen coordinates
+        local x = cursorX + (i - 1) * (width / (sampleCount - 1))
+        local y = cursorY + height - (final * height)
+
+        if prevX and prevY then
+            -- Draw line segment (white)
+            local lineColor = 0xFFFFFFFF
+            imgui.DrawList_AddLine(drawList, prevX, prevY, x, y, lineColor, 1.5)
+        end
+
+        prevX, prevY = x, y
+    end
+
+    -- Draw zero line (for reference)
+    local zeroY = cursorY + height
+    local zeroColor = 0x888888AA
+    imgui.DrawList_AddLine(drawList, cursorX, zeroY, cursorX + width, zeroY, zeroColor, 1.0)
+
+    -- Draw time markers
+    local duration = endTime - startTime
+    local textColor = 0xAAAAAAFF
+
+    -- Start time
+    local startText = string.format("%.1fs", startTime)
+    imgui.DrawList_AddText(drawList, cursorX + 5, cursorY + height + 5, textColor, startText)
+
+    -- Middle time
+    local midTime = startTime + duration / 2
+    local midText = string.format("%.1fs", midTime)
+    imgui.DrawList_AddText(drawList, cursorX + width / 2 - 15, cursorY + height + 5, textColor, midText)
+
+    -- End time
+    local endText = string.format("%.1fs", endTime)
+    imgui.DrawList_AddText(drawList, cursorX + width - 30, cursorY + height + 5, textColor, endText)
+
+    -- Reserve space for the preview + text
+    imgui.Dummy(globals.ctx, width, height + 20)
 end
 
 -- Main window rendering function

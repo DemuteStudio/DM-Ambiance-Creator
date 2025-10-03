@@ -40,6 +40,7 @@ local Waveform = dofile(script_path .. "Modules/DM_Ambiance_Waveform.lua")
 local History = dofile(script_path .. "Modules/DM_Ambiance_History.lua")
 local UndoWrappers = dofile(script_path .. "Modules/DM_Ambiance_UndoWrappers.lua")
 local UI_UndoHistory = dofile(script_path .. "Modules/DM_Ambiance_UI_UndoHistory.lua")
+local Noise = dofile(script_path .. "Modules/DM_Ambiance_Noise.lua")
 
 -- Global state shared across modules and UI
 local globals = {
@@ -142,6 +143,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     _G.RoutingValidator = RoutingValidator
     _G.Waveform = Waveform
     _G.History = History
+    _G.Noise = Noise
     _G.imgui = imgui
 
     -- Seed the random number generator for consistent randomization
@@ -166,6 +168,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.History = History
     globals.UndoWrappers = UndoWrappers
     globals.UI_UndoHistory = UI_UndoHistory
+    globals.Noise = Noise
 
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
@@ -180,7 +183,8 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     History.initModule(globals)
     UndoWrappers.initModule(globals)
     UI_UndoHistory.initModule(globals)
-    
+    Noise.initModule(globals)
+
     -- Initialize backward compatibility for container volumes
     Utils.initializeContainerVolumes()
 

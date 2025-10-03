@@ -56,6 +56,7 @@ Constants.TRIGGER_MODES = {
     RELATIVE = 1,                       -- Relative interval mode
     COVERAGE = 2,                       -- Coverage interval mode
     CHUNK = 3,                          -- Chunk mode: structured sound/silence periods
+    NOISE = 4,                          -- Noise mode: placement based on noise function
 }
 
 -- Channel Mode Constants

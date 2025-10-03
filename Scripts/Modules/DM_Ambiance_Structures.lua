@@ -40,6 +40,15 @@ function Structures.createGroup(name)
         chunkSilence = Constants.DEFAULTS.CHUNK_SILENCE,
         chunkDurationVariation = Constants.DEFAULTS.CHUNK_DURATION_VARIATION,
         chunkSilenceVariation = Constants.DEFAULTS.CHUNK_SILENCE_VARIATION,
+        -- Noise Mode parameters
+        noiseSeed = math.random(1, 999999),
+        noiseFrequency = 1.0,
+        noiseAmplitude = 100.0,
+        noiseOctaves = 2,
+        noisePersistence = 0.5,
+        noiseLacunarity = 2.0,
+        noiseDensity = 50.0,  -- Average density percentage
+        noiseThreshold = 0.0,  -- Minimum noise value to place item
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -101,6 +110,15 @@ function Structures.createContainer(name)
         chunkSilence = Constants.DEFAULTS.CHUNK_SILENCE,
         chunkDurationVariation = Constants.DEFAULTS.CHUNK_DURATION_VARIATION,
         chunkSilenceVariation = Constants.DEFAULTS.CHUNK_SILENCE_VARIATION,
+        -- Noise Mode parameters
+        noiseSeed = math.random(1, 999999),
+        noiseFrequency = 1.0,
+        noiseAmplitude = 100.0,
+        noiseOctaves = 2,
+        noisePersistence = 0.5,
+        noiseLacunarity = 2.0,
+        noiseDensity = 50.0,  -- Average density percentage
+        noiseThreshold = 0.0,  -- Minimum noise value to place item
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -222,6 +240,16 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.volumeLinkMode = group.volumeLinkMode or "mirror"
     effectiveParams.panLinkMode = group.panLinkMode or "mirror"
     effectiveParams.fadeLinkMode = group.fadeLinkMode or "link"
+
+    -- Inherit noise mode settings
+    effectiveParams.noiseSeed = group.noiseSeed
+    effectiveParams.noiseFrequency = group.noiseFrequency
+    effectiveParams.noiseAmplitude = group.noiseAmplitude
+    effectiveParams.noiseOctaves = group.noiseOctaves
+    effectiveParams.noisePersistence = group.noisePersistence
+    effectiveParams.noiseLacunarity = group.noiseLacunarity
+    effectiveParams.noiseDensity = group.noiseDensity
+    effectiveParams.noiseThreshold = group.noiseThreshold
 
     -- Force disable pan randomization for multichannel containers (channelMode > 0)
     -- This ensures old presets don't apply pan in multichannel mode

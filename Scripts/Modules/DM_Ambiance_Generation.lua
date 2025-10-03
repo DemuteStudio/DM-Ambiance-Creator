@@ -794,6 +794,17 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             else
                 return Generation.placeItemsChunkMode(effectiveParams, containerGroup, xfadeshape)
             end
+        elseif effectiveParams.intervalMode == 4 then
+            -- Noise mode: Place items based on Perlin noise probability
+            -- For multi-channel, generate on each track
+            if container.channelMode and container.channelMode > 0 then
+                for _, channelTrack in ipairs(channelTracks) do
+                    Generation.placeItemsNoiseMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
+                end
+                return
+            else
+                return Generation.placeItemsNoiseMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
+            end
         end
 
         -- Generate items considering channel count matching
@@ -3630,6 +3641,304 @@ function Generation.determineTrackStructure(container, itemsAnalysis)
     -- RÈGLE 6 : Channel Selection = NONE (Auto-optimization)
     -- ═══════════════════════════════════════════════════════════
     return Generation.determineAutoOptimization(container, itemsAnalysis, outputChannels)
+end
+
+-- Place items using Noise mode (Perlin noise-based probability)
+-- @param effectiveParams table: Effective parameters for generation
+-- @param track MediaTrack: REAPER track to place items on
+-- @param channelTracks table: Array of channel tracks (for multi-channel)
+-- @param container table: Container object
+-- @param trackStructure table: Track structure information
+-- @param xfadeshape number: Crossfade shape
+function Generation.placeItemsNoiseMode(effectiveParams, track, channelTracks, container, trackStructure, xfadeshape)
+    if not effectiveParams.items or #effectiveParams.items == 0 then
+        return
+    end
+
+    -- Ensure noise parameters exist (backwards compatibility)
+    effectiveParams.noiseSeed = effectiveParams.noiseSeed or math.random(1, 999999)
+    effectiveParams.noiseFrequency = effectiveParams.noiseFrequency or 1.0
+    effectiveParams.noiseAmplitude = effectiveParams.noiseAmplitude or 100.0
+    effectiveParams.noiseOctaves = effectiveParams.noiseOctaves or 2
+    effectiveParams.noisePersistence = effectiveParams.noisePersistence or 0.5
+    effectiveParams.noiseLacunarity = effectiveParams.noiseLacunarity or 2.0
+    effectiveParams.noiseDensity = effectiveParams.noiseDensity or 50.0
+    effectiveParams.noiseThreshold = effectiveParams.noiseThreshold or 0.0
+
+    -- DEBUG: Print parameters
+    reaper.ShowConsoleMsg("\n========== NOISE MODE DEBUG ==========\n")
+    reaper.ShowConsoleMsg(string.format("Time Selection: %.2fs to %.2fs (duration: %.2fs)\n",
+        globals.startTime, globals.endTime, globals.endTime - globals.startTime))
+    reaper.ShowConsoleMsg(string.format("Density: %.1f%%\n", effectiveParams.noiseDensity))
+    reaper.ShowConsoleMsg(string.format("Amplitude: %.1f%%\n", effectiveParams.noiseAmplitude))
+    reaper.ShowConsoleMsg(string.format("Frequency: %.2f\n", effectiveParams.noiseFrequency))
+    reaper.ShowConsoleMsg(string.format("Octaves: %d\n", effectiveParams.noiseOctaves))
+    reaper.ShowConsoleMsg(string.format("Persistence: %.2f\n", effectiveParams.noisePersistence))
+    reaper.ShowConsoleMsg(string.format("Lacunarity: %.2f\n", effectiveParams.noiseLacunarity))
+    reaper.ShowConsoleMsg(string.format("Seed: %d\n", effectiveParams.noiseSeed))
+
+    -- Calculate average item length (considering areas if they exist)
+    local totalLength = 0
+    local totalCount = 0
+    for _, item in ipairs(effectiveParams.items) do
+        if item.areas and #item.areas > 0 then
+            -- If item has areas, count each area
+            for _, area in ipairs(item.areas) do
+                totalLength = totalLength + (area.endPos - area.startPos)
+                totalCount = totalCount + 1
+            end
+        else
+            -- No areas, use full item length
+            totalLength = totalLength + item.length
+            totalCount = totalCount + 1
+        end
+    end
+    local avgItemLength = totalLength / math.max(1, totalCount)
+
+    -- DEBUG: Print item stats
+    reaper.ShowConsoleMsg(string.format("Items: %d files, %d total areas\n", #effectiveParams.items, totalCount))
+    reaper.ShowConsoleMsg(string.format("Average item/area length: %.3fs\n", avgItemLength))
+    reaper.ShowConsoleMsg(string.format("Min spacing: %.3fs\n", avgItemLength * 0.3))
+
+    -- NEW DETERMINISTIC ALGORITHM
+    -- Instead of probabilistic placement, we calculate the interval dynamically based on noise
+    local currentTime = globals.startTime
+
+    -- DEBUG: Track statistics
+    local debugItemsPlaced = 0
+    local debugMinCurve = 1.0
+    local debugMaxCurve = 0.0
+    local debugAvgCurve = 0.0
+    local debugCurveSamples = 0
+
+    reaper.ShowConsoleMsg("\n--- First 10 items ---\n")
+
+    -- Helper function to get curve value at a specific time
+    local function getCurveValue(time)
+        local noiseValue = globals.Noise.getValueAtTime(
+            time,
+            globals.startTime,
+            globals.endTime,
+            effectiveParams.noiseFrequency,
+            effectiveParams.noiseOctaves,
+            effectiveParams.noisePersistence,
+            effectiveParams.noiseLacunarity,
+            effectiveParams.noiseSeed
+        )
+
+        local amplitudeScale = effectiveParams.noiseAmplitude / 100.0
+        local density = effectiveParams.noiseDensity / 100.0
+        local centered = (noiseValue - 0.5) * 2
+        local variation = centered * amplitudeScale * density
+        local curveValue = density + variation
+        return math.max(0, math.min(1, curveValue))
+    end
+
+    -- Place items deterministically
+    while currentTime < globals.endTime do
+        -- Get curve value at current position
+        local curveValue = getCurveValue(currentTime)
+
+        -- Track curve statistics
+        debugCurveSamples = debugCurveSamples + 1
+        debugAvgCurve = debugAvgCurve + curveValue
+        debugMinCurve = math.min(debugMinCurve, curveValue)
+        debugMaxCurve = math.max(debugMaxCurve, curveValue)
+
+        -- If curve is too low (near 0), skip ahead
+        if curveValue < 0.01 then
+            currentTime = currentTime + 0.5  -- Skip ahead 500ms in silent zones
+            goto continue
+        end
+
+        -- Calculate interval based on curve value
+        -- curve = 1.0 → min interval (high density)
+        -- curve = 0.0 → max interval (low density)
+        local minInterval = avgItemLength * 0.3  -- Minimum spacing
+        local maxInterval = 10.0  -- Maximum spacing (10 seconds when curve is near 0)
+
+        -- Inverse relationship: high curve = short interval
+        local interval = minInterval + (maxInterval - minInterval) * (1.0 - curveValue)
+
+        -- DEBUG: Print first 10 items
+        if debugItemsPlaced < 10 then
+            reaper.ShowConsoleMsg(string.format("  Item %d at t=%.2fs: curve=%.3f, interval=%.3fs\n",
+                debugItemsPlaced + 1, currentTime, curveValue, interval))
+        end
+
+        -- Select item deterministically using noise-based index
+        -- Use seed + position to get deterministic but varied selection
+        local selectionNoise = globals.Noise.getValueAtTime(
+            currentTime + 0.123,  -- Offset to decorrelate from placement noise
+            globals.startTime,
+            globals.endTime,
+            effectiveParams.noiseFrequency * 1.23,
+            1,  -- Single octave for selection
+            0.5,
+            2.0,
+            effectiveParams.noiseSeed + 12345  -- Different seed for selection
+        )
+        local randomItemIndex = math.floor(selectionNoise * #effectiveParams.items) + 1
+        randomItemIndex = math.max(1, math.min(#effectiveParams.items, randomItemIndex))
+
+        local originalItemData = effectiveParams.items[randomItemIndex]
+
+        -- Select area deterministically if areas exist
+        local itemData
+        if originalItemData.areas and #originalItemData.areas > 0 then
+            -- Use another noise value to select area deterministically
+            local areaNoise = globals.Noise.getValueAtTime(
+                currentTime + 0.456,
+                globals.startTime,
+                globals.endTime,
+                effectiveParams.noiseFrequency * 0.87,
+                1,
+                0.5,
+                2.0,
+                effectiveParams.noiseSeed + 67890
+            )
+            local areaIndex = math.floor(areaNoise * #originalItemData.areas) + 1
+            areaIndex = math.max(1, math.min(#originalItemData.areas, areaIndex))
+
+            local selectedArea = originalItemData.areas[areaIndex]
+            itemData = {}
+            for k, v in pairs(originalItemData) do
+                itemData[k] = v
+            end
+            itemData.startOffset = selectedArea.startPos
+            itemData.length = selectedArea.endPos - selectedArea.startPos
+            itemData.originalLength = originalItemData.length
+            itemData.selectedArea = selectedArea
+        else
+            itemData = originalItemData
+        end
+
+        debugItemsPlaced = debugItemsPlaced + 1
+
+        -- Determine target track(s)
+            local targetTracks = {track}
+            if channelTracks and #channelTracks > 1 then
+                -- For multi-channel, use distribution mode
+                local distributionMode = container.itemDistributionMode or 0
+                if distributionMode == 0 then
+                    -- Round-robin
+                    if not container.distributionCounter then
+                        container.distributionCounter = 0
+                    end
+                    container.distributionCounter = container.distributionCounter + 1
+                    local targetChannel = ((container.distributionCounter - 1) % #channelTracks) + 1
+                    targetTracks = {channelTracks[targetChannel]}
+                elseif distributionMode == 1 then
+                    -- Random
+                    local targetChannel = math.random(1, #channelTracks)
+                    targetTracks = {channelTracks[targetChannel]}
+                end
+            end
+
+            -- Place item on target track(s)
+            for _, targetTrack in ipairs(targetTracks) do
+                -- Create and configure the new item
+                local newItem = reaper.AddMediaItemToTrack(targetTrack)
+                local newTake = reaper.AddTakeToMediaItem(newItem)
+
+                -- Configure the item
+                local PCM_source = reaper.PCM_Source_CreateFromFile(itemData.filePath)
+                reaper.SetMediaItemTake_Source(newTake, PCM_source)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
+
+                -- Trim item so it never exceeds the selection end
+                local maxLen = globals.endTime - currentTime
+                local actualLen = math.min(itemData.length, maxLen)
+
+                reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", currentTime)
+                reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
+                reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
+
+                -- Apply randomizations
+                if effectiveParams.randomizePitch then
+                    local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+
+                    if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                        local playrate = Utils.semitonesToPlayrate(randomPitch)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+                    else
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+                    end
+                else
+                    if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                        local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+                    else
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+                    end
+                end
+
+                -- Apply gain
+                local gainDB = itemData.gainDB or 0.0
+                local gainScale = 10 ^ (gainDB / 20)
+
+                if effectiveParams.randomizeVolume then
+                    local randomVolume = itemData.originalVolume * gainScale * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
+                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", randomVolume)
+                else
+                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume * gainScale)
+                end
+
+                -- Apply pan for stereo items
+                local canUsePan = false
+                if not effectiveParams.channelMode or effectiveParams.channelMode == 0 then
+                    canUsePan = true
+                elseif trackStructure and trackStructure.trackType == "stereo" and trackStructure.trackChannels == 2 then
+                    canUsePan = true
+                end
+
+                if effectiveParams.randomizePan and canUsePan then
+                    local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+                    randomPan = math.max(-1, math.min(1, randomPan))
+                    Items.createTakePanEnvelope(newTake, randomPan)
+                end
+
+                -- Apply fades
+                if effectiveParams.fadeInEnabled then
+                    local fadeInDuration = effectiveParams.fadeInDuration or 0.1
+                    if effectiveParams.fadeInUsePercentage then
+                        fadeInDuration = (fadeInDuration / 100) * actualLen
+                    end
+                    fadeInDuration = math.min(fadeInDuration, actualLen)
+
+                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEINLEN", fadeInDuration)
+                    reaper.SetMediaItemInfo_Value(newItem, "C_FADEINSHAPE", effectiveParams.fadeInShape or 0)
+                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEINDIR", effectiveParams.fadeInCurve or 0.0)
+                end
+
+                if effectiveParams.fadeOutEnabled then
+                    local fadeOutDuration = effectiveParams.fadeOutDuration or 0.1
+                    if effectiveParams.fadeOutUsePercentage then
+                        fadeOutDuration = (fadeOutDuration / 100) * actualLen
+                    end
+                    fadeOutDuration = math.min(fadeOutDuration, actualLen)
+
+                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", fadeOutDuration)
+                    reaper.SetMediaItemInfo_Value(newItem, "C_FADEOUTSHAPE", effectiveParams.fadeOutShape or 0)
+                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
+                end
+            end
+
+        -- Advance time by the calculated interval
+        currentTime = currentTime + interval
+
+        ::continue::
+    end
+
+    -- DEBUG: Print summary
+    debugAvgCurve = debugAvgCurve / math.max(1, debugCurveSamples)
+    reaper.ShowConsoleMsg("\n--- Summary ---\n")
+    reaper.ShowConsoleMsg(string.format("Curve samples: %d\n", debugCurveSamples))
+    reaper.ShowConsoleMsg(string.format("Curve range: %.3f to %.3f (avg: %.3f)\n", debugMinCurve, debugMaxCurve, debugAvgCurve))
+    reaper.ShowConsoleMsg(string.format("Items placed: %d\n", debugItemsPlaced))
+    reaper.ShowConsoleMsg("=====================================\n\n")
 end
 
 return Generation
