@@ -811,24 +811,66 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         imgui.SameLine(globals.ctx)
 
-        -- Legend
+        -- Legend using invisible table for perfect alignment
         imgui.BeginGroup(globals.ctx)
         imgui.Dummy(globals.ctx, 0, 10)  -- Vertical spacing
 
-        -- White line: Noise
         local drawList = imgui.GetWindowDrawList(globals.ctx)
-        local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
-        imgui.DrawList_AddLine(drawList, cursorX, cursorY + 5, cursorX + 20, cursorY + 5, 0xFFFFFFFF, 2.0)
-        imgui.SameLine(globals.ctx, 25)
-        imgui.Text(globals.ctx, "Noise")
+        local waveformColor = globals.Settings.getSetting("waveformColor")
 
-        imgui.Dummy(globals.ctx, 0, 5)  -- Spacing between legend items
+        -- Create invisible table with 2 columns (icon + text)
+        local tableFlags = imgui.TableFlags_None
+        if imgui.BeginTable(globals.ctx, "LegendTable", 2, tableFlags) then
+            -- Setup columns
+            imgui.TableSetupColumn(globals.ctx, "Icon", imgui.TableColumnFlags_WidthFixed, 25)
+            imgui.TableSetupColumn(globals.ctx, "Label", imgui.TableColumnFlags_WidthStretch)
 
-        -- Orange circle: Item placement
-        cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
-        imgui.DrawList_AddCircleFilled(drawList, cursorX + 10, cursorY + 5, 4, 0xFFAA00FF)
-        imgui.SameLine(globals.ctx, 25)
-        imgui.Text(globals.ctx, "Items")
+            -- Row 1: Noise line
+            imgui.TableNextRow(globals.ctx)
+            imgui.TableSetColumnIndex(globals.ctx, 0)
+
+            -- Draw icon centered with text
+            imgui.AlignTextToFramePadding(globals.ctx)
+            local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
+            local textHeight = imgui.GetTextLineHeight(globals.ctx)
+            local iconY = cursorY + (textHeight / 2)
+            imgui.DrawList_AddLine(drawList, cursorX, iconY, cursorX + 20, iconY, waveformColor, 2.0)
+            imgui.Dummy(globals.ctx, 20, textHeight)
+
+            imgui.TableSetColumnIndex(globals.ctx, 1)
+            imgui.AlignTextToFramePadding(globals.ctx)
+            imgui.Text(globals.ctx, "Noise")
+
+            -- Row 2: Item placement circle
+            -- Calculate brighter color
+            local baseColor = waveformColor or 0x00CCA0FF
+            local r = (baseColor & 0x000000FF)
+            local g = (baseColor & 0x0000FF00) >> 8
+            local b = (baseColor & 0x00FF0000) >> 16
+            local a = (baseColor & 0xFF000000) >> 24
+            local brightnessFactor = 1.3
+            r = math.min(255, math.floor(r * brightnessFactor))
+            g = math.min(255, math.floor(g * brightnessFactor))
+            b = math.min(255, math.floor(b * brightnessFactor))
+            local itemMarkerColor = r | (g << 8) | (b << 16) | (a << 24)
+
+            imgui.TableNextRow(globals.ctx)
+            imgui.TableSetColumnIndex(globals.ctx, 0)
+
+            -- Draw icon centered with text
+            imgui.AlignTextToFramePadding(globals.ctx)
+            cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
+            textHeight = imgui.GetTextLineHeight(globals.ctx)
+            iconY = cursorY + (textHeight / 2)
+            imgui.DrawList_AddCircleFilled(drawList, cursorX + 10, iconY, 4, itemMarkerColor)
+            imgui.Dummy(globals.ctx, 20, textHeight)
+
+            imgui.TableSetColumnIndex(globals.ctx, 1)
+            imgui.AlignTextToFramePadding(globals.ctx)
+            imgui.Text(globals.ctx, "Items")
+
+            imgui.EndTable(globals.ctx)
+        end
 
         imgui.EndGroup(globals.ctx)
     end
@@ -1615,6 +1657,9 @@ function UI.drawNoisePreview(dataObj, width, height)
     local prevX, prevY = nil, nil
     local thresholdNormalized = noiseThreshold / 100.0
 
+    -- Use waveform color for consistency
+    local waveformColor = globals.Settings.getSetting("waveformColor")
+
     for i, point in ipairs(curve) do
         -- Apply same formula as generation algorithm
         local rawValue = point.value  -- 0-1
@@ -1634,9 +1679,8 @@ function UI.drawNoisePreview(dataObj, width, height)
         local y = cursorY + height - (final * height)
 
         if prevX and prevY then
-            -- Draw line segment (white)
-            local lineColor = 0xFFFFFFFF
-            imgui.DrawList_AddLine(drawList, prevX, prevY, x, y, lineColor, 1.5)
+            -- Draw line segment using waveform color
+            imgui.DrawList_AddLine(drawList, prevX, prevY, x, y, waveformColor, 1.5)
         end
 
         prevX, prevY = x, y
@@ -1705,7 +1749,24 @@ function UI.drawNoisePreview(dataObj, width, height)
     end
 
     -- Draw item position markers
-    local markerColor = 0xFFAA00FF  -- Orange color for visibility
+    -- Use waveform color with brightness boost for better visibility
+    local baseColor = waveformColor or 0x00CCA0FF
+
+    -- Extract RGBA components (ImGui format: 0xAABBGGRR)
+    local r = (baseColor & 0x000000FF)
+    local g = (baseColor & 0x0000FF00) >> 8
+    local b = (baseColor & 0x00FF0000) >> 16
+    local a = (baseColor & 0xFF000000) >> 24
+
+    -- Boost brightness by 30% (clamped to 255)
+    local brightnessFactor = 1.3
+    r = math.min(255, math.floor(r * brightnessFactor))
+    g = math.min(255, math.floor(g * brightnessFactor))
+    b = math.min(255, math.floor(b * brightnessFactor))
+
+    -- Reconstruct color
+    local markerColor = r | (g << 8) | (b << 16) | (a << 24)
+
     local markerRadius = 3.0
     local duration = endTime - startTime
 
