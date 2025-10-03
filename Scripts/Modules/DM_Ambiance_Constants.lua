@@ -138,6 +138,13 @@ Constants.PITCH_MODES = {
     STRETCH = 1,                        -- Time stretch (D_PLAYRATE)
 }
 
+-- Variation Direction Constants
+Constants.VARIATION_DIRECTIONS = {
+    NEGATIVE = 0,                       -- Negative only (←)
+    BIPOLAR = 1,                        -- Bipolar (↔)
+    POSITIVE = 2,                       -- Positive only (→)
+}
+
 -- Noise Generation Algorithm Constants
 Constants.NOISE_GENERATION = {
     SKIP_INTERVAL = 0.5,                -- Seconds to skip ahead in silent zones
@@ -155,6 +162,7 @@ Constants.NOISE_GENERATION = {
 Constants.DEFAULTS = {
     TRIGGER_RATE = 10.0,                -- Default trigger rate
     TRIGGER_DRIFT = 30,                 -- Default trigger drift percentage
+    TRIGGER_DRIFT_DIRECTION = 1,        -- Default trigger drift direction (BIPOLAR)
     PITCH_MODE = 0,                     -- Default pitch mode (PITCH)
     PITCH_RANGE_MIN = -3,               -- Default min pitch range
     PITCH_RANGE_MAX = 3,                -- Default max pitch range
@@ -167,7 +175,9 @@ Constants.DEFAULTS = {
     CHUNK_DURATION = 10.0,              -- Default chunk duration in seconds
     CHUNK_SILENCE = 5.0,                -- Default silence duration in seconds
     CHUNK_DURATION_VARIATION = 20,      -- Default chunk duration variation percentage
+    CHUNK_DURATION_VAR_DIRECTION = 1,   -- Default chunk duration variation direction (BIPOLAR)
     CHUNK_SILENCE_VARIATION = 20,       -- Default silence duration variation percentage
+    CHUNK_SILENCE_VAR_DIRECTION = 1,    -- Default silence variation direction (BIPOLAR)
     -- Noise Mode defaults
     NOISE_SEED_MIN = 1,                 -- Minimum seed value
     NOISE_SEED_MAX = 999999,            -- Maximum seed value

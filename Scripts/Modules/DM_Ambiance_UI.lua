@@ -211,6 +211,42 @@ local function applyLinkedSliderChange(obj, paramType, newMin, newMax, linkMode)
     return newMin, newMax
 end
 
+--- Draw a direction toggle button for variation parameters
+-- Returns: changed (boolean), newDirection (0=negative, 1=bipolar, 2=positive)
+function UI.drawVariationDirectionButton(id, currentDirection, width)
+    width = width or 30
+    local Constants = require("DM_Ambiance_Constants")
+
+    -- Initialize direction if nil (backward compatibility)
+    if currentDirection == nil then
+        currentDirection = Constants.VARIATION_DIRECTIONS.BIPOLAR
+    end
+
+    -- Direction symbols
+    local symbols = {"←", "↔", "→"}
+    local tooltips = {
+        "Negative only: variation reduces value",
+        "Bipolar: variation can increase or decrease",
+        "Positive only: variation increases value"
+    }
+
+    local buttonLabel = symbols[currentDirection + 1] .. "##" .. id
+    local changed = false
+    local newDirection = currentDirection
+
+    if imgui.Button(globals.ctx, buttonLabel, width, 0) then
+        -- Cycle through directions: Negative -> Bipolar -> Positive -> Negative
+        newDirection = (currentDirection + 1) % 3
+        changed = true
+    end
+
+    if imgui.IsItemHovered(globals.ctx) then
+        imgui.SetTooltip(globals.ctx, tooltips[currentDirection + 1])
+    end
+
+    return changed, newDirection
+end
+
 --- Draw the trigger settings section (shared by groups and containers)
 -- dataObj must expose: intervalMode, triggerRate, triggerDrift, fadeIn, fadeOut
 -- callbacks must provide setters for each parameter
@@ -325,6 +361,18 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         -- Compact random variation control on same line
         imgui.SameLine(globals.ctx)
+
+        -- Direction toggle button
+        local dirChanged, newDirection = UI.drawVariationDirectionButton(
+            trackingKey .. "_driftDir",
+            dataObj.triggerDriftDirection,
+            30
+        )
+        if dirChanged and callbacks.setTriggerDriftDirection then
+            callbacks.setTriggerDriftDirection(newDirection)
+        end
+
+        imgui.SameLine(globals.ctx, 0, 4)
         imgui.PushItemWidth(globals.ctx, 60)
 
         local triggerDriftKey = trackingKey .. "_triggerDrift"
@@ -382,6 +430,18 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             
             -- Compact variation control on same line
             imgui.SameLine(globals.ctx)
+
+            -- Direction toggle button
+            local dirChanged, newDirection = UI.drawVariationDirectionButton(
+                trackingKey .. "_chunkDurDir",
+                dataObj.chunkDurationVarDirection,
+                30
+            )
+            if dirChanged and callbacks.setChunkDurationVarDirection then
+                callbacks.setChunkDurationVarDirection(newDirection)
+            end
+
+            imgui.SameLine(globals.ctx, 0, 4)
             imgui.PushItemWidth(globals.ctx, 60)
 
             local chunkDurationVarKey = trackingKey .. "_chunkDurationVar"
@@ -435,6 +495,18 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             
             -- Compact variation control on same line
             imgui.SameLine(globals.ctx)
+
+            -- Direction toggle button
+            local dirChanged, newDirection = UI.drawVariationDirectionButton(
+                trackingKey .. "_chunkSilDir",
+                dataObj.chunkSilenceVarDirection,
+                30
+            )
+            if dirChanged and callbacks.setChunkSilenceVarDirection then
+                callbacks.setChunkSilenceVarDirection(newDirection)
+            end
+
+            imgui.SameLine(globals.ctx, 0, 4)
             imgui.PushItemWidth(globals.ctx, 60)
 
             local chunkSilenceVarKey = trackingKey .. "_chunkSilenceVar"
@@ -932,13 +1004,16 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setIntervalMode = function(v) obj.intervalMode = v; obj.needsRegeneration = true end,
             setTriggerRate = function(v) obj.triggerRate = v; obj.needsRegeneration = true end,
             setTriggerDrift = function(v) obj.triggerDrift = v; obj.needsRegeneration = true end,
+            setTriggerDriftDirection = function(v) obj.triggerDriftDirection = v; obj.needsRegeneration = true end,
             setFadeIn = function(v) obj.fadeIn = math.max(0, v); obj.needsRegeneration = true end,
             setFadeOut = function(v) obj.fadeOut = math.max(0, v); obj.needsRegeneration = true end,
             -- Chunk mode callbacks
             setChunkDuration = function(v) obj.chunkDuration = v; obj.needsRegeneration = true end,
             setChunkSilence = function(v) obj.chunkSilence = v; obj.needsRegeneration = true end,
             setChunkDurationVariation = function(v) obj.chunkDurationVariation = v; obj.needsRegeneration = true end,
+            setChunkDurationVarDirection = function(v) obj.chunkDurationVarDirection = v; obj.needsRegeneration = true end,
             setChunkSilenceVariation = function(v) obj.chunkSilenceVariation = v; obj.needsRegeneration = true end,
+            setChunkSilenceVarDirection = function(v) obj.chunkSilenceVarDirection = v; obj.needsRegeneration = true end,
             -- Noise mode callbacks
             setNoiseSeed = function(v) obj.noiseSeed = v; obj.needsRegeneration = true end,
             setNoiseFrequency = function(v) obj.noiseFrequency = v; obj.needsRegeneration = true end,

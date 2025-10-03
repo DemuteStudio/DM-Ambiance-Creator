@@ -628,6 +628,36 @@ function Utils.randomInRange(min, max)
     return min + math.random() * (max - min)
 end
 
+-- Apply variation with directional control
+-- @param baseValue number: The base value to vary
+-- @param variationPercent number: Variation percentage (0-100)
+-- @param direction number: Direction mode (0=negative, 1=bipolar, 2=positive)
+-- @return number: The varied value
+function Utils.applyDirectionalVariation(baseValue, variationPercent, direction)
+    if variationPercent <= 0 then
+        return 0
+    end
+
+    local Constants = require("DM_Ambiance_Constants")
+    local variationRange = baseValue * (variationPercent / 100)
+
+    -- Default to bipolar if direction is nil (backward compatibility)
+    if direction == nil then
+        direction = Constants.VARIATION_DIRECTIONS.BIPOLAR
+    end
+
+    if direction == Constants.VARIATION_DIRECTIONS.NEGATIVE then
+        -- Negative only: [0, -variationRange]
+        return -math.random() * variationRange
+    elseif direction == Constants.VARIATION_DIRECTIONS.POSITIVE then
+        -- Positive only: [0, +variationRange]
+        return math.random() * variationRange
+    else
+        -- Bipolar (default): [-variationRange, +variationRange]
+        return Utils.randomInRange(-variationRange, variationRange)
+    end
+end
+
 -- Convert semitones to playrate for time stretching
 -- @param semitones number: Pitch shift in semitones
 -- @return number: Playrate value (1.0 = normal speed)

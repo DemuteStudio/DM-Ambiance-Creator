@@ -33,13 +33,16 @@ function Structures.createGroup(name)
         randomizePan = true,
         triggerRate = Constants.DEFAULTS.TRIGGER_RATE,
         triggerDrift = Constants.DEFAULTS.TRIGGER_DRIFT,
+        triggerDriftDirection = Constants.DEFAULTS.TRIGGER_DRIFT_DIRECTION,
         intervalMode = Constants.TRIGGER_MODES.ABSOLUTE,
         trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT, -- Group track volume in dB
         -- Chunk Mode parameters
         chunkDuration = Constants.DEFAULTS.CHUNK_DURATION,
         chunkSilence = Constants.DEFAULTS.CHUNK_SILENCE,
         chunkDurationVariation = Constants.DEFAULTS.CHUNK_DURATION_VARIATION,
+        chunkDurationVarDirection = Constants.DEFAULTS.CHUNK_DURATION_VAR_DIRECTION,
         chunkSilenceVariation = Constants.DEFAULTS.CHUNK_SILENCE_VARIATION,
+        chunkSilenceVarDirection = Constants.DEFAULTS.CHUNK_SILENCE_VAR_DIRECTION,
         -- Noise Mode parameters
         noiseSeed = math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX),
         noiseFrequency = Constants.DEFAULTS.NOISE_FREQUENCY,
@@ -89,6 +92,7 @@ function Structures.createContainer(name)
         randomizePan = true,
         triggerRate = Constants.DEFAULTS.TRIGGER_RATE, -- Can be negative for overlaps
         triggerDrift = Constants.DEFAULTS.TRIGGER_DRIFT,
+        triggerDriftDirection = Constants.DEFAULTS.TRIGGER_DRIFT_DIRECTION,
         intervalMode = Constants.TRIGGER_MODES.ABSOLUTE,
         overrideParent = false, -- Flag to override parent group settings
         trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT, -- Container track volume in dB
@@ -110,7 +114,9 @@ function Structures.createContainer(name)
         chunkDuration = Constants.DEFAULTS.CHUNK_DURATION,
         chunkSilence = Constants.DEFAULTS.CHUNK_SILENCE,
         chunkDurationVariation = Constants.DEFAULTS.CHUNK_DURATION_VARIATION,
+        chunkDurationVarDirection = Constants.DEFAULTS.CHUNK_DURATION_VAR_DIRECTION,
         chunkSilenceVariation = Constants.DEFAULTS.CHUNK_SILENCE_VARIATION,
+        chunkSilenceVarDirection = Constants.DEFAULTS.CHUNK_SILENCE_VAR_DIRECTION,
         -- Noise Mode parameters
         noiseSeed = math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX),
         noiseFrequency = Constants.DEFAULTS.NOISE_FREQUENCY,
@@ -201,13 +207,16 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.useRepetition = group.useRepetition
     effectiveParams.triggerRate = group.triggerRate
     effectiveParams.triggerDrift = group.triggerDrift
+    effectiveParams.triggerDriftDirection = group.triggerDriftDirection
     effectiveParams.intervalMode = group.intervalMode
-    
+
     -- Inherit chunk mode settings
     effectiveParams.chunkDuration = group.chunkDuration
     effectiveParams.chunkSilence = group.chunkSilence
     effectiveParams.chunkDurationVariation = group.chunkDurationVariation
+    effectiveParams.chunkDurationVarDirection = group.chunkDurationVarDirection
     effectiveParams.chunkSilenceVariation = group.chunkSilenceVariation
+    effectiveParams.chunkSilenceVarDirection = group.chunkSilenceVarDirection
     
     -- Inherit fade settings with proper boolean handling
     -- Ensure fadeEnabled values are never nil (fixes checkbox persistence issue)

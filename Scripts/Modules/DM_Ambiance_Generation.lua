@@ -946,8 +946,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                     if effectiveParams.triggerDrift > 0 and interval > 0 then
                         -- Calculate drift range based on interval
                         -- At 100% drift, item can move ±100% of the interval (full interval range)
-                        local driftRange = interval * (effectiveParams.triggerDrift / 100)
-                        local drift = Utils.randomInRange(-driftRange, driftRange)
+                        local drift = Utils.applyDirectionalVariation(interval, effectiveParams.triggerDrift, effectiveParams.triggerDriftDirection)
                         position = position + drift
                         -- Clamp to startTime (can't go before timeline start)
                         if position < globals.startTime then
@@ -963,8 +962,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 -- Calcul standard de position pour les items suivants
                 if effectiveParams.intervalMode == 0 and interval < 0 then
                     -- Negative spacing creates overlap with the last item
-                    maxDrift = math.abs(interval) * (effectiveParams.triggerDrift / 100)
-                    drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
+                    drift = Utils.applyDirectionalVariation(math.abs(interval), effectiveParams.triggerDrift, effectiveParams.triggerDriftDirection)
                     position = lastItemEnd + interval + drift
                 elseif effectiveParams.intervalMode == 2 then
                     -- Coverage mode: drift moves items around theoretical position, but prevents overlap
@@ -973,8 +971,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
 
                     if effectiveParams.triggerDrift > 0 and interval > 0 then
                         -- At 100% drift, item can move ±100% of the interval (full interval range)
-                        local driftRange = interval * (effectiveParams.triggerDrift / 100)
-                        local drift = Utils.randomInRange(-driftRange, driftRange)
+                        local drift = Utils.applyDirectionalVariation(interval, effectiveParams.triggerDrift, effectiveParams.triggerDriftDirection)
                         idealPosition = idealPosition + drift
                     end
 
@@ -986,9 +983,8 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                         position = idealPosition  -- Use drifted position
                     end
                 else
-                    -- Regular spacing from the end of the last item
-                    maxDrift = interval * (effectiveParams.triggerDrift / 100)
-                    drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
+                    -- Regular spacing from the end of the last item (ABSOLUTE and RELATIVE modes)
+                    drift = Utils.applyDirectionalVariation(interval, effectiveParams.triggerDrift, effectiveParams.triggerDriftDirection)
                     position = lastItemEnd + interval + drift
                 end
 
@@ -1763,15 +1759,15 @@ function Generation.placeItemsChunkMode(effectiveParams, containerGroup, xfadesh
         -- Calculate actual chunk duration with variation (corrected formula)
         local actualChunkDuration = chunkDuration
         if chunkDurationVariation > 0 then
-            local variation = Utils.randomInRange(-chunkDurationVariation, chunkDurationVariation)
+            local variation = Utils.applyDirectionalVariation(1.0, effectiveParams.chunkDurationVariation, effectiveParams.chunkDurationVarDirection)
             actualChunkDuration = chunkDuration * (1 + variation)
             actualChunkDuration = math.max(0.1, actualChunkDuration)
         end
-        
+
         -- Calculate actual silence duration with variation (separate control)
         local actualSilenceDuration = silenceDuration
         if chunkSilenceVariation > 0 then
-            local variation = Utils.randomInRange(-chunkSilenceVariation, chunkSilenceVariation)
+            local variation = Utils.applyDirectionalVariation(1.0, effectiveParams.chunkSilenceVariation, effectiveParams.chunkSilenceVarDirection)
             actualSilenceDuration = silenceDuration * (1 + variation)
             actualSilenceDuration = math.max(0, actualSilenceDuration)
         end
@@ -1843,8 +1839,7 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
             isFirstItem = false
         else
             -- Calcul standard de position pour les items suivants (même logique que mode Absolute)
-            maxDrift = math.abs(interval) * (effectiveParams.triggerDrift / 100)
-            drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
+            drift = Utils.applyDirectionalVariation(math.abs(interval), effectiveParams.triggerDrift, effectiveParams.triggerDriftDirection)
             position = currentTime + interval + drift
             
             -- Ensure position stays within chunk bounds
@@ -3004,13 +2999,11 @@ function Generation.generateIndependentTrack(targetTrack, trackIdx, container, e
             -- Calcul standard de position pour les items suivants
             if effectiveParams.intervalMode == 0 and interval < 0 then
                 -- Negative spacing creates overlap with the last item
-                maxDrift = math.abs(interval) * (effectiveParams.triggerDrift / 100)
-                drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
+                drift = Utils.applyDirectionalVariation(math.abs(interval), effectiveParams.triggerDrift, effectiveParams.triggerDriftDirection)
                 position = lastItemEnd + interval + drift
             else
                 -- Regular spacing from the end of the last item
-                maxDrift = interval * (effectiveParams.triggerDrift / 100)
-                drift = Utils.randomInRange(-maxDrift/2, maxDrift/2)
+                drift = Utils.applyDirectionalVariation(interval, effectiveParams.triggerDrift, effectiveParams.triggerDriftDirection)
                 position = lastItemEnd + interval + drift
             end
 
