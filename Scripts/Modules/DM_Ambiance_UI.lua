@@ -149,13 +149,10 @@ local function cycleLinkMode(currentMode)
     end
 end
 
--- Utility function to cycle through fade link modes (only unlink and link)
+-- Utility function to cycle through fade link modes
+-- Fades support all three modes: unlink, link, and mirror
 local function cycleFadeLinkMode(currentMode)
-    if currentMode == "unlink" then
-        return "link"
-    else -- currentMode == "link"
-        return "unlink"
-    end
+    return globals.LinkedSliders.cycleLinkMode(currentMode)
 end
 
 -- Apply linked slider changes
@@ -214,40 +211,7 @@ local function applyLinkedSliderChange(obj, paramType, newMin, newMax, linkMode)
     return newMin, newMax
 end
 
--- Apply linked fade changes
--- Keyboard shortcuts: Shift = unlink, Ctrl = link
--- Note: Fades only support "link" and "unlink" modes (mirror doesn't make sense for fades)
-local function applyLinkedFadeChange(obj, fadeType, newValue, linkMode)
-    -- Keyboard overrides for temporary mode changes
-    if imgui.IsKeyDown(globals.ctx, imgui.Mod_Shift) then
-        linkMode = "unlink"
-    elseif imgui.IsKeyDown(globals.ctx, imgui.Mod_Ctrl) then
-        linkMode = "link"
-    end
-
-    if linkMode == "unlink" then
-        -- Independent fades - keep the other fade unchanged
-        if fadeType == "In" then
-            -- Modifying fadeIn, keep fadeOut unchanged
-            return newValue, obj.fadeOutDuration
-        else
-            -- Modifying fadeOut, keep fadeIn unchanged
-            return obj.fadeInDuration, newValue
-        end
-    elseif linkMode == "link" then
-        -- Linked fades - maintain same value for both
-        return newValue, newValue
-    end
-
-    -- Fallback to unlink behavior
-    if fadeType == "In" then
-        return newValue, obj.fadeOutDuration
-    else
-        return obj.fadeInDuration, newValue
-    end
-end
-
--- Draw the trigger settings section (shared by groups and containers)
+--- Draw the trigger settings section (shared by groups and containers)
 -- dataObj must expose: intervalMode, triggerRate, triggerDrift, fadeIn, fadeOut
 -- callbacks must provide setters for each parameter
 function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, autoRegenCallback)
@@ -1161,10 +1125,28 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
         local rv, newDuration = globals.UndoWrappers.SliderDouble(globals.ctx, "##Duration" .. suffix,
             duration or 0.1, 0, maxVal, format)
         if rv then
-            -- Apply linked fade logic
-            local newInDuration, newOutDuration = applyLinkedFadeChange(obj, fadeType, newDuration, obj.fadeLinkMode or "link")
-            obj.fadeInDuration = newInDuration
-            obj.fadeOutDuration = newOutDuration
+            -- Apply link mode logic using LinkedSliders logic functions
+            local effectiveMode = globals.LinkedSliders.checkKeyboardOverrides(obj.fadeLinkMode or "link")
+
+            -- Build sliders config for link mode logic
+            local fadeSliders = {
+                {value = obj.fadeInDuration or 0.1},
+                {value = obj.fadeOutDuration or 0.1}
+            }
+            local changedIndex = isIn and 1 or 2
+            local newValues = {isIn and newDuration or obj.fadeInDuration, isIn and obj.fadeOutDuration or newDuration}
+
+            -- Apply link mode logic
+            local finalValues = globals.LinkedSliders.applyLinkModeLogic(fadeSliders, newValues, changedIndex, effectiveMode)
+
+            -- Clamp to valid range
+            finalValues[1] = math.max(0, math.min(maxVal, finalValues[1]))
+            finalValues[2] = math.max(0, math.min(maxVal, finalValues[2]))
+
+            -- Update both fade durations
+            obj.fadeInDuration = finalValues[1]
+            obj.fadeOutDuration = finalValues[2]
+
             -- Queue fade update to avoid ImGui conflicts
             local modifiedFade = isIn and "fadeIn" or "fadeOut"
             if groupIndex and containerIndex then
