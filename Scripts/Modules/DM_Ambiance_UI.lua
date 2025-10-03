@@ -881,6 +881,22 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
         -- Toggle between PITCH and STRETCH modes
         obj.pitchMode = (obj.pitchMode == Constants.PITCH_MODES.PITCH) and Constants.PITCH_MODES.STRETCH or Constants.PITCH_MODES.PITCH
         obj.needsRegeneration = true
+
+        -- Sync B_PPITCH on existing items
+        if groupIndex and containerIndex then
+            local group = globals.groups[groupIndex]
+            local container = group.containers[containerIndex]
+            globals.Generation.syncPitchModeOnExistingItems(group, container)
+        elseif groupIndex then
+            -- For group-level toggle, sync all containers
+            local group = globals.groups[groupIndex]
+            for _, container in ipairs(group.containers) do
+                if not container.overrideParent then
+                    globals.Generation.syncPitchModeOnExistingItems(group, container)
+                end
+            end
+        end
+
         if globals.History then
             globals.History.captureState("Toggle pitch mode")
         end

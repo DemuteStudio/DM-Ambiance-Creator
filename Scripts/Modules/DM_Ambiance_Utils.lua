@@ -635,6 +635,13 @@ function Utils.semitonesToPlayrate(semitones)
     return 2 ^ (semitones / 12)
 end
 
+-- Convert playrate to semitones (inverse of semitonesToPlayrate)
+-- @param playrate number: Playrate value (1.0 = normal speed)
+-- @return number: Pitch shift in semitones
+function Utils.playrateToSemitones(playrate)
+    return 12 * math.log(playrate) / math.log(2)
+end
+
 -- Format a time value in seconds as HH:MM:SS
 function Utils.formatTime(seconds)
     seconds = tonumber(seconds) or 0

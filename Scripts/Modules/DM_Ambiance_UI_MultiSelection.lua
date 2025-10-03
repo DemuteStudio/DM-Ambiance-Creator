@@ -620,8 +620,13 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         -- Toggle all selected containers
         local newMode = (commonPitchMode == Constants.PITCH_MODES.PITCH) and Constants.PITCH_MODES.STRETCH or Constants.PITCH_MODES.PITCH
         for _, c in ipairs(containers) do
-            globals.groups[c.groupIndex].containers[c.containerIndex].pitchMode = newMode
-            globals.groups[c.groupIndex].containers[c.containerIndex].needsRegeneration = true
+            local group = globals.groups[c.groupIndex]
+            local container = group.containers[c.containerIndex]
+            container.pitchMode = newMode
+            container.needsRegeneration = true
+
+            -- Sync B_PPITCH on existing items
+            globals.Generation.syncPitchModeOnExistingItems(group, container)
         end
         if globals.History then
             globals.History.captureState("Toggle pitch mode (multi-selection)")

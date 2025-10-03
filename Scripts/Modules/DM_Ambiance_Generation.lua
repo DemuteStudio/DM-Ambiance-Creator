@@ -1046,7 +1046,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                         -- Use time stretch (D_PLAYRATE)
                         local playrate = Utils.semitonesToPlayrate(randomPitch)
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
-                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)  -- Enable preserve pitch
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
                     else
                         -- Use standard pitch shift (D_PITCH)
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
@@ -1055,7 +1055,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                     if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
                         local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
-                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
                     else
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
                     end
@@ -1885,7 +1885,7 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
                 -- Use time stretch (D_PLAYRATE)
                 local playrate = Utils.semitonesToPlayrate(randomPitch)
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
-                reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)  -- Enable preserve pitch
+                reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
             else
                 -- Use standard pitch shift (D_PITCH)
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
@@ -1894,7 +1894,7 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
             if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
                 local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
-                reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
             else
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
             end
@@ -2847,7 +2847,7 @@ function Generation.applyRandomization(newItem, newTake, effectiveParams, itemDa
             -- Use time stretch (D_PLAYRATE)
             local playrate = Utils.semitonesToPlayrate(randomPitch)
             reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
-            reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)  -- Enable preserve pitch
+            reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
         else
             -- Use standard pitch shift (D_PITCH)
             reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
@@ -2856,7 +2856,7 @@ function Generation.applyRandomization(newItem, newTake, effectiveParams, itemDa
         if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
             local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
             reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
-            reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+            reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
         else
             reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
         end
@@ -3817,7 +3817,7 @@ function Generation.placeItemsNoiseMode(effectiveParams, track, channelTracks, c
                     if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
                         local playrate = Utils.semitonesToPlayrate(randomPitch)
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
-                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
                     else
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
                     end
@@ -3825,7 +3825,7 @@ function Generation.placeItemsNoiseMode(effectiveParams, track, channelTracks, c
                     if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
                         local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
-                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 1)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
                     else
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
                     end
@@ -3887,6 +3887,103 @@ function Generation.placeItemsNoiseMode(effectiveParams, track, channelTracks, c
 
         ::continue::
     end
+end
+
+-- Synchronize B_PPITCH property for existing items based on current pitch mode
+function Generation.syncPitchModeOnExistingItems(group, container)
+    if not group or not container then return end
+
+    local Constants = globals.Constants
+    local Utils = globals.Utils
+
+    -- Get effective pitch mode
+    local effectivePitchMode = container.overrideParent and container.pitchMode or group.pitchMode
+    if not effectivePitchMode then effectivePitchMode = Constants.PITCH_MODES.PITCH end
+
+    -- Find container track
+    local trackCount = reaper.CountTracks(0)
+    local containerTrack = nil
+
+    for i = 0, trackCount - 1 do
+        local track = reaper.GetTrack(0, i)
+        local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
+
+        -- Check if this track belongs to our container
+        if trackName == container.name then
+            containerTrack = track
+            break
+        end
+    end
+
+    if not containerTrack then return end
+
+    -- Process all tracks (container track + any child tracks)
+    local tracksToProcess = {containerTrack}
+
+    -- Check if container has child tracks (multi-channel mode)
+    local folderDepth = reaper.GetMediaTrackInfo_Value(containerTrack, "I_FOLDERDEPTH")
+    if folderDepth == 1 then
+        -- Has child tracks, add them
+        local trackIndex = reaper.GetMediaTrackInfo_Value(containerTrack, "IP_TRACKNUMBER") - 1
+        local currentDepth = 1
+        local childIndex = trackIndex + 1
+
+        while currentDepth > 0 and childIndex < trackCount do
+            local childTrack = reaper.GetTrack(0, childIndex)
+            local childDepth = reaper.GetMediaTrackInfo_Value(childTrack, "I_FOLDERDEPTH")
+            currentDepth = currentDepth + childDepth
+
+            if currentDepth > 0 then
+                table.insert(tracksToProcess, childTrack)
+            end
+
+            childIndex = childIndex + 1
+        end
+    end
+
+    -- Process all items on these tracks
+    reaper.PreventUIRefresh(1)
+    reaper.Undo_BeginBlock()
+
+    for _, track in ipairs(tracksToProcess) do
+        local itemCount = reaper.CountTrackMediaItems(track)
+
+        for j = 0, itemCount - 1 do
+            local item = reaper.GetTrackMediaItem(track, j)
+            local take = reaper.GetActiveTake(item)
+
+            if take then
+                -- Get current pitch/playrate values
+                local currentPitch = reaper.GetMediaItemTakeInfo_Value(take, "D_PITCH")
+                local currentPlayrate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+
+                if effectivePitchMode == Constants.PITCH_MODES.STRETCH then
+                    -- STRETCH mode: Disable preserve pitch
+                    reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 0)
+
+                    -- If currently using D_PITCH, convert to D_PLAYRATE
+                    if currentPitch ~= 0 and currentPlayrate == 1.0 then
+                        local playrate = Utils.semitonesToPlayrate(currentPitch)
+                        reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", playrate)
+                        reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", 0)
+                    end
+                else
+                    -- PITCH mode: Reset B_PPITCH to default (doesn't matter for D_PITCH)
+                    -- Convert from D_PLAYRATE back to D_PITCH if needed
+                    if currentPlayrate ~= 1.0 then
+                        local semitones = Utils.playrateToSemitones(currentPlayrate)
+                        reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", semitones)
+                        reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", 1.0)
+                        reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1)
+                    end
+                end
+            end
+        end
+    end
+
+    reaper.Undo_EndBlock("Sync pitch mode properties", -1)
+    reaper.PreventUIRefresh(-1)
+    reaper.UpdateArrange()
 end
 
 return Generation
