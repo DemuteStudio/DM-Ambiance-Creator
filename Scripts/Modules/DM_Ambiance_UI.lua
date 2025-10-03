@@ -1509,6 +1509,78 @@ function UI.drawNoisePreview(dataObj, width, height)
     local zeroColor = 0x888888AA
     imgui.DrawList_AddLine(drawList, cursorX, zeroY, cursorX + width, zeroY, zeroColor, 1.0)
 
+    -- Calculate and draw item placement positions
+    -- This simulates the same algorithm used in DM_Ambiance_Generation.lua (lines 3707-3889)
+    local noiseGen = globals.Constants.NOISE_GENERATION
+    local avgItemLength = 3.0  -- Estimate for preview (can be improved later if we pass actual items)
+    local itemPositions = {}
+
+    -- Helper function to get curve value at a specific time (same as generation)
+    local function getCurveValue(time)
+        local noiseValue = globals.Noise.getValueAtTime(
+            time,
+            startTime,
+            endTime,
+            noiseFrequency,
+            noiseOctaves,
+            noisePersistence,
+            noiseLacunarity,
+            noiseSeed
+        )
+
+        local normalizedDensity = noiseDensity / 100.0
+        local normalizedNoiseValue = (noiseValue - 0.5) * 2
+        local densityVariation = normalizedNoiseValue * amplitudeScale * normalizedDensity
+        local placementProbability = normalizedDensity + densityVariation
+        return math.max(0, math.min(1, placementProbability))
+    end
+
+    -- Simulate item placement algorithm
+    local currentTime = startTime
+    local maxPositions = 500  -- Limit to prevent performance issues
+    local positionCount = 0
+
+    while currentTime < endTime and positionCount < maxPositions do
+        local curveValue = getCurveValue(currentTime)
+
+        -- Skip ahead in silent zones (below threshold)
+        local minDensityThreshold = thresholdNormalized
+        if curveValue < minDensityThreshold then
+            currentTime = currentTime + noiseGen.SKIP_INTERVAL
+            goto continue_preview
+        end
+
+        -- Calculate interval based on curve value
+        -- High curve = short interval (high density), Low curve = long interval (low density)
+        local minInterval = avgItemLength * noiseGen.MIN_INTERVAL_MULTIPLIER
+        local maxInterval = noiseGen.MAX_INTERVAL_SECONDS
+        local interval = minInterval + (maxInterval - minInterval) * (1.0 - curveValue)
+
+        -- Store this position
+        table.insert(itemPositions, currentTime)
+        positionCount = positionCount + 1
+
+        -- Advance time by calculated interval
+        currentTime = currentTime + interval
+
+        ::continue_preview::
+    end
+
+    -- Draw item position markers
+    local markerColor = 0xFFAA00FF  -- Orange color for visibility
+    local markerRadius = 3.0
+    local duration = endTime - startTime
+
+    for _, itemTime in ipairs(itemPositions) do
+        -- Convert time to screen X coordinate
+        local normalizedTime = (itemTime - startTime) / duration
+        local markerX = cursorX + normalizedTime * width
+        local markerY = cursorY + height - 5  -- Near bottom of preview
+
+        -- Draw circle marker
+        imgui.DrawList_AddCircleFilled(drawList, markerX, markerY, markerRadius, markerColor)
+    end
+
     -- Draw time markers
     local duration = endTime - startTime
     local textColor = 0xAAAAAAFF
