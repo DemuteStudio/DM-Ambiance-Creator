@@ -247,6 +247,109 @@ function UI.drawVariationDirectionButton(id, currentDirection, width)
     return changed, newDirection
 end
 
+--- Helper to draw a slider row with automatic variation controls using table layout
+-- This provides consistent alignment without pixel-perfect positioning
+local function drawSliderWithVariation(params)
+    local sliderId = params.sliderId
+    local sliderValue = params.sliderValue
+    local sliderMin = params.sliderMin
+    local sliderMax = params.sliderMax
+    local sliderFormat = params.sliderFormat or "%.1f"
+    local sliderLabel = params.sliderLabel
+    local helpText = params.helpText
+    local trackingKey = params.trackingKey
+    local callbacks = params.callbacks
+    local autoRegenCallback = params.autoRegenCallback
+    local checkAutoRegen = params.checkAutoRegen
+
+    -- Variation params (optional)
+    local variationEnabled = params.variationEnabled ~= false  -- default true
+    local variationValue = params.variationValue
+    local variationDirection = params.variationDirection
+    local variationLabel = params.variationLabel or "Var"
+    local variationCallbacks = params.variationCallbacks or {}
+
+    local sliderWidth = params.sliderWidth or -1  -- -1 means fill available space
+
+    imgui.TableNextRow(globals.ctx)
+
+    -- Column 1: Slider
+    imgui.TableSetColumnIndex(globals.ctx, 0)
+    if sliderWidth > 0 then
+        imgui.PushItemWidth(globals.ctx, sliderWidth)
+    else
+        imgui.PushItemWidth(globals.ctx, -1)  -- Fill column width
+    end
+
+    local rv, newValue = globals.UndoWrappers.SliderDouble(globals.ctx, sliderId, sliderValue, sliderMin, sliderMax, sliderFormat)
+
+    -- Auto-regen tracking
+    if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[trackingKey] then
+        globals.autoRegenTracking[trackingKey] = sliderValue
+    end
+
+    if rv and callbacks.setValue then callbacks.setValue(newValue) end
+
+    if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[trackingKey] then
+        if checkAutoRegen then
+            checkAutoRegen(trackingKey, globals.autoRegenTracking[trackingKey], sliderValue)
+        end
+        globals.autoRegenTracking[trackingKey] = nil
+    end
+
+    imgui.PopItemWidth(globals.ctx)
+
+    -- Column 2: Label with help marker
+    imgui.TableSetColumnIndex(globals.ctx, 1)
+    imgui.Text(globals.ctx, sliderLabel)
+    if helpText then
+        imgui.SameLine(globals.ctx)
+        globals.Utils.HelpMarker(helpText)
+    end
+
+    -- Column 3: Variation controls (if enabled)
+    if variationEnabled and variationValue ~= nil then
+        imgui.TableSetColumnIndex(globals.ctx, 2)
+
+        -- Direction button
+        local dirChanged, newDirection = UI.drawVariationDirectionButton(
+            trackingKey .. "_dir",
+            variationDirection,
+            24
+        )
+        if dirChanged and variationCallbacks.setDirection then
+            variationCallbacks.setDirection(newDirection)
+        end
+
+        imgui.SameLine(globals.ctx, 0, 2)
+
+        -- Variation input
+        imgui.PushItemWidth(globals.ctx, 48)
+        local varKey = trackingKey .. "_var"
+        local rvVar, newVar = globals.UndoWrappers.DragInt(globals.ctx, "##" .. varKey, variationValue, 0.5, 0, 100, "%d%%")
+
+        if imgui.IsItemActive(globals.ctx) and autoRegenCallback and not globals.autoRegenTracking[varKey] then
+            globals.autoRegenTracking[varKey] = variationValue
+        end
+
+        if rvVar and variationCallbacks.setValue then variationCallbacks.setValue(newVar) end
+
+        if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and autoRegenCallback and globals.autoRegenTracking[varKey] then
+            if checkAutoRegen then
+                checkAutoRegen(varKey, varKey, globals.autoRegenTracking[varKey], variationValue)
+            end
+            globals.autoRegenTracking[varKey] = nil
+        end
+
+        imgui.PopItemWidth(globals.ctx)
+
+        imgui.SameLine(globals.ctx, 0, 2)
+        imgui.Text(globals.ctx, variationLabel)
+    end
+
+    return rv, newValue
+end
+
 --- Draw the trigger settings section (shared by groups and containers)
 -- dataObj must expose: intervalMode, triggerRate, triggerDrift, fadeIn, fadeOut
 -- callbacks must provide setters for each parameter
@@ -271,10 +374,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
     end
 
     -- Layout parameters
-    local controlHeight = 20
-    local labelWidth = 150  -- Fixed width for labels (consistent with Randomization section)
-    local padding = 10
-    local controlWidth = width - labelWidth - padding - 10  -- Use remaining space for sliders (labels include help marker)
     local fadeVisualSize = 15
 
     -- Info message for interval mode
@@ -294,16 +393,27 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.TextColored(globals.ctx, 0xFFAA00FF, "Noise: Organic placement based on Perlin noise")
     end
 
-    -- Interval mode selection (Combo box)
-    do
-        imgui.BeginGroup(globals.ctx)
-        imgui.PushItemWidth(globals.ctx, controlWidth)
+    -- Create table for automatic layout: [Control | Label | Variation]
+    -- Column 0: Control (slider/combo) - stretches
+    -- Column 1: Label + help - fixed width auto-sized
+    -- Column 2: Variation controls (direction + value + label) - fixed width
+    local tableFlags = imgui.TableFlags_SizingStretchProp
+    if imgui.BeginTable(globals.ctx, "##GenerationSettings_" .. trackingKey, 3, tableFlags) then
+        -- Setup columns
+        imgui.TableSetupColumn(globals.ctx, "Control", imgui.TableColumnFlags_WidthStretch)
+        imgui.TableSetupColumn(globals.ctx, "Label", imgui.TableColumnFlags_WidthFixed, 0)  -- Auto-size
+        imgui.TableSetupColumn(globals.ctx, "Variation", imgui.TableColumnFlags_WidthFixed, 100)
+
+        -- Interval mode selection (Combo box)
+        imgui.TableNextRow(globals.ctx)
+        imgui.TableSetColumnIndex(globals.ctx, 0)
+        imgui.PushItemWidth(globals.ctx, -1)
         local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0Noise\0"
         local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "##IntervalMode", dataObj.intervalMode, intervalModes)
         if rv then callbacks.setIntervalMode(newIntervalMode) end
-        imgui.EndGroup(globals.ctx)
+        imgui.PopItemWidth(globals.ctx)
 
-        imgui.SameLine(globals.ctx, controlWidth + padding)
+        imgui.TableSetColumnIndex(globals.ctx, 1)
         imgui.Text(globals.ctx, "Interval Mode")
         imgui.SameLine(globals.ctx)
         globals.Utils.HelpMarker(
@@ -313,226 +423,110 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             "Chunk: Create structured sound/silence periods\n" ..
             "Noise: Place items based on Perlin noise function"
         )
-    end
 
-    -- Interval value (slider) - Not shown in Noise mode
-    if dataObj.intervalMode ~= 4 then
-        local rateLabel = "Interval (sec)"
-        local rateMin = -10.0
-        local rateMax = 60.0
+        -- Interval value (slider) - Not shown in Noise mode
+        if dataObj.intervalMode ~= 4 then
+            local rateLabel = "Interval (sec)"
+            local rateMin = -10.0
+            local rateMax = 60.0
 
-        if dataObj.intervalMode == 1 then
-            rateLabel = "Interval (%)"
-            rateMin = 0.1
-            rateMax = 100.0
-        elseif dataObj.intervalMode == 2 then
-            rateLabel = "Coverage (%)"
-            rateMin = 0.1
-            rateMax = 100.0
-        elseif dataObj.intervalMode == 3 then
-            rateLabel = "Item Interval (sec)"
-            rateMin = -10.0
-            rateMax = 60.0
+            if dataObj.intervalMode == 1 then
+                rateLabel = "Interval (%)"
+                rateMin = 0.1
+                rateMax = 100.0
+            elseif dataObj.intervalMode == 2 then
+                rateLabel = "Coverage (%)"
+                rateMin = 0.1
+                rateMax = 100.0
+            elseif dataObj.intervalMode == 3 then
+                rateLabel = "Item Interval (sec)"
+                rateMin = -10.0
+                rateMax = 60.0
+            end
+
+            local driftLabel = (dataObj.intervalMode == 2) and "Drift" or "Var"
+
+            drawSliderWithVariation({
+                sliderId = "##TriggerRate",
+                sliderValue = dataObj.triggerRate,
+                sliderMin = rateMin,
+                sliderMax = rateMax,
+                sliderFormat = "%.1f",
+                sliderLabel = rateLabel,
+                trackingKey = trackingKey .. "_triggerRate",
+                callbacks = { setValue = callbacks.setTriggerRate },
+                autoRegenCallback = autoRegenCallback,
+                checkAutoRegen = checkAutoRegen,
+                variationEnabled = true,
+                variationValue = dataObj.triggerDrift,
+                variationDirection = dataObj.triggerDriftDirection,
+                variationLabel = driftLabel,
+                variationCallbacks = {
+                    setValue = callbacks.setTriggerDrift,
+                    setDirection = callbacks.setTriggerDriftDirection
+                }
+            })
         end
 
-        imgui.BeginGroup(globals.ctx)
-        imgui.PushItemWidth(globals.ctx, controlWidth)
+        -- Chunk mode specific controls
+        if dataObj.intervalMode == 3 then
+            -- Chunk Duration slider with variation
+            drawSliderWithVariation({
+                sliderId = "##ChunkDuration",
+                sliderValue = dataObj.chunkDuration,
+                sliderMin = 0.5,
+                sliderMax = 60.0,
+                sliderFormat = "%.1f sec",
+                sliderLabel = "Chunk Duration",
+                helpText = "Duration of active sound periods in seconds",
+                trackingKey = trackingKey .. "_chunkDuration",
+                callbacks = { setValue = callbacks.setChunkDuration },
+                autoRegenCallback = autoRegenCallback,
+                checkAutoRegen = checkAutoRegen,
+                variationEnabled = true,
+                variationValue = dataObj.chunkDurationVariation,
+                variationDirection = dataObj.chunkDurationVarDirection,
+                variationLabel = "Var",
+                variationCallbacks = {
+                    setValue = callbacks.setChunkDurationVariation,
+                    setDirection = callbacks.setChunkDurationVarDirection
+                }
+            })
 
-        local triggerRateKey = trackingKey .. "_triggerRate"
-        local rv, newRate = globals.UndoWrappers.SliderDouble(globals.ctx, "##TriggerRate", dataObj.triggerRate, rateMin, rateMax, "%.1f")
-
-        -- Store initial value when starting to drag
-        if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[triggerRateKey] then
-            globals.autoRegenTracking[triggerRateKey] = dataObj.triggerRate
+            -- Chunk Silence slider with variation
+            drawSliderWithVariation({
+                sliderId = "##ChunkSilence",
+                sliderValue = dataObj.chunkSilence,
+                sliderMin = 0.0,
+                sliderMax = 120.0,
+                sliderFormat = "%.1f sec",
+                sliderLabel = "Silence Duration",
+                helpText = "Duration of silence periods between chunks in seconds",
+                trackingKey = trackingKey .. "_chunkSilence",
+                callbacks = { setValue = callbacks.setChunkSilence },
+                autoRegenCallback = autoRegenCallback,
+                checkAutoRegen = checkAutoRegen,
+                variationEnabled = true,
+                variationValue = dataObj.chunkSilenceVariation,
+                variationDirection = dataObj.chunkSilenceVarDirection,
+                variationLabel = "Var",
+                variationCallbacks = {
+                    setValue = callbacks.setChunkSilenceVariation,
+                    setDirection = callbacks.setChunkSilenceVarDirection
+                }
+            })
         end
 
-        if rv then callbacks.setTriggerRate(newRate) end
-
-        -- Check for auto-regen on release
-        if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[triggerRateKey] then
-            checkAutoRegen("triggerRate", globals.autoRegenTracking[triggerRateKey], dataObj.triggerRate)
-            globals.autoRegenTracking[triggerRateKey] = nil
-        end
-
-        imgui.EndGroup(globals.ctx)
-
-        imgui.SameLine(globals.ctx, controlWidth + padding)
-        imgui.Text(globals.ctx, rateLabel)
-
-        -- Compact random variation control on same line
-        imgui.SameLine(globals.ctx)
-
-        -- Direction toggle button
-        local dirChanged, newDirection = UI.drawVariationDirectionButton(
-            trackingKey .. "_driftDir",
-            dataObj.triggerDriftDirection,
-            30
-        )
-        if dirChanged and callbacks.setTriggerDriftDirection then
-            callbacks.setTriggerDriftDirection(newDirection)
-        end
-
-        imgui.SameLine(globals.ctx, 0, 4)
-        imgui.PushItemWidth(globals.ctx, 60)
-
-        local triggerDriftKey = trackingKey .. "_triggerDrift"
-        local rvDrift, newDrift = globals.UndoWrappers.DragInt(globals.ctx, "##TriggerDrift", dataObj.triggerDrift, 0.5, 0, 100, "%d%%")
-
-        -- Store initial value when starting to drag
-        if imgui.IsItemActive(globals.ctx) and autoRegenCallback and not globals.autoRegenTracking[triggerDriftKey] then
-            globals.autoRegenTracking[triggerDriftKey] = dataObj.triggerDrift
-        end
-
-        if rvDrift then callbacks.setTriggerDrift(newDrift) end
-
-        -- Check for auto-regen on release
-        if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and autoRegenCallback and globals.autoRegenTracking[triggerDriftKey] then
-            checkAutoRegen("triggerDrift", triggerDriftKey, globals.autoRegenTracking[triggerDriftKey], dataObj.triggerDrift)
-            globals.autoRegenTracking[triggerDriftKey] = nil
-        end
-
-        imgui.PopItemWidth(globals.ctx)
-        imgui.SameLine(globals.ctx)
-        -- Show "Drift" for Coverage mode, "Var" for other modes
-        local driftLabel = (dataObj.intervalMode == 2) and "Drift" or "Var"
-        imgui.Text(globals.ctx, driftLabel)
-    end
-
-    -- Chunk mode specific controls
-    if dataObj.intervalMode == 3 then
-        -- Chunk Duration slider with variation knob
-        do
-            imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
-            local chunkDurationKey = trackingKey .. "_chunkDuration"
-            local rv, newDuration = globals.UndoWrappers.SliderDouble(globals.ctx, "##ChunkDuration", dataObj.chunkDuration, 0.5, 60.0, "%.1f sec")
-
-            -- Store initial value when starting to drag
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkDurationKey] then
-                globals.autoRegenTracking[chunkDurationKey] = dataObj.chunkDuration
-            end
-
-            if rv then callbacks.setChunkDuration(newDuration) end
-
-            -- Check for auto-regen on release
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[chunkDurationKey] then
-                checkAutoRegen("chunkDuration", globals.autoRegenTracking[chunkDurationKey], dataObj.chunkDuration)
-                globals.autoRegenTracking[chunkDurationKey] = nil
-            end
-
-            imgui.EndGroup(globals.ctx)
-
-            imgui.SameLine(globals.ctx, controlWidth + padding)
-            imgui.Text(globals.ctx, "Chunk Duration")
-            imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Duration of active sound periods in seconds")
-            
-            -- Compact variation control on same line
-            imgui.SameLine(globals.ctx)
-
-            -- Direction toggle button
-            local dirChanged, newDirection = UI.drawVariationDirectionButton(
-                trackingKey .. "_chunkDurDir",
-                dataObj.chunkDurationVarDirection,
-                30
-            )
-            if dirChanged and callbacks.setChunkDurationVarDirection then
-                callbacks.setChunkDurationVarDirection(newDirection)
-            end
-
-            imgui.SameLine(globals.ctx, 0, 4)
-            imgui.PushItemWidth(globals.ctx, 60)
-
-            local chunkDurationVarKey = trackingKey .. "_chunkDurationVar"
-            local rv2, newDurationVar = globals.UndoWrappers.DragInt(globals.ctx, "##ChunkDurationVar", dataObj.chunkDurationVariation, 0.5, 0, 100, "%d%%")
-
-            -- Store initial value when starting to drag
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkDurationVarKey] then
-                globals.autoRegenTracking[chunkDurationVarKey] = dataObj.chunkDurationVariation
-            end
-
-            if rv2 then callbacks.setChunkDurationVariation(newDurationVar) end
-
-            -- Check for auto-regen on release
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[chunkDurationVarKey] then
-                checkAutoRegen("chunkDurationVar", chunkDurationVarKey, globals.autoRegenTracking[chunkDurationVarKey], dataObj.chunkDurationVariation)
-                globals.autoRegenTracking[chunkDurationVarKey] = nil
-            end
-
-            imgui.PopItemWidth(globals.ctx)
-            imgui.SameLine(globals.ctx)
-            imgui.Text(globals.ctx, "Var")
-        end
-
-        -- Chunk Silence slider with variation knob
-        do
-            imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
-            local chunkSilenceKey = trackingKey .. "_chunkSilence"
-            local rv, newSilence = globals.UndoWrappers.SliderDouble(globals.ctx, "##ChunkSilence", dataObj.chunkSilence, 0.0, 120.0, "%.1f sec")
-
-            -- Store initial value when starting to drag
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkSilenceKey] then
-                globals.autoRegenTracking[chunkSilenceKey] = dataObj.chunkSilence
-            end
-
-            if rv then callbacks.setChunkSilence(newSilence) end
-
-            -- Check for auto-regen on release
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[chunkSilenceKey] then
-                checkAutoRegen("chunkSilence", globals.autoRegenTracking[chunkSilenceKey], dataObj.chunkSilence)
-                globals.autoRegenTracking[chunkSilenceKey] = nil
-            end
-
-            imgui.EndGroup(globals.ctx)
-
-            imgui.SameLine(globals.ctx, controlWidth + padding)
-            imgui.Text(globals.ctx, "Silence Duration")
-            imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Duration of silence periods between chunks in seconds")
-            
-            -- Compact variation control on same line
-            imgui.SameLine(globals.ctx)
-
-            -- Direction toggle button
-            local dirChanged, newDirection = UI.drawVariationDirectionButton(
-                trackingKey .. "_chunkSilDir",
-                dataObj.chunkSilenceVarDirection,
-                30
-            )
-            if dirChanged and callbacks.setChunkSilenceVarDirection then
-                callbacks.setChunkSilenceVarDirection(newDirection)
-            end
-
-            imgui.SameLine(globals.ctx, 0, 4)
-            imgui.PushItemWidth(globals.ctx, 60)
-
-            local chunkSilenceVarKey = trackingKey .. "_chunkSilenceVar"
-            local rv2, newSilenceVar = globals.UndoWrappers.DragInt(globals.ctx, "##ChunkSilenceVar", dataObj.chunkSilenceVariation, 0.5, 0, 100, "%d%%")
-
-            -- Store initial value when starting to drag
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[chunkSilenceVarKey] then
-                globals.autoRegenTracking[chunkSilenceVarKey] = dataObj.chunkSilenceVariation
-            end
-
-            if rv2 then callbacks.setChunkSilenceVariation(newSilenceVar) end
-
-            -- Check for auto-regen on release
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[chunkSilenceVarKey] then
-                checkAutoRegen("chunkSilenceVar", chunkSilenceVarKey, globals.autoRegenTracking[chunkSilenceVarKey], dataObj.chunkSilenceVariation)
-                globals.autoRegenTracking[chunkSilenceVarKey] = nil
-            end
-
-            imgui.PopItemWidth(globals.ctx)
-            imgui.SameLine(globals.ctx)
-            imgui.Text(globals.ctx, "Var")
-        end
-    end
+        -- End the table before noise mode (noise has custom complex layout)
+        imgui.EndTable(globals.ctx)
+    end  -- End BeginTable check
 
     -- Noise mode specific controls
     if dataObj.intervalMode == 4 then
+        -- Calculate controlWidth for noise section (using traditional layout)
+        local labelWidth = 150
+        local padding = 10
+        local controlWidth = width - labelWidth - padding - 10
         -- Ensure noise parameters exist (backwards compatibility with old presets)
         globals.Utils.ensureNoiseDefaults(dataObj)
 

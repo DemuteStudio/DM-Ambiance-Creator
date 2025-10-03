@@ -75,6 +75,9 @@ local function getIconPaths()
         link = "",
         unlink = "",
         mirror = "",
+        arrow_left = "",
+        arrow_right = "",
+        arrow_both = "",
         undo = "",
         redo = "",
         history = ""
@@ -312,6 +315,63 @@ function Icons.loadIcons()
         end
     else
         iconTextures.mirror = nil
+    end
+
+    -- Try to load arrow_left icon from file
+    if fileExists(iconPaths.arrow_left) then
+        local success, result = pcall(function()
+            local img = globals.imgui.CreateImage(iconPaths.arrow_left)
+            if img then
+                globals.imgui.Attach(globals.ctx, img)
+            end
+            return img
+        end)
+
+        if success and result then
+            iconTextures.arrow_left = result
+        else
+            iconTextures.arrow_left = nil
+        end
+    else
+        iconTextures.arrow_left = nil
+    end
+
+    -- Try to load arrow_right icon from file
+    if fileExists(iconPaths.arrow_right) then
+        local success, result = pcall(function()
+            local img = globals.imgui.CreateImage(iconPaths.arrow_right)
+            if img then
+                globals.imgui.Attach(globals.ctx, img)
+            end
+            return img
+        end)
+
+        if success and result then
+            iconTextures.arrow_right = result
+        else
+            iconTextures.arrow_right = nil
+        end
+    else
+        iconTextures.arrow_right = nil
+    end
+
+    -- Try to load arrow_both icon from file
+    if fileExists(iconPaths.arrow_both) then
+        local success, result = pcall(function()
+            local img = globals.imgui.CreateImage(iconPaths.arrow_both)
+            if img then
+                globals.imgui.Attach(globals.ctx, img)
+            end
+            return img
+        end)
+
+        if success and result then
+            iconTextures.arrow_both = result
+        else
+            iconTextures.arrow_both = nil
+        end
+    else
+        iconTextures.arrow_both = nil
     end
 
     -- Try to load undo icon from file
@@ -723,6 +783,56 @@ end
 
 function Icons.getHistoryIcon()
     return iconTextures.history
+end
+
+-- Create a variation direction button (cycles through left, both, right)
+-- @param ctx ImGui context
+-- @param id Unique button ID
+-- @param direction Current direction (0=negative/left, 1=bipolar/both, 2=positive/right)
+-- @param tooltip Tooltip text
+-- @return clicked (boolean), newDirection (0, 1, or 2)
+function Icons.createVariationDirectionButton(ctx, id, direction, tooltip)
+    local textures = {
+        [0] = iconTextures.arrow_left,
+        [1] = iconTextures.arrow_both,
+        [2] = iconTextures.arrow_right
+    }
+
+    local fallbackSymbols = {"←", "↔", "→"}
+    local tooltips = {
+        "Negative only: variation reduces value",
+        "Bipolar: variation can increase or decrease",
+        "Positive only: variation increases value"
+    }
+
+    -- Use provided tooltip or default
+    local finalTooltip = tooltip or tooltips[direction + 1]
+
+    -- If icon exists, use it
+    if textures[direction] then
+        local buttonId = "##VarDir_" .. id
+        local clicked = createTintedIconButton(ctx, textures[direction], buttonId, finalTooltip)
+
+        if clicked then
+            local newDirection = (direction + 1) % 3
+            return true, newDirection
+        end
+        return false, direction
+    else
+        -- Fallback to text button
+        local buttonLabel = fallbackSymbols[direction + 1] .. "##" .. id
+        local clicked = globals.imgui.Button(ctx, buttonLabel, 24, 0)
+
+        if globals.imgui.IsItemHovered(ctx) then
+            globals.imgui.SetTooltip(ctx, finalTooltip)
+        end
+
+        if clicked then
+            local newDirection = (direction + 1) % 3
+            return true, newDirection
+        end
+        return false, direction
+    end
 end
 
 return Icons
