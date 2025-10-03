@@ -188,12 +188,12 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         
         -- Use PushID to create stable context
         imgui.PushID(globals.ctx, containerId .. "_items")
-        
+
         -- If we need to maintain the open state, set it before the header
         if globals.containerExpandedStates[expandedStateKey] then
             imgui.SetNextItemOpen(globals.ctx, true)
         end
-        
+
         -- Create header with stable ID
         local headerLabel = "Imported items (" .. #container.items .. ")"
         local wasExpanded = globals.containerExpandedStates[expandedStateKey]
@@ -209,8 +209,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             local itemToDelete = nil
 
             -- Create a child window for the item list to make it scrollable
-            -- Reduce width to account for scrollbar
-            local listWidth = width * 0.88 -- Reduced from 0.95 to avoid scrollbar overlap
+            -- Use full width minus space for scrollbar
+            local scrollbarWidth = 20  -- Approximate scrollbar width
+            local listWidth = width - scrollbarWidth
             if imgui.BeginChild(globals.ctx, "ItemsList" .. containerId, listWidth, 100) then
                 -- List all imported items as selectable items
                 for l, item in ipairs(container.items) do
@@ -219,7 +220,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     local isSelected = (globals.selectedItemIndex[selectionKey] == l)
 
                     -- Calculate width for selectable to leave space for buttons
-                    local selectableWidth = width * 0.70
+                    local buttonWidth = 20  -- SmallButton approximate width
+                    local spacing = 5  -- Spacing between elements
+                    local buttonsSpace = (buttonWidth * 2) + (spacing * 3)  -- 2 buttons + spacing
+                    local selectableWidth = listWidth - buttonsSpace
 
                     -- Make item selectable with limited width
                     imgui.PushItemWidth(globals.ctx, selectableWidth)

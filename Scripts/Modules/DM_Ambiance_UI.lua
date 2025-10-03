@@ -236,9 +236,9 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
     -- Layout parameters
     local controlHeight = 20
-    local controlWidth = width * 0.55
-    local labelWidth = width * 0.35
-    local padding = 5
+    local labelWidth = 150  -- Fixed width for labels (consistent with Randomization section)
+    local padding = 10
+    local controlWidth = width - labelWidth - padding - 10  -- Use remaining space for sliders (labels include help marker)
     local fadeVisualSize = 15
 
     -- Info message for interval mode
@@ -469,37 +469,144 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.Spacing(globals.ctx)
 
         -- Noise Density Range (Min Density + Max Density with link mode)
-        -- Using LinkedSliders component for reusability
+        -- Using LinkedSliders component for reusability, with custom layout to match other sliders
         do
             if not dataObj.densityLinkMode then dataObj.densityLinkMode = "link" end
 
-            globals.LinkedSliders.draw({
-                id = trackingKey .. "_density",
-                sliders = {
-                    {value = dataObj.noiseThreshold, min = 0.0, max = 100.0, format = "%.1f%%"},
-                    {value = dataObj.noiseDensity, min = 0.0, max = 100.0, format = "%.1f%%"}
-                },
-                linkMode = dataObj.densityLinkMode,
-                width = controlWidth,
-                label = "Density",
-                helpText = "Density range for item placement probability.",
-                sliderLabels = {
-                    "Min Density: Floor below which no items are placed",
-                    "Max Density: Average/peak density of item placement"
-                },
-                onChange = function(values)
-                    callbacks.setNoiseThreshold(values[1])
-                    callbacks.setNoiseDensity(values[2])
-                end,
-                onChangeComplete = function()
-                    if checkAutoRegen then
-                        checkAutoRegen("densityRange", trackingKey .. "_density", nil, {dataObj.noiseThreshold, dataObj.noiseDensity})
-                    end
-                end,
-                onLinkModeChange = function(newMode)
-                    dataObj.densityLinkMode = newMode
+            -- BeginGroup to align with other sliders
+            imgui.BeginGroup(globals.ctx)
+
+            -- Link button
+            local linkMode = dataObj.densityLinkMode or "link"
+            if globals.Icons.createLinkModeButton(globals.ctx, "link_" .. trackingKey .. "_density", linkMode, "Link mode: " .. linkMode) then
+                local newMode = globals.LinkedSliders.cycleLinkMode(linkMode)
+                dataObj.densityLinkMode = newMode
+                if globals.History then
+                    globals.History.captureState("Change density link mode")
                 end
-            })
+            end
+            imgui.SameLine(globals.ctx)
+
+            -- Calculate slider width (subtract link button width and spacing)
+            local linkButtonWidth = 24  -- Match the width in Randomization section
+            local spacing = 4
+            local sliderTotalWidth = controlWidth - linkButtonWidth - spacing
+
+            -- Track which slider changed
+            local changedIndex = nil
+            local newValues = {}
+            local anyChanged = false
+            local anyActive = false
+
+            -- Calculate individual slider width
+            local sliderSpacing = 4
+            local sliderWidth = (sliderTotalWidth - sliderSpacing) / 2
+
+            -- Min Density slider
+            imgui.PushItemWidth(globals.ctx, sliderWidth)
+            local rv1, newThreshold = globals.UndoWrappers.SliderDouble(
+                globals.ctx,
+                "##" .. trackingKey .. "_density_slider1",
+                dataObj.noiseThreshold,
+                0.0,
+                100.0,
+                "%.1f%%"
+            )
+            imgui.PopItemWidth(globals.ctx)
+
+            if rv1 then
+                changedIndex = 1
+                anyChanged = true
+            end
+            if imgui.IsItemActive(globals.ctx) then
+                anyActive = true
+            end
+            newValues[1] = newThreshold
+
+            imgui.SameLine(globals.ctx)
+
+            -- Max Density slider
+            imgui.PushItemWidth(globals.ctx, sliderWidth)
+            local rv2, newDensity = globals.UndoWrappers.SliderDouble(
+                globals.ctx,
+                "##" .. trackingKey .. "_density_slider2",
+                dataObj.noiseDensity,
+                0.0,
+                100.0,
+                "%.1f%%"
+            )
+            imgui.PopItemWidth(globals.ctx)
+
+            if rv2 then
+                changedIndex = 2
+                anyChanged = true
+            end
+            if imgui.IsItemActive(globals.ctx) then
+                anyActive = true
+            end
+            newValues[2] = newDensity
+
+            -- Apply link mode logic if any slider changed
+            if anyChanged then
+                local effectiveMode = globals.LinkedSliders.checkKeyboardOverrides(dataObj.densityLinkMode)
+                local sliderConfigs = {
+                    {value = dataObj.noiseThreshold, min = 0.0, max = 100.0},
+                    {value = dataObj.noiseDensity, min = 0.0, max = 100.0}
+                }
+                local finalValues = globals.LinkedSliders.applyLinkModeLogic(
+                    sliderConfigs,
+                    newValues,
+                    changedIndex,
+                    effectiveMode
+                )
+
+                -- Clamp values
+                for i = 1, 2 do
+                    finalValues[i] = math.max(0.0, math.min(100.0, finalValues[i]))
+                end
+
+                callbacks.setNoiseThreshold(finalValues[1])
+                callbacks.setNoiseDensity(finalValues[2])
+            end
+
+            -- Track state for auto-regen on release
+            if not globals.linkedSlidersTracking then
+                globals.linkedSlidersTracking = {}
+            end
+            local trackingKey_density = trackingKey .. "_density"
+            if anyActive and not globals.linkedSlidersTracking[trackingKey_density] then
+                globals.linkedSlidersTracking[trackingKey_density] = {
+                    originalValues = {dataObj.noiseThreshold, dataObj.noiseDensity}
+                }
+            end
+            if not anyActive and globals.linkedSlidersTracking[trackingKey_density] then
+                local hasChanged = math.abs(dataObj.noiseThreshold - globals.linkedSlidersTracking[trackingKey_density].originalValues[1]) > 0.001
+                    or math.abs(dataObj.noiseDensity - globals.linkedSlidersTracking[trackingKey_density].originalValues[2]) > 0.001
+                if hasChanged and checkAutoRegen then
+                    checkAutoRegen("densityRange", trackingKey_density, nil, {dataObj.noiseThreshold, dataObj.noiseDensity})
+                end
+                globals.linkedSlidersTracking[trackingKey_density] = nil
+            end
+
+            imgui.EndGroup(globals.ctx)
+
+            -- Label and help marker (aligned with other sliders)
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Density")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker(
+                "Density range for item placement probability.\n\n" ..
+                "• Min Density: Floor below which no items are placed (left slider)\n" ..
+                "• Max Density: Average/peak density of item placement (right slider)\n\n" ..
+                "Link modes:\n" ..
+                "• Unlink: Adjust sliders independently\n" ..
+                "• Link: Maintain range width (default)\n" ..
+                "• Mirror: Move symmetrically from center\n\n" ..
+                "Keyboard shortcuts:\n" ..
+                "• Hold Shift: Temporarily unlink (independent)\n" ..
+                "• Hold Ctrl: Temporarily link (maintain range)\n" ..
+                "• Hold Alt: Temporarily mirror (symmetric)"
+            )
         end
 
         -- Noise Frequency slider
@@ -652,7 +759,13 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Seed control with randomize button
         do
             imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth - 50)
+
+            -- Calculate input width (subtract button width and spacing)
+            local buttonWidth = 40
+            local spacing = 4
+            local inputWidth = controlWidth - buttonWidth - spacing
+
+            imgui.PushItemWidth(globals.ctx, inputWidth)
 
             local seedKey = trackingKey .. "_noiseSeed"
             local rv, newSeed = globals.UndoWrappers.InputInt(globals.ctx, "##NoiseSeed", dataObj.noiseSeed)
@@ -663,7 +776,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.SameLine(globals.ctx)
 
             -- Randomize button
-            if imgui.Button(globals.ctx, "🎲##RandomizeSeed", 40, 0) then
+            if imgui.Button(globals.ctx, "🎲##RandomizeSeed", buttonWidth, 0) then
                 local randomSeed = math.random(1, 999999)
                 callbacks.setNoiseSeed(randomSeed)
             end
@@ -687,10 +800,37 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.TextColored(globals.ctx, 0xAAAA00FF, "(preview mode - 60s - Add time selection to better tweak)")
         end
 
-        local previewWidth = controlWidth + padding + 200
+        local legendWidth = 80  -- Width reserved for legend
+        local previewWidth = width - legendWidth - 10  -- Use full available width minus legend
         local previewHeight = 120
 
+        -- Draw preview and legend side by side
+        imgui.BeginGroup(globals.ctx)
         UI.drawNoisePreview(dataObj, previewWidth, previewHeight)
+        imgui.EndGroup(globals.ctx)
+
+        imgui.SameLine(globals.ctx)
+
+        -- Legend
+        imgui.BeginGroup(globals.ctx)
+        imgui.Dummy(globals.ctx, 0, 10)  -- Vertical spacing
+
+        -- White line: Noise
+        local drawList = imgui.GetWindowDrawList(globals.ctx)
+        local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
+        imgui.DrawList_AddLine(drawList, cursorX, cursorY + 5, cursorX + 20, cursorY + 5, 0xFFFFFFFF, 2.0)
+        imgui.SameLine(globals.ctx, 25)
+        imgui.Text(globals.ctx, "Noise")
+
+        imgui.Dummy(globals.ctx, 0, 5)  -- Spacing between legend items
+
+        -- Orange circle: Item placement
+        cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
+        imgui.DrawList_AddCircleFilled(drawList, cursorX + 10, cursorY + 5, 4, 0xFFAA00FF)
+        imgui.SameLine(globals.ctx, 25)
+        imgui.Text(globals.ctx, "Items")
+
+        imgui.EndGroup(globals.ctx)
     end
 
     -- Fade in/out controls are commented out but can be enabled if needed
@@ -1067,21 +1207,23 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
     end
     imgui.EndGroup(globals.ctx)
     
-    -- Column positions for perfect alignment
-    local colCheckbox = 0      -- Checkbox column
-    local colLabel = 25        -- Label column 
-    local colUnit = 100        -- Unit button column
-    local colDuration = 145    -- Duration slider column
-    local colShapeLabel = 275  -- "Shape:" label column
-    local colShape = 315       -- Shape dropdown column
-    local colCurveLabel = 440  -- "Curve:" label column (when visible)
-    local colCurve = 480       -- Curve slider column (when visible)
-    
-    -- Element widths
-    local unitButtonWidth = 40
-    local durationWidth = 120
-    local shapeWidth = 120
-    local curveWidth = 80
+    -- Layout parameters for dynamic width (matching other sections)
+    local checkboxWidth = 20
+    local labelWidth = 75       -- "Fade In:" / "Fade Out:"
+    local unitButtonWidth = 45  -- "sec" / "%"
+    local spacing = 4
+
+    -- Calculate available space for sliders
+    local totalControlWidth = width - checkboxWidth - labelWidth - 10
+
+    -- Allocate space for duration slider, shape dropdown, and curve slider
+    local shapeDropdownWidth = 120
+    local curveSliderWidth = 80
+    local shapeLabelWidth = 50   -- "Shape:"
+    local curveLabelWidth = 50   -- "Curve:"
+
+    -- Duration slider gets remaining space
+    local durationSliderWidth = totalControlWidth - unitButtonWidth - shapeDropdownWidth - curveSliderWidth - shapeLabelWidth - curveLabelWidth - (spacing * 6)
     
     -- Helper function to draw fade controls with column-based alignment
     local function drawFadeControls(fadeType, enabled, usePercentage, duration, shape, curve)
@@ -1089,11 +1231,10 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
         local isIn = fadeType == "In"
         
         imgui.BeginGroup(globals.ctx)
-        
-        -- Column 1: Checkbox (position 0)
-        imgui.SetCursorPosX(globals.ctx, colCheckbox)
+
+        -- Checkbox
         local rv, newEnabled = globals.UndoWrappers.Checkbox(globals.ctx, "##Enable" .. suffix, enabled or false)
-        if rv then 
+        if rv then
             if isIn then obj.fadeInEnabled = newEnabled
             else obj.fadeOutEnabled = newEnabled end
             -- Queue fade update to avoid ImGui conflicts
@@ -1104,16 +1245,18 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
                 globals.Utils.queueFadeUpdate(groupIndex, nil, modifiedFade)
             end
         end
-        
-        -- Column 2: Label (position 25)
+
+        -- Label (with fixed width for alignment)
         imgui.SameLine(globals.ctx)
-        imgui.SetCursorPosX(globals.ctx, colLabel)
+        imgui.BeginGroup(globals.ctx)
         imgui.AlignTextToFramePadding(globals.ctx)
         imgui.Text(globals.ctx, "Fade " .. fadeType .. ":")
-        
-        -- Column 3: Unit button (position 100)
+        imgui.SameLine(globals.ctx, labelWidth)  -- Force position after label
+        imgui.Dummy(globals.ctx, 0, 0)  -- Invisible spacer to maintain width
+        imgui.EndGroup(globals.ctx)
+
+        -- Unit button
         imgui.SameLine(globals.ctx)
-        imgui.SetCursorPosX(globals.ctx, colUnit)
         imgui.BeginDisabled(globals.ctx, not enabled)
         local unitText = usePercentage and "%" or "sec"
         if imgui.Button(globals.ctx, unitText .. "##Unit" .. suffix, unitButtonWidth, 0) then
@@ -1131,11 +1274,10 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
                 globals.History.captureState("Toggle " .. (isIn and "fade in" or "fade out") .. " unit mode")
             end
         end
-        
-        -- Column 4: Duration slider (position 145)
+
+        -- Duration slider
         imgui.SameLine(globals.ctx)
-        imgui.SetCursorPosX(globals.ctx, colDuration)
-        imgui.PushItemWidth(globals.ctx, durationWidth)
+        imgui.PushItemWidth(globals.ctx, durationSliderWidth)
         local maxVal = usePercentage and 100 or 10
         local format = usePercentage and "%.0f%%" or "%.2f"
         local rv, newDuration = globals.UndoWrappers.SliderDouble(globals.ctx, "##Duration" .. suffix,
@@ -1172,17 +1314,15 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
             end
         end
         imgui.PopItemWidth(globals.ctx)
-        
-        -- Column 5: "Shape:" label (position 275)
+
+        -- "Shape:" label
         imgui.SameLine(globals.ctx)
-        imgui.SetCursorPosX(globals.ctx, colShapeLabel)
         imgui.AlignTextToFramePadding(globals.ctx)
         imgui.Text(globals.ctx, "Shape:")
-        
-        -- Column 6: Shape dropdown (position 315)
+
+        -- Shape dropdown
         imgui.SameLine(globals.ctx)
-        imgui.SetCursorPosX(globals.ctx, colShape)
-        imgui.PushItemWidth(globals.ctx, shapeWidth)
+        imgui.PushItemWidth(globals.ctx, shapeDropdownWidth)
         local fadeShapes = "Linear\0Fast Start\0Fast End\0Fast S/E\0Slow S/E\0Bezier\0S-Curve\0"
         local rv, newShape = globals.UndoWrappers.Combo(globals.ctx, "##Shape" .. suffix, shape or 0, fadeShapes)
         if rv then
@@ -1197,21 +1337,19 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
             end
         end
         imgui.PopItemWidth(globals.ctx)
-        
-        -- Column 7 & 8: Curve controls (for Linear, Bezier and S-Curve)
+
+        -- Curve controls (for Linear, Bezier and S-Curve)
         -- Default to Linear if shape is nil/undefined
         local actualShape = shape or Constants.FADE_SHAPES.LINEAR
         if actualShape == Constants.FADE_SHAPES.LINEAR or actualShape == Constants.FADE_SHAPES.BEZIER or actualShape == Constants.FADE_SHAPES.S_CURVE then
-            -- Column 7: "Curve:" label (position 440)
+            -- "Curve:" label
             imgui.SameLine(globals.ctx)
-            imgui.SetCursorPosX(globals.ctx, colCurveLabel)
             imgui.AlignTextToFramePadding(globals.ctx)
             imgui.Text(globals.ctx, "Curve:")
-            
-            -- Column 8: Curve slider (position 480)
+
+            -- Curve slider
             imgui.SameLine(globals.ctx)
-            imgui.SetCursorPosX(globals.ctx, colCurve)
-            imgui.PushItemWidth(globals.ctx, curveWidth)
+            imgui.PushItemWidth(globals.ctx, curveSliderWidth)
             local rv, newCurve = globals.UndoWrappers.SliderDouble(globals.ctx, "##Curve" .. suffix,
                 curve or 0.0, -1.0, 1.0, "%.1f")
             if rv then
@@ -1352,7 +1490,7 @@ local function drawRightPanel(width)
     if globals.selectedContainers == {} then
         return
     end
-        
+
     if globals.inMultiSelectMode then
         UI_MultiSelection.drawMultiSelectionPanel(width)
         return
@@ -1810,7 +1948,8 @@ function UI.ShowMainWindow(open)
 
         -- Right panel: container or group details
         globals.imgui.SameLine(globals.ctx)
-        local rightPanelWidth = windowWidth - leftPanelWidth - Constants.UI.SPLITTER_WIDTH - 20
+        local rightMargin = 15  -- Right margin for balanced UI
+        local rightPanelWidth = windowWidth - leftPanelWidth - Constants.UI.SPLITTER_WIDTH - 20 - rightMargin
         local rightVisible = globals.imgui.BeginChild(globals.ctx, "RightPanel", rightPanelWidth, 0, imgui.WindowFlags_None)
         if rightVisible then
             drawRightPanel(rightPanelWidth)
