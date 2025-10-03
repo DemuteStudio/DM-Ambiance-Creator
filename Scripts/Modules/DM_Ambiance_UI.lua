@@ -159,18 +159,15 @@ local function cycleFadeLinkMode(currentMode)
 end
 
 -- Apply linked slider changes
--- Hold Shift to temporarily override link mode and adjust sliders independently
--- Hold Alt to temporarily use mirror mode
+-- Keyboard shortcuts: Shift = unlink, Ctrl = link, Alt = mirror
 local function applyLinkedSliderChange(obj, paramType, newMin, newMax, linkMode)
-    -- Keyboard overrides for temporary mode changes
-    -- Shift: force unlink mode (independent adjustment)
+    -- Keyboard overrides for temporary mode changes (priority: Shift > Alt > Ctrl)
     if imgui.IsKeyDown(globals.ctx, imgui.Mod_Shift) then
         linkMode = "unlink"
-    end
-
-    -- Alt: force mirror mode (symmetric adjustment)
-    if imgui.IsKeyDown(globals.ctx, imgui.Mod_Alt) then
+    elseif imgui.IsKeyDown(globals.ctx, imgui.Mod_Alt) then
         linkMode = "mirror"
+    elseif imgui.IsKeyDown(globals.ctx, imgui.Mod_Ctrl) then
+        linkMode = "link"
     end
 
     if linkMode == "unlink" then
@@ -218,12 +215,14 @@ local function applyLinkedSliderChange(obj, paramType, newMin, newMax, linkMode)
 end
 
 -- Apply linked fade changes
--- Hold Shift to temporarily override link mode and adjust fades independently
+-- Keyboard shortcuts: Shift = unlink, Ctrl = link
 -- Note: Fades only support "link" and "unlink" modes (mirror doesn't make sense for fades)
 local function applyLinkedFadeChange(obj, fadeType, newValue, linkMode)
-    -- Shift override: force unlink mode when Shift is held
+    -- Keyboard overrides for temporary mode changes
     if imgui.IsKeyDown(globals.ctx, imgui.Mod_Shift) then
         linkMode = "unlink"
+    elseif imgui.IsKeyDown(globals.ctx, imgui.Mod_Ctrl) then
+        linkMode = "link"
     end
 
     if linkMode == "unlink" then
@@ -508,9 +507,8 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Density Range (Min Density + Max Density with link mode)
         -- Using LinkedSliders component for reusability
         do
-            if not dataObj.densityLinkMode then dataObj.densityLinkMode = "unlink" end
+            if not dataObj.densityLinkMode then dataObj.densityLinkMode = "link" end
 
-            -- Simplified using the LinkedSliders component
             globals.LinkedSliders.draw({
                 id = trackingKey .. "_density",
                 sliders = {
@@ -520,24 +518,16 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 linkMode = dataObj.densityLinkMode,
                 width = controlWidth,
                 label = "Density",
-                helpText =
-                    "Density range: Min to Max values for item placement probability.\n\n" ..
-                    "• Min Density (left): Floor below which no items are placed\n" ..
-                    "• Max Density (right): Average/peak density of item placement\n\n" ..
-                    "Link modes:\n" ..
-                    "• Unlink: Adjust Min and Max independently (allows Min > Max)\n" ..
-                    "• Link: Maintain range width when adjusting (default)\n" ..
-                    "• Mirror: Move both values symmetrically from center\n\n" ..
-                    "Keyboard shortcuts:\n" ..
-                    "• Hold Shift: Temporarily unlink sliders (independent)\n" ..
-                    "• Hold Alt: Temporarily use mirror mode (symmetric)",
+                helpText = "Density range for item placement probability.",
+                sliderLabels = {
+                    "Min Density: Floor below which no items are placed",
+                    "Max Density: Average/peak density of item placement"
+                },
                 onChange = function(values)
-                    -- Update values immediately during drag (visual feedback)
                     callbacks.setNoiseThreshold(values[1])
                     callbacks.setNoiseDensity(values[2])
                 end,
                 onChangeComplete = function()
-                    -- Trigger auto-regen only when slider is released
                     if checkAutoRegen then
                         checkAutoRegen("densityRange", trackingKey .. "_density", nil, {dataObj.noiseThreshold, dataObj.noiseDensity})
                     end
@@ -827,53 +817,55 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     local labelWidth = 120      -- Fixed width for labels
     local controlWidth = width - checkboxWidth - linkButtonWidth - labelWidth - 20  -- Use remaining space
 
-    -- Pitch randomization (checkbox + link button + slider on same line)
+    -- Pitch randomization (checkbox + LinkedSliders + mode toggle)
     imgui.BeginGroup(globals.ctx)
     local rv, newRandomizePitch = globals.UndoWrappers.Checkbox(globals.ctx, "##RandomizePitch", obj.randomizePitch)
     if rv then
         obj.randomizePitch = newRandomizePitch
         obj.needsRegeneration = true
-        -- Queue randomization update to avoid ImGui conflicts
         if groupIndex and containerIndex then
             globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pitch")
         elseif groupIndex then
             globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pitch")
         end
     end
-    
-    -- Link mode button for pitch
-    imgui.SameLine(globals.ctx)
-    -- Ensure link mode is initialized
-    if not obj.pitchLinkMode then obj.pitchLinkMode = "mirror" end
-    if globals.Icons.createLinkModeButton(globals.ctx, "pitchLink" .. objId, obj.pitchLinkMode, "Link mode: " .. obj.pitchLinkMode) then
-        obj.pitchLinkMode = cycleLinkMode(obj.pitchLinkMode)
-        -- Capture AFTER mode change
-        if globals.History then
-            globals.History.captureState("Change pitch link mode")
-        end
-    end
-    
+
     imgui.SameLine(globals.ctx)
     imgui.BeginDisabled(globals.ctx, not obj.randomizePitch)
-    imgui.PushItemWidth(globals.ctx, controlWidth)
-    local rv, newPitchMin, newPitchMax = globals.UndoWrappers.DragFloatRange2(globals.ctx, "##PitchRange",
-        obj.pitchRange.min, obj.pitchRange.max, 0.1, -48, 48, "%.1f", "%.1f")
-    if rv then
-        -- Apply linked slider logic
-        local linkedMin, linkedMax = applyLinkedSliderChange(obj, "pitch", newPitchMin, newPitchMax, obj.pitchLinkMode)
-        obj.pitchRange.min = linkedMin
-        obj.pitchRange.max = linkedMax
-        obj.needsRegeneration = true
-        -- Queue randomization update to avoid ImGui conflicts
-        if groupIndex and containerIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pitch")
-        elseif groupIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pitch")
-        end
-    end
-    imgui.PopItemWidth(globals.ctx)
-    imgui.EndDisabled(globals.ctx)
 
+    -- Use LinkedSliders component for pitch range
+    if not obj.pitchLinkMode then obj.pitchLinkMode = "mirror" end
+    globals.LinkedSliders.draw({
+        id = objId .. "_pitchRange",
+        sliders = {
+            {value = obj.pitchRange.min, min = -48, max = 48, format = "%.1f"},
+            {value = obj.pitchRange.max, min = -48, max = 48, format = "%.1f"}
+        },
+        linkMode = obj.pitchLinkMode,
+        width = controlWidth,
+        helpText = "Pitch randomization range in semitones.",
+        sliderLabels = {"Min: Lower pitch bound", "Max: Upper pitch bound"},
+        onChange = function(values)
+            obj.pitchRange.min = values[1]
+            obj.pitchRange.max = values[2]
+            obj.needsRegeneration = true
+        end,
+        onChangeComplete = function()
+            if groupIndex and containerIndex then
+                globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pitch")
+            elseif groupIndex then
+                globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pitch")
+            end
+        end,
+        onLinkModeChange = function(newMode)
+            obj.pitchLinkMode = newMode
+            if globals.History then
+                globals.History.captureState("Change pitch link mode")
+            end
+        end
+    })
+
+    imgui.EndDisabled(globals.ctx)
     imgui.SameLine(globals.ctx)
 
     -- Pitch mode toggle button (transparent button to switch between Pitch and Stretch)
@@ -937,53 +929,55 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
 
     imgui.EndGroup(globals.ctx)
 
-    -- Volume randomization (checkbox + link button + slider on same line)
+    -- Volume randomization (checkbox + LinkedSliders + label)
     imgui.BeginGroup(globals.ctx)
     local rv, newRandomizeVolume = globals.UndoWrappers.Checkbox(globals.ctx, "##RandomizeVolume", obj.randomizeVolume)
     if rv then
         obj.randomizeVolume = newRandomizeVolume
         obj.needsRegeneration = true
-        -- Queue randomization update to avoid ImGui conflicts
         if groupIndex and containerIndex then
             globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "volume")
         elseif groupIndex then
             globals.Utils.queueRandomizationUpdate(groupIndex, nil, "volume")
         end
     end
-    
-    -- Link mode button for volume
-    imgui.SameLine(globals.ctx)
-    -- Ensure link mode is initialized
-    if not obj.volumeLinkMode then obj.volumeLinkMode = "mirror" end
-    if globals.Icons.createLinkModeButton(globals.ctx, "volumeLink" .. objId, obj.volumeLinkMode, "Link mode: " .. obj.volumeLinkMode) then
-        obj.volumeLinkMode = cycleLinkMode(obj.volumeLinkMode)
-        -- Capture AFTER mode change
-        if globals.History then
-            globals.History.captureState("Change volume link mode")
-        end
-    end
-    
+
     imgui.SameLine(globals.ctx)
     imgui.BeginDisabled(globals.ctx, not obj.randomizeVolume)
-    imgui.PushItemWidth(globals.ctx, controlWidth)
-    local rv, newVolumeMin, newVolumeMax = globals.UndoWrappers.DragFloatRange2(globals.ctx, "##VolumeRange",
-        obj.volumeRange.min, obj.volumeRange.max, 0.1, -24, 24, "%.1f", "%.1f")
-    if rv then
-        -- Apply linked slider logic
-        local linkedMin, linkedMax = applyLinkedSliderChange(obj, "volume", newVolumeMin, newVolumeMax, obj.volumeLinkMode)
-        obj.volumeRange.min = linkedMin
-        obj.volumeRange.max = linkedMax
-        obj.needsRegeneration = true
-        -- Queue randomization update to avoid ImGui conflicts
-        if groupIndex and containerIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "volume")
-        elseif groupIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, nil, "volume")
+
+    -- Use LinkedSliders component for volume range
+    if not obj.volumeLinkMode then obj.volumeLinkMode = "mirror" end
+    globals.LinkedSliders.draw({
+        id = objId .. "_volumeRange",
+        sliders = {
+            {value = obj.volumeRange.min, min = -24, max = 24, format = "%.1f dB"},
+            {value = obj.volumeRange.max, min = -24, max = 24, format = "%.1f dB"}
+        },
+        linkMode = obj.volumeLinkMode,
+        width = controlWidth,
+        helpText = "Volume randomization range in decibels.",
+        sliderLabels = {"Min: Lower volume bound", "Max: Upper volume bound"},
+        onChange = function(values)
+            obj.volumeRange.min = values[1]
+            obj.volumeRange.max = values[2]
+            obj.needsRegeneration = true
+        end,
+        onChangeComplete = function()
+            if groupIndex and containerIndex then
+                globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "volume")
+            elseif groupIndex then
+                globals.Utils.queueRandomizationUpdate(groupIndex, nil, "volume")
+            end
+        end,
+        onLinkModeChange = function(newMode)
+            obj.volumeLinkMode = newMode
+            if globals.History then
+                globals.History.captureState("Change volume link mode")
+            end
         end
-    end
-    imgui.PopItemWidth(globals.ctx)
+    })
+
     imgui.EndDisabled(globals.ctx)
-    
     imgui.SameLine(globals.ctx)
     imgui.Text(globals.ctx, "Volume (dB)")
     imgui.EndGroup(globals.ctx)
@@ -999,51 +993,54 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     end
 
     if showPanControls then
-        -- Pan randomization (checkbox + link button + slider on same line)
+        -- Pan randomization (checkbox + LinkedSliders + label)
         imgui.BeginGroup(globals.ctx)
         local rv, newRandomizePan = globals.UndoWrappers.Checkbox(globals.ctx, "##RandomizePan", obj.randomizePan)
         if rv then
             obj.randomizePan = newRandomizePan
             obj.needsRegeneration = true
-            -- Queue randomization update to avoid ImGui conflicts
             if groupIndex and containerIndex then
                 globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
             elseif groupIndex then
                 globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
-            end
-        end
-
-        -- Link mode button for pan
-        imgui.SameLine(globals.ctx)
-        -- Ensure link mode is initialized
-        if not obj.panLinkMode then obj.panLinkMode = "mirror" end
-        if globals.Icons.createLinkModeButton(globals.ctx, "panLink" .. objId, obj.panLinkMode, "Link mode: " .. obj.panLinkMode) then
-            obj.panLinkMode = cycleLinkMode(obj.panLinkMode)
-            -- Capture AFTER mode change
-            if globals.History then
-                globals.History.captureState("Change pan link mode")
             end
         end
 
         imgui.SameLine(globals.ctx)
         imgui.BeginDisabled(globals.ctx, not obj.randomizePan)
-        imgui.PushItemWidth(globals.ctx, controlWidth)
-        local rv, newPanMin, newPanMax = globals.UndoWrappers.DragFloatRange2(globals.ctx, "##PanRange",
-            obj.panRange.min, obj.panRange.max, 1, -100, 100, "%.0f", "%.0f")
-        if rv then
-            -- Apply linked slider logic
-            local linkedMin, linkedMax = applyLinkedSliderChange(obj, "pan", newPanMin, newPanMax, obj.panLinkMode)
-            obj.panRange.min = linkedMin
-            obj.panRange.max = linkedMax
-            obj.needsRegeneration = true
-            -- Queue randomization update to avoid ImGui conflicts
-            if groupIndex and containerIndex then
-                globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
-            elseif groupIndex then
-                globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
+
+        -- Use LinkedSliders component for pan range
+        if not obj.panLinkMode then obj.panLinkMode = "mirror" end
+        globals.LinkedSliders.draw({
+            id = objId .. "_panRange",
+            sliders = {
+                {value = obj.panRange.min, min = -100, max = 100, format = "%.0f"},
+                {value = obj.panRange.max, min = -100, max = 100, format = "%.0f"}
+            },
+            linkMode = obj.panLinkMode,
+            width = controlWidth,
+            helpText = "Pan randomization range (-100% left to +100% right).",
+            sliderLabels = {"Min: Left bound", "Max: Right bound"},
+            onChange = function(values)
+                obj.panRange.min = values[1]
+                obj.panRange.max = values[2]
+                obj.needsRegeneration = true
+            end,
+            onChangeComplete = function()
+                if groupIndex and containerIndex then
+                    globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
+                elseif groupIndex then
+                    globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
+                end
+            end,
+            onLinkModeChange = function(newMode)
+                obj.panLinkMode = newMode
+                if globals.History then
+                    globals.History.captureState("Change pan link mode")
+                end
             end
-        end
-        imgui.PopItemWidth(globals.ctx)
+        })
+
         imgui.EndDisabled(globals.ctx)
 
         imgui.SameLine(globals.ctx)

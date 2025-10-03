@@ -13,15 +13,25 @@
         linkMode = obj.densityLinkMode,
         width = 200,
         label = "Density",
-        helpText = "Min and Max density values",
+        helpText = "Density range for item placement.",  -- Custom help (optional)
+        sliderLabels = {"Min Density", "Max Density"},   -- Slider descriptions (optional)
         onChange = function(values)
             callbacks.setNoiseThreshold(values[1])
             callbacks.setNoiseDensity(values[2])
+        end,
+        onChangeComplete = function()                    -- Called when slider released (optional)
+            triggerRegeneration()
         end,
         onLinkModeChange = function(newMode)
             obj.densityLinkMode = newMode
         end
     })
+
+    -- The help marker will automatically show:
+    -- 1. Custom helpText
+    -- 2. Slider labels with positions (left/right)
+    -- 3. Generic link mode documentation (always appended)
+    -- 4. Keyboard shortcuts (Shift/Alt)
 ]]
 
 local LinkedSliders = {}
@@ -109,8 +119,10 @@ end
 ---   - linkMode string: Current link mode ("unlink", "link", "mirror")
 ---   - width number: Total width for all sliders
 ---   - label string: Main label for the slider set
----   - helpText string: Optional help marker text
+---   - helpText string: Optional custom help text (prepended to generic link mode help)
+---   - sliderLabels table: Optional array of labels for individual sliders (e.g., {"Min", "Max"})
 ---   - onChange function(values table): Callback with new values array
+---   - onChangeComplete function(): Optional callback when slider is released
 ---   - onLinkModeChange function(newMode string): Callback when link mode changes
 --- @return boolean: true if any value changed
 function LinkedSliders.draw(config)
@@ -186,15 +198,16 @@ function LinkedSliders.draw(config)
     if anyChanged then
         local effectiveMode = linkMode
 
-        -- Keyboard overrides for temporary mode changes
+        -- Keyboard overrides for temporary mode changes (priority order: Shift > Alt > Ctrl)
         -- Shift: force unlink mode (independent adjustment)
         if imgui.IsKeyDown(globals.ctx, imgui.Mod_Shift) then
             effectiveMode = "unlink"
-        end
-
         -- Alt: force mirror mode (symmetric adjustment)
-        if imgui.IsKeyDown(globals.ctx, imgui.Mod_Alt) then
+        elseif imgui.IsKeyDown(globals.ctx, imgui.Mod_Alt) then
             effectiveMode = "mirror"
+        -- Ctrl: force link mode (maintain range)
+        elseif imgui.IsKeyDown(globals.ctx, imgui.Mod_Ctrl) then
+            effectiveMode = "link"
         end
 
         local finalValues = applyLinkLogic(
@@ -254,9 +267,43 @@ function LinkedSliders.draw(config)
         imgui.Text(globals.ctx, config.label)
     end
 
-    if config.helpText then
+    -- Build complete help text (custom + generic)
+    if config.helpText or config.sliderLabels then
         imgui.SameLine(globals.ctx)
-        globals.Utils.HelpMarker(config.helpText)
+
+        local fullHelpText = ""
+
+        -- Custom help text (specific to this instance)
+        if config.helpText then
+            fullHelpText = config.helpText
+        end
+
+        -- Add slider labels if provided
+        if config.sliderLabels then
+            if fullHelpText ~= "" then
+                fullHelpText = fullHelpText .. "\n\n"
+            end
+            for i, label in ipairs(config.sliderLabels) do
+                local sliderNum = i == 1 and "left" or (i == #config.sliderLabels and "right" or tostring(i))
+                fullHelpText = fullHelpText .. "• " .. label .. " (" .. sliderNum .. " slider)\n"
+            end
+        end
+
+        -- Generic link mode documentation (always appended)
+        if fullHelpText ~= "" then
+            fullHelpText = fullHelpText .. "\n"
+        end
+        fullHelpText = fullHelpText ..
+            "Link modes:\n" ..
+            "• Unlink: Adjust sliders independently\n" ..
+            "• Link: Maintain range width (default)\n" ..
+            "• Mirror: Move symmetrically from center\n\n" ..
+            "Keyboard shortcuts:\n" ..
+            "• Hold Shift: Temporarily unlink (independent)\n" ..
+            "• Hold Ctrl: Temporarily link (maintain range)\n" ..
+            "• Hold Alt: Temporarily mirror (symmetric)"
+
+        globals.Utils.HelpMarker(fullHelpText)
     end
 
     return anyChanged
