@@ -41,14 +41,15 @@ function Structures.createGroup(name)
         chunkDurationVariation = Constants.DEFAULTS.CHUNK_DURATION_VARIATION,
         chunkSilenceVariation = Constants.DEFAULTS.CHUNK_SILENCE_VARIATION,
         -- Noise Mode parameters
-        noiseSeed = math.random(1, 999999),
-        noiseFrequency = 1.0,
-        noiseAmplitude = 100.0,
-        noiseOctaves = 2,
-        noisePersistence = 0.5,
-        noiseLacunarity = 2.0,
-        noiseDensity = 50.0,  -- Average density percentage
-        noiseThreshold = 0.0,  -- Minimum noise value to place item
+        noiseSeed = math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX),
+        noiseFrequency = Constants.DEFAULTS.NOISE_FREQUENCY,
+        noiseAmplitude = Constants.DEFAULTS.NOISE_AMPLITUDE,
+        noiseOctaves = Constants.DEFAULTS.NOISE_OCTAVES,
+        noisePersistence = Constants.DEFAULTS.NOISE_PERSISTENCE,
+        noiseLacunarity = Constants.DEFAULTS.NOISE_LACUNARITY,
+        noiseDensity = Constants.DEFAULTS.NOISE_DENSITY,
+        noiseThreshold = Constants.DEFAULTS.NOISE_THRESHOLD,
+        densityLinkMode = "unlink", -- "unlink", "link", "mirror"
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -111,14 +112,15 @@ function Structures.createContainer(name)
         chunkDurationVariation = Constants.DEFAULTS.CHUNK_DURATION_VARIATION,
         chunkSilenceVariation = Constants.DEFAULTS.CHUNK_SILENCE_VARIATION,
         -- Noise Mode parameters
-        noiseSeed = math.random(1, 999999),
-        noiseFrequency = 1.0,
-        noiseAmplitude = 100.0,
-        noiseOctaves = 2,
-        noisePersistence = 0.5,
-        noiseLacunarity = 2.0,
-        noiseDensity = 50.0,  -- Average density percentage
-        noiseThreshold = 0.0,  -- Minimum noise value to place item
+        noiseSeed = math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX),
+        noiseFrequency = Constants.DEFAULTS.NOISE_FREQUENCY,
+        noiseAmplitude = Constants.DEFAULTS.NOISE_AMPLITUDE,
+        noiseOctaves = Constants.DEFAULTS.NOISE_OCTAVES,
+        noisePersistence = Constants.DEFAULTS.NOISE_PERSISTENCE,
+        noiseLacunarity = Constants.DEFAULTS.NOISE_LACUNARITY,
+        noiseDensity = Constants.DEFAULTS.NOISE_DENSITY,
+        noiseThreshold = Constants.DEFAULTS.NOISE_THRESHOLD,
+        densityLinkMode = "unlink", -- "unlink", "link", "mirror"
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -250,6 +252,7 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.noiseLacunarity = group.noiseLacunarity
     effectiveParams.noiseDensity = group.noiseDensity
     effectiveParams.noiseThreshold = group.noiseThreshold
+    effectiveParams.densityLinkMode = group.densityLinkMode or "unlink"
 
     -- Force disable pan randomization for multichannel containers (channelMode > 0)
     -- This ensures old presets don't apply pan in multichannel mode

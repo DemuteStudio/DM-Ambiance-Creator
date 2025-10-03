@@ -123,7 +123,7 @@ function Noise.generateCurve(startTime, endTime, sampleCount, frequency, octaves
 
         -- Use absolute time (same as getValueAtTime)
         local timeInSeconds = time - startTime
-        local noiseInput = timeInSeconds / 10.0  -- Normalize to 10-second units
+        local noiseInput = timeInSeconds / 10.0
 
         -- Get noise value at this time
         local value = Noise.perlin1D(noiseInput, frequency, octaves, persistence, lacunarity, seed)
@@ -148,11 +148,13 @@ function Noise.getValueAtTime(time, startTime, endTime, frequency, octaves, pers
     local duration = endTime - startTime
     if duration <= 0 then return 0.5 end
 
-    -- Use absolute time in seconds (not normalized)
-    -- This makes frequency independent of timeline duration
-    -- frequency = cycles per 10 seconds
+    -- Use absolute time in seconds (not normalized to timeline)
+    -- This makes frequency represent cycles per 10 seconds, independent of timeline duration
+    -- frequency = 1.0 means one complete cycle every 10 seconds
+    -- frequency = 0.1 means one cycle every 100 seconds (very slow)
+    -- frequency = 10.0 means ten cycles per 10 seconds = one cycle per second (very fast)
     local timeInSeconds = time - startTime
-    local noiseInput = timeInSeconds / 10.0  -- Normalize to 10-second units
+    local noiseInput = timeInSeconds / 10.0
 
     return Noise.perlin1D(noiseInput, frequency, octaves, persistence, lacunarity, seed)
 end

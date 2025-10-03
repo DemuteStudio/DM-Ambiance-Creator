@@ -234,7 +234,7 @@ end
 function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, autoRegenCallback)
     -- Section separator and title
     imgui.Separator(globals.ctx)
-    imgui.Text(globals.ctx, titlePrefix .. "Trigger Settings")
+    imgui.Text(globals.ctx, titlePrefix .. "Generation Settings")
 
     -- Initialize auto-regen tracking if not exists and callback provided
     if autoRegenCallback and not globals.autoRegenTracking then
@@ -479,45 +479,79 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
     -- Noise mode specific controls
     if dataObj.intervalMode == 4 then
         -- Ensure noise parameters exist (backwards compatibility with old presets)
-        dataObj.noiseSeed = dataObj.noiseSeed or math.random(1, 999999)
-        dataObj.noiseFrequency = dataObj.noiseFrequency or 1.0
-        dataObj.noiseAmplitude = dataObj.noiseAmplitude or 100.0
-        dataObj.noiseOctaves = dataObj.noiseOctaves or 2
-        dataObj.noisePersistence = dataObj.noisePersistence or 0.5
-        dataObj.noiseLacunarity = dataObj.noiseLacunarity or 2.0
-        dataObj.noiseDensity = dataObj.noiseDensity or 50.0
-        dataObj.noiseThreshold = dataObj.noiseThreshold or 0.0
+        globals.Utils.ensureNoiseDefaults(dataObj)
 
         imgui.Spacing(globals.ctx)
         imgui.Separator(globals.ctx)
         imgui.Spacing(globals.ctx)
 
-        -- Noise Density slider (main parameter)
+        -- Noise Density Range (Min Density + Max Density with link mode)
         do
-            imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
-            local densityKey = trackingKey .. "_noiseDensity"
-            local rv, newDensity = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseDensity", dataObj.noiseDensity, 1.0, 100.0, "%.1f%%")
-
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[densityKey] then
-                globals.autoRegenTracking[densityKey] = dataObj.noiseDensity
+            -- Link mode button
+            if not dataObj.densityLinkMode then dataObj.densityLinkMode = "unlink" end
+            if globals.Icons.createLinkModeButton(globals.ctx, "densityLink" .. trackingKey, dataObj.densityLinkMode, "Link mode: " .. dataObj.densityLinkMode) then
+                dataObj.densityLinkMode = cycleLinkMode(dataObj.densityLinkMode)
+                if globals.History then
+                    globals.History.captureState("Change density link mode")
+                end
             end
 
-            if rv then callbacks.setNoiseDensity(newDensity) end
+            imgui.SameLine(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth)
+
+            local densityKey = trackingKey .. "_densityRange"
+            local rv, newMinDensity, newMaxDensity = globals.UndoWrappers.DragFloatRange2(
+                globals.ctx,
+                "##DensityRange",
+                dataObj.noiseThreshold,
+                dataObj.noiseDensity,
+                0.1,
+                0.0,
+                100.0,
+                "Min: %.1f%%",
+                "Max: %.1f%%"
+            )
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[densityKey] then
+                globals.autoRegenTracking[densityKey] = {min = dataObj.noiseThreshold, max = dataObj.noiseDensity}
+            end
+
+            if rv then
+                -- Apply linked slider logic
+                local linkedMin, linkedMax = applyLinkedSliderChange(
+                    {densityRange = {min = dataObj.noiseThreshold, max = dataObj.noiseDensity}},
+                    "density",
+                    newMinDensity,
+                    newMaxDensity,
+                    dataObj.densityLinkMode
+                )
+                callbacks.setNoiseThreshold(linkedMin)
+                callbacks.setNoiseDensity(linkedMax)
+            end
 
             if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[densityKey] then
-                checkAutoRegen("noiseDensity", densityKey, globals.autoRegenTracking[densityKey], dataObj.noiseDensity)
+                local oldMin = globals.autoRegenTracking[densityKey].min
+                local oldMax = globals.autoRegenTracking[densityKey].max
+                if math.abs(oldMin - dataObj.noiseThreshold) > 0.01 or math.abs(oldMax - dataObj.noiseDensity) > 0.01 then
+                    checkAutoRegen("densityRange", densityKey, {min = oldMin, max = oldMax}, {min = dataObj.noiseThreshold, max = dataObj.noiseDensity})
+                end
                 globals.autoRegenTracking[densityKey] = nil
             end
 
             imgui.PopItemWidth(globals.ctx)
-            imgui.EndGroup(globals.ctx)
 
-            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.SameLine(globals.ctx)
             imgui.Text(globals.ctx, "Density")
             imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Average probability of item placement (0-100%)")
+            globals.Utils.HelpMarker(
+                "Density range: Min to Max values for item placement probability.\n\n" ..
+                "• Min Density: Floor below which no items are placed (creates silence zones)\n" ..
+                "• Max Density: Average/peak density of item placement\n\n" ..
+                "Link modes:\n" ..
+                "• Unlink: Adjust Min and Max independently\n" ..
+                "• Link: Maintain range width when adjusting\n" ..
+                "• Mirror: Move both values symmetrically from center"
+            )
         end
 
         -- Noise Frequency slider
@@ -526,7 +560,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.PushItemWidth(globals.ctx, controlWidth)
 
             local freqKey = trackingKey .. "_noiseFrequency"
-            local rv, newFreq = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseFrequency", dataObj.noiseFrequency, 0.1, 10.0, "%.2f")
+            local rv, newFreq = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseFrequency", dataObj.noiseFrequency, 0.01, 10.0, "%.2f")
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[freqKey] then
                 globals.autoRegenTracking[freqKey] = dataObj.noiseFrequency
@@ -545,7 +579,14 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.SameLine(globals.ctx, controlWidth + padding)
             imgui.Text(globals.ctx, "Frequency")
             imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Speed of noise variations (low = slow waves, high = rapid changes)")
+            globals.Utils.HelpMarker(
+                "Controls the speed of density variations over time. " ..
+                "Measured in cycles per 10 seconds.\n\n" ..
+                "• 0.1 = Very slow (one cycle every 100 seconds) - for long, evolving ambient textures\n" ..
+                "• 1.0 = Default (one cycle every 10 seconds) - balanced variation\n" ..
+                "• 5.0 = Fast (5 cycles per 10 seconds) - for dynamic, rapidly changing patterns\n" ..
+                "• 10.0 = Very fast (one cycle per second) - for quick, jittery effects"
+            )
         end
 
         -- Noise Amplitude slider
@@ -776,6 +817,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setNoisePersistence = function(v) obj.noisePersistence = v; obj.needsRegeneration = true end,
             setNoiseLacunarity = function(v) obj.noiseLacunarity = v; obj.needsRegeneration = true end,
             setNoiseDensity = function(v) obj.noiseDensity = v; obj.needsRegeneration = true end,
+            setNoiseThreshold = function(v) obj.noiseThreshold = v; obj.needsRegeneration = true end,
         },
         width,
         titlePrefix,
@@ -1402,6 +1444,7 @@ function UI.drawNoisePreview(dataObj, width, height)
     local noisePersistence = dataObj.noisePersistence or 0.5
     local noiseLacunarity = dataObj.noiseLacunarity or 2.0
     local noiseDensity = dataObj.noiseDensity or 50.0
+    local noiseThreshold = dataObj.noiseThreshold or 0.0
 
     local drawList = imgui.GetWindowDrawList(globals.ctx)
     local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
@@ -1443,6 +1486,7 @@ function UI.drawNoisePreview(dataObj, width, height)
 
     -- Draw the noise curve
     local prevX, prevY = nil, nil
+    local thresholdNormalized = noiseThreshold / 100.0
 
     for i, point in ipairs(curve) do
         -- Apply same formula as generation algorithm
@@ -1454,6 +1498,9 @@ function UI.drawNoisePreview(dataObj, width, height)
 
         -- Clamp to 0-1
         final = math.max(0, math.min(1, final))
+
+        -- Apply min density threshold - clamp the curve from below
+        final = math.max(thresholdNormalized, final)
 
         -- Convert to screen coordinates
         local x = cursorX + (i - 1) * (width / (sampleCount - 1))

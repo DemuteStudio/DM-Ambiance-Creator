@@ -2131,4 +2131,66 @@ function Utils.selectRandomAreaOrFullItem(itemData)
     return areaItemData
 end
 
+-- Ensure noise parameters exist with proper defaults (backwards compatibility)
+-- @param params table: Parameter table to validate and fill
+-- @return table: The same table with noise parameters ensured
+function Utils.ensureNoiseDefaults(params)
+    if not params then
+        error("Utils.ensureNoiseDefaults: params parameter is required")
+    end
+
+    params.noiseSeed = params.noiseSeed or math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX)
+    params.noiseFrequency = params.noiseFrequency or Constants.DEFAULTS.NOISE_FREQUENCY
+    params.noiseAmplitude = params.noiseAmplitude or Constants.DEFAULTS.NOISE_AMPLITUDE
+    params.noiseOctaves = params.noiseOctaves or Constants.DEFAULTS.NOISE_OCTAVES
+    params.noisePersistence = params.noisePersistence or Constants.DEFAULTS.NOISE_PERSISTENCE
+    params.noiseLacunarity = params.noiseLacunarity or Constants.DEFAULTS.NOISE_LACUNARITY
+    params.noiseDensity = params.noiseDensity or Constants.DEFAULTS.NOISE_DENSITY
+    params.noiseThreshold = params.noiseThreshold or Constants.DEFAULTS.NOISE_THRESHOLD
+    params.densityLinkMode = params.densityLinkMode or "unlink"
+
+    return params
+end
+
+-- Validate noise parameters are within acceptable ranges
+-- @param params table: Parameter table to validate
+-- @return boolean, string: true if valid, or false and error message
+function Utils.validateNoiseParams(params)
+    if not params then
+        return false, "No parameters provided"
+    end
+
+    -- Frequency must be positive
+    if params.noiseFrequency and params.noiseFrequency <= 0 then
+        return false, "Noise frequency must be greater than 0"
+    end
+
+    -- Octaves must be at least 1
+    if params.noiseOctaves and params.noiseOctaves < 1 then
+        return false, "Noise octaves must be at least 1"
+    end
+
+    -- Persistence should be between 0 and 1
+    if params.noisePersistence and (params.noisePersistence < 0 or params.noisePersistence > 1) then
+        return false, "Noise persistence must be between 0 and 1"
+    end
+
+    -- Lacunarity must be at least 1
+    if params.noiseLacunarity and params.noiseLacunarity < 1 then
+        return false, "Noise lacunarity must be at least 1"
+    end
+
+    -- Density should be between 0 and 100
+    if params.noiseDensity and (params.noiseDensity < 0 or params.noiseDensity > 100) then
+        return false, "Noise density must be between 0 and 100"
+    end
+
+    -- Amplitude should be between 0 and 100
+    if params.noiseAmplitude and (params.noiseAmplitude < 0 or params.noiseAmplitude > 100) then
+        return false, "Noise amplitude must be between 0 and 100"
+    end
+
+    return true, ""
+end
+
 return Utils

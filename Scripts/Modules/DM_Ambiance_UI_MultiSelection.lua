@@ -137,6 +137,16 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     local commonChunkSilence = nil
     local commonChunkDurationVariation = nil
     local commonChunkSilenceVariation = nil
+    -- Noise mode parameters
+    local commonNoiseSeed = nil
+    local commonNoiseFrequency = nil
+    local commonNoiseAmplitude = nil
+    local commonNoiseOctaves = nil
+    local commonNoisePersistence = nil
+    local commonNoiseLacunarity = nil
+    local commonNoiseDensity = nil
+    local commonNoiseThreshold = nil
+    local commonDensityLinkMode = nil
 
     -- Check all containers to determine common settings
     for _, c in ipairs(containers) do
@@ -223,6 +233,62 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             commonChunkSilenceVariation = container.chunkSilenceVariation or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_SILENCE_VARIATION
         elseif commonChunkSilenceVariation ~= (container.chunkSilenceVariation or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_SILENCE_VARIATION) then
             commonChunkSilenceVariation = -1 -- Mixed values
+        end
+
+        -- Noise mode parameters
+        local Constants = require("DM_Ambiance_Constants")
+        if commonNoiseSeed == nil then
+            commonNoiseSeed = container.noiseSeed or math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX)
+        elseif commonNoiseSeed ~= (container.noiseSeed or math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX)) then
+            commonNoiseSeed = -1 -- Mixed values
+        end
+
+        if commonNoiseFrequency == nil then
+            commonNoiseFrequency = container.noiseFrequency or Constants.DEFAULTS.NOISE_FREQUENCY
+        elseif math.abs(commonNoiseFrequency - (container.noiseFrequency or Constants.DEFAULTS.NOISE_FREQUENCY)) > 0.001 then
+            commonNoiseFrequency = -999 -- Mixed values
+        end
+
+        if commonNoiseAmplitude == nil then
+            commonNoiseAmplitude = container.noiseAmplitude or Constants.DEFAULTS.NOISE_AMPLITUDE
+        elseif math.abs(commonNoiseAmplitude - (container.noiseAmplitude or Constants.DEFAULTS.NOISE_AMPLITUDE)) > 0.001 then
+            commonNoiseAmplitude = -999 -- Mixed values
+        end
+
+        if commonNoiseOctaves == nil then
+            commonNoiseOctaves = container.noiseOctaves or Constants.DEFAULTS.NOISE_OCTAVES
+        elseif commonNoiseOctaves ~= (container.noiseOctaves or Constants.DEFAULTS.NOISE_OCTAVES) then
+            commonNoiseOctaves = -1 -- Mixed values
+        end
+
+        if commonNoisePersistence == nil then
+            commonNoisePersistence = container.noisePersistence or Constants.DEFAULTS.NOISE_PERSISTENCE
+        elseif math.abs(commonNoisePersistence - (container.noisePersistence or Constants.DEFAULTS.NOISE_PERSISTENCE)) > 0.001 then
+            commonNoisePersistence = -999 -- Mixed values
+        end
+
+        if commonNoiseLacunarity == nil then
+            commonNoiseLacunarity = container.noiseLacunarity or Constants.DEFAULTS.NOISE_LACUNARITY
+        elseif math.abs(commonNoiseLacunarity - (container.noiseLacunarity or Constants.DEFAULTS.NOISE_LACUNARITY)) > 0.001 then
+            commonNoiseLacunarity = -999 -- Mixed values
+        end
+
+        if commonNoiseDensity == nil then
+            commonNoiseDensity = container.noiseDensity or Constants.DEFAULTS.NOISE_DENSITY
+        elseif math.abs(commonNoiseDensity - (container.noiseDensity or Constants.DEFAULTS.NOISE_DENSITY)) > 0.001 then
+            commonNoiseDensity = -999 -- Mixed values
+        end
+
+        if commonNoiseThreshold == nil then
+            commonNoiseThreshold = container.noiseThreshold or Constants.DEFAULTS.NOISE_THRESHOLD
+        elseif math.abs(commonNoiseThreshold - (container.noiseThreshold or Constants.DEFAULTS.NOISE_THRESHOLD)) > 0.001 then
+            commonNoiseThreshold = -999 -- Mixed values
+        end
+
+        if commonDensityLinkMode == nil then
+            commonDensityLinkMode = container.densityLinkMode or "unlink"
+        elseif commonDensityLinkMode ~= (container.densityLinkMode or "unlink") then
+            commonDensityLinkMode = "mixed" -- Mixed values
         end
     end
 
@@ -323,7 +389,17 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             chunkDuration = commonChunkDuration,
             chunkSilence = commonChunkSilence,
             chunkDurationVariation = commonChunkDurationVariation,
-            chunkSilenceVariation = commonChunkSilenceVariation
+            chunkSilenceVariation = commonChunkSilenceVariation,
+            -- Noise mode parameters
+            noiseSeed = commonNoiseSeed,
+            noiseFrequency = commonNoiseFrequency,
+            noiseAmplitude = commonNoiseAmplitude,
+            noiseOctaves = commonNoiseOctaves,
+            noisePersistence = commonNoisePersistence,
+            noiseLacunarity = commonNoiseLacunarity,
+            noiseDensity = commonNoiseDensity,
+            noiseThreshold = commonNoiseThreshold,
+            densityLinkMode = commonDensityLinkMode
         }
         
         local callbacks = {
@@ -381,6 +457,63 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
                 end
                 -- Update state for UI refresh
                 commonChunkSilenceVariation = newValue
+            end,
+
+            -- Noise mode callbacks
+            setNoiseSeed = function(newValue)
+                for _, c in ipairs(containers) do
+                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseSeed = newValue
+                end
+                commonNoiseSeed = newValue
+            end,
+
+            setNoiseFrequency = function(newValue)
+                for _, c in ipairs(containers) do
+                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseFrequency = newValue
+                end
+                commonNoiseFrequency = newValue
+            end,
+
+            setNoiseAmplitude = function(newValue)
+                for _, c in ipairs(containers) do
+                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseAmplitude = newValue
+                end
+                commonNoiseAmplitude = newValue
+            end,
+
+            setNoiseOctaves = function(newValue)
+                for _, c in ipairs(containers) do
+                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseOctaves = newValue
+                end
+                commonNoiseOctaves = newValue
+            end,
+
+            setNoisePersistence = function(newValue)
+                for _, c in ipairs(containers) do
+                    globals.groups[c.groupIndex].containers[c.containerIndex].noisePersistence = newValue
+                end
+                commonNoisePersistence = newValue
+            end,
+
+            setNoiseLacunarity = function(newValue)
+                for _, c in ipairs(containers) do
+                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseLacunarity = newValue
+                end
+                commonNoiseLacunarity = newValue
+            end,
+
+            setNoiseDensity = function(newValue)
+                for _, c in ipairs(containers) do
+                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseDensity = newValue
+                end
+                commonNoiseDensity = newValue
+            end,
+
+            setNoiseThreshold = function(newValue)
+                for _, c in ipairs(containers) do
+                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseThreshold = newValue
+                end
+                commonNoiseThreshold = newValue
             end
         }
         

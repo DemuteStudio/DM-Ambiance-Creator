@@ -138,6 +138,19 @@ Constants.PITCH_MODES = {
     STRETCH = 1,                        -- Time stretch (D_PLAYRATE)
 }
 
+-- Noise Generation Algorithm Constants
+Constants.NOISE_GENERATION = {
+    SKIP_INTERVAL = 0.5,                -- Seconds to skip ahead in silent zones
+    MIN_INTERVAL_MULTIPLIER = 0.3,      -- Minimum interval as multiplier of average item length
+    MAX_INTERVAL_SECONDS = 10.0,        -- Maximum spacing when curve is near 0
+    SELECTION_TIME_OFFSET = 0.123,      -- Time offset to decorrelate item selection noise
+    SELECTION_SEED_OFFSET = 12345,      -- Seed offset for item selection noise
+    SELECTION_FREQ_MULT = 1.23,         -- Frequency multiplier for item selection
+    AREA_TIME_OFFSET = 0.456,           -- Time offset to decorrelate area selection noise
+    AREA_SEED_OFFSET = 67890,           -- Seed offset for area selection noise
+    AREA_FREQ_MULT = 0.87,              -- Frequency multiplier for area selection
+}
+
 -- Default Values
 Constants.DEFAULTS = {
     TRIGGER_RATE = 10.0,                -- Default trigger rate
@@ -155,6 +168,16 @@ Constants.DEFAULTS = {
     CHUNK_SILENCE = 5.0,                -- Default silence duration in seconds
     CHUNK_DURATION_VARIATION = 20,      -- Default chunk duration variation percentage
     CHUNK_SILENCE_VARIATION = 20,       -- Default silence duration variation percentage
+    -- Noise Mode defaults
+    NOISE_SEED_MIN = 1,                 -- Minimum seed value
+    NOISE_SEED_MAX = 999999,            -- Maximum seed value
+    NOISE_FREQUENCY = 1.0,              -- Default noise frequency
+    NOISE_AMPLITUDE = 100.0,            -- Default noise amplitude (%)
+    NOISE_OCTAVES = 2,                  -- Default number of octaves
+    NOISE_PERSISTENCE = 0.5,            -- Default persistence (amplitude decrease per octave)
+    NOISE_LACUNARITY = 2.0,             -- Default lacunarity (frequency increase per octave)
+    NOISE_DENSITY = 50.0,               -- Default average density percentage
+    NOISE_THRESHOLD = 0.0,              -- Default minimum noise value to place item
     -- Fade defaults
     FADE_IN_ENABLED = true,             -- Default fade in state
     FADE_OUT_ENABLED = true,            -- Default fade out state
