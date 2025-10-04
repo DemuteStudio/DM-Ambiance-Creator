@@ -991,7 +991,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     end
     -- Container track volume slider
     imgui.Separator(globals.ctx)
-    imgui.Text(globals.ctx, "Track Volume")
+    imgui.Text(globals.ctx, "Container Volume")
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Controls the volume of the container's track in Reaper. Affects all items in this container.")
 
@@ -1000,13 +1000,59 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         container.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
     end
 
+    -- Initialize mute/solo states if not set
+    if container.isMuted == nil then container.isMuted = false end
+    if container.isSoloed == nil then container.isSoloed = false end
+
+    -- Solo button (square, same size as mute)
+    local buttonSize = 20
+    local soloColorPushed = 0
+    if container.isSoloed then
+        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFFAA00FF) -- Yellow/orange when active
+        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFFAA00FF) -- Same color on hover (no hover effect)
+        soloColorPushed = 2
+    end
+    if imgui.Button(globals.ctx, "S##ContainerSolo_" .. containerId, buttonSize, buttonSize) then
+        container.isSoloed = not container.isSoloed
+        if container.isSoloed and container.isMuted then
+            container.isMuted = false
+            globals.Utils.setContainerTrackMute(groupIndex, containerIndex, false)
+        end
+        globals.Utils.setContainerTrackSolo(groupIndex, containerIndex, container.isSoloed)
+    end
+    if soloColorPushed > 0 then
+        imgui.PopStyleColor(globals.ctx, soloColorPushed)
+    end
+
+    -- Mute button (square, red when active)
+    imgui.SameLine(globals.ctx, 0, 4)
+    local muteColorPushed = 0
+    if container.isMuted then
+        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF) -- Red when active
+        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFF0000FF) -- Same color on hover (no hover effect)
+        muteColorPushed = 2
+    end
+    if imgui.Button(globals.ctx, "M##ContainerMute_" .. containerId, buttonSize, buttonSize) then
+        container.isMuted = not container.isMuted
+        if container.isMuted and container.isSoloed then
+            container.isSoloed = false
+            globals.Utils.setContainerTrackSolo(groupIndex, containerIndex, false)
+        end
+        globals.Utils.setContainerTrackMute(groupIndex, containerIndex, container.isMuted)
+    end
+    if muteColorPushed > 0 then
+        imgui.PopStyleColor(globals.ctx, muteColorPushed)
+    end
+
     -- Convert current dB to normalized
     local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.trackVolume)
 
-    -- Layout: slider and input field occupy full width (100%)
+    -- Layout: buttons + slider (half width) + input field
     local inputFieldWidth = 85  -- Fixed width for dB input
-    local sliderWidth = width - inputFieldWidth - 8  -- Remaining space minus spacing
+    local sliderWidth = (width - inputFieldWidth - 8) / 2  -- Half of remaining space
 
+    -- Volume slider (half width)
+    imgui.SameLine(globals.ctx, 0, 8)
     imgui.PushItemWidth(globals.ctx, sliderWidth)
     local rv, newNormalizedVolume = globals.UndoWrappers.SliderDouble(
         globals.ctx,

@@ -1210,6 +1210,118 @@ function Utils.syncGroupVolumeFromTrack(groupIndex)
     end
 end
 
+-- Set the mute state of a group's track in Reaper
+-- @param groupIndex number: Index of the group
+-- @param isMuted boolean: true to mute, false to unmute
+-- @return boolean: true if successful, false otherwise
+function Utils.setGroupTrackMute(groupIndex, isMuted)
+    if not groupIndex or groupIndex < 1 then
+        return false
+    end
+
+    local group = globals.groups[groupIndex]
+    if not group then
+        return false
+    end
+
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return false
+    end
+
+    reaper.SetMediaTrackInfo_Value(groupTrack, "B_MUTE", isMuted and 1 or 0)
+    reaper.UpdateArrange()
+    return true
+end
+
+-- Set the solo state of a group's track in Reaper
+-- @param groupIndex number: Index of the group
+-- @param isSoloed boolean: true to solo, false to unsolo
+-- @return boolean: true if successful, false otherwise
+function Utils.setGroupTrackSolo(groupIndex, isSoloed)
+    if not groupIndex or groupIndex < 1 then
+        return false
+    end
+
+    local group = globals.groups[groupIndex]
+    if not group then
+        return false
+    end
+
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return false
+    end
+
+    reaper.SetMediaTrackInfo_Value(groupTrack, "I_SOLO", isSoloed and 1 or 0)
+    reaper.UpdateArrange()
+    return true
+end
+
+-- Set the mute state of a container's track in Reaper
+-- @param groupIndex number: Index of the group
+-- @param containerIndex number: Index of the container
+-- @param isMuted boolean: true to mute, false to unmute
+-- @return boolean: true if successful, false otherwise
+function Utils.setContainerTrackMute(groupIndex, containerIndex, isMuted)
+    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 then
+        return false
+    end
+
+    local group = globals.groups[groupIndex]
+    if not group or not group.containers[containerIndex] then
+        return false
+    end
+
+    local container = group.containers[containerIndex]
+
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return false
+    end
+
+    local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
+    if not containerTrack then
+        return false
+    end
+
+    reaper.SetMediaTrackInfo_Value(containerTrack, "B_MUTE", isMuted and 1 or 0)
+    reaper.UpdateArrange()
+    return true
+end
+
+-- Set the solo state of a container's track in Reaper
+-- @param groupIndex number: Index of the group
+-- @param containerIndex number: Index of the container
+-- @param isSoloed boolean: true to solo, false to unsolo
+-- @return boolean: true if successful, false otherwise
+function Utils.setContainerTrackSolo(groupIndex, containerIndex, isSoloed)
+    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 then
+        return false
+    end
+
+    local group = globals.groups[groupIndex]
+    if not group or not group.containers[containerIndex] then
+        return false
+    end
+
+    local container = group.containers[containerIndex]
+
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return false
+    end
+
+    local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
+    if not containerTrack then
+        return false
+    end
+
+    reaper.SetMediaTrackInfo_Value(containerTrack, "I_SOLO", isSoloed and 1 or 0)
+    reaper.UpdateArrange()
+    return true
+end
+
 -- Initialize trackVolume property for all existing containers and groups that don't have it
 -- This ensures backward compatibility with existing projects
 function Utils.initializeContainerVolumes()

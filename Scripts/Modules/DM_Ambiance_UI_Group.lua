@@ -35,20 +35,66 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     end
     
     -- Group track volume slider
-    imgui.Text(globals.ctx, "Track Volume")
+    imgui.Text(globals.ctx, "Group Volume")
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Controls the volume of the group's track in Reaper. Affects all containers in this group.")
-    
-    imgui.PushItemWidth(globals.ctx, width * 0.6)
-    
+
     -- Ensure trackVolume is initialized
     if group.trackVolume == nil then
         group.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
     end
-    
+
+    -- Initialize mute/solo states if not set
+    if group.isMuted == nil then group.isMuted = false end
+    if group.isSoloed == nil then group.isSoloed = false end
+
+    -- Solo button (square, same size as mute)
+    local buttonSize = 20
+    local soloColorPushed = 0
+    if group.isSoloed then
+        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFFAA00FF) -- Yellow/orange when active
+        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFFAA00FF) -- Same color on hover (no hover effect)
+        soloColorPushed = 2
+    end
+    if imgui.Button(globals.ctx, "S##GroupSolo_" .. groupId, buttonSize, buttonSize) then
+        group.isSoloed = not group.isSoloed
+        if group.isSoloed and group.isMuted then
+            group.isMuted = false
+            globals.Utils.setGroupTrackMute(groupIndex, false)
+        end
+        globals.Utils.setGroupTrackSolo(groupIndex, group.isSoloed)
+    end
+    if soloColorPushed > 0 then
+        imgui.PopStyleColor(globals.ctx, soloColorPushed)
+    end
+
+    -- Mute button (square, red when active)
+    imgui.SameLine(globals.ctx, 0, 4)
+    local muteColorPushed = 0
+    if group.isMuted then
+        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF) -- Red when active
+        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFF0000FF) -- Same color on hover (no hover effect)
+        muteColorPushed = 2
+    end
+    if imgui.Button(globals.ctx, "M##GroupMute_" .. groupId, buttonSize, buttonSize) then
+        group.isMuted = not group.isMuted
+        if group.isMuted and group.isSoloed then
+            group.isSoloed = false
+            globals.Utils.setGroupTrackSolo(groupIndex, false)
+        end
+        globals.Utils.setGroupTrackMute(groupIndex, group.isMuted)
+    end
+    if muteColorPushed > 0 then
+        imgui.PopStyleColor(globals.ctx, muteColorPushed)
+    end
+
+    -- Volume slider (half width)
+    imgui.SameLine(globals.ctx, 0, 8)
+    imgui.PushItemWidth(globals.ctx, width * 0.3)
+
     -- Convert current dB to normalized
     local normalizedVolume = globals.Utils.dbToNormalizedRelative(group.trackVolume)
-    
+
     local rv, newNormalizedVolume = globals.UndoWrappers.SliderDouble(
         globals.ctx,
         "##GroupTrackVolume_" .. groupId,
@@ -57,15 +103,16 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         1.0,  -- Max normalized
         ""    -- No format, we'll display custom text
     )
-    if rv then 
+    if rv then
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         group.trackVolume = newVolumeDB
         -- Apply volume to track in real-time
         globals.Utils.setGroupTrackVolume(groupIndex, newVolumeDB)
     end
-    
+    imgui.PopItemWidth(globals.ctx)
+
     -- Manual dB input field
-    imgui.SameLine(globals.ctx)
+    imgui.SameLine(globals.ctx, 0, 8)
     imgui.PushItemWidth(globals.ctx, 65)
     local displayValue = group.trackVolume <= -144 and -144 or group.trackVolume
     local rv2, manualDB = globals.UndoWrappers.InputDouble(
@@ -77,7 +124,7 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     )
     if rv2 then
         -- Clamp to valid range
-        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN, 
+        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
                            math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
         group.trackVolume = manualDB
         globals.Utils.setGroupTrackVolume(groupIndex, manualDB)
