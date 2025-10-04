@@ -330,6 +330,7 @@ function LinkedSliders.drawHorizontal(config)
     local newValues = {}
     local anyChanged = false
     local anyActive = false
+    local anyWasReset = false
 
     -- Draw all sliders horizontally
     for i, slider in ipairs(config.sliders) do
@@ -337,20 +338,23 @@ function LinkedSliders.drawHorizontal(config)
             imgui.SameLine(globals.ctx)
         end
 
-        imgui.PushItemWidth(globals.ctx, sliderWidth)
-        local rv, newValue = globals.UndoWrappers.SliderDouble(
-            globals.ctx,
-            "##" .. config.id .. "_slider" .. i,
-            slider.value,
-            slider.min,
-            slider.max,
-            slider.format or "%.1f"
-        )
-        imgui.PopItemWidth(globals.ctx)
+        local defaultValue = slider.defaultValue or slider.value
+        local rv, newValue, wasReset = globals.SliderEnhanced.SliderDouble({
+            id = "##" .. config.id .. "_slider" .. i,
+            value = slider.value,
+            min = slider.min,
+            max = slider.max,
+            defaultValue = defaultValue,
+            format = slider.format or "%.1f",
+            width = sliderWidth
+        })
 
         if rv then
             changedIndex = i
             anyChanged = true
+            if wasReset then
+                anyWasReset = true
+            end
         end
 
         if imgui.IsItemActive(globals.ctx) then
@@ -362,8 +366,15 @@ function LinkedSliders.drawHorizontal(config)
 
     -- Apply link mode logic if any slider changed
     if anyChanged then
-        local finalValues = processSliderChanges(config, changedIndex, newValues)
-        config.onChange(finalValues)
+        -- Check if this was a reset (right-click) - if so, bypass link mode
+        if anyWasReset then
+            -- Reset: just apply the new value directly without link mode logic
+            config.onChange(newValues)
+        else
+            -- Normal change: apply link mode logic
+            local finalValues = processSliderChanges(config, changedIndex, newValues)
+            config.onChange(finalValues)
+        end
     end
 
     -- Track state for auto-regen on release
@@ -417,6 +428,7 @@ function LinkedSliders.drawVertical(config)
     local newValues = {}
     local anyChanged = false
     local anyActive = false
+    local anyWasReset = false
 
     -- Draw sliders vertically (each on its own line)
     for i, slider in ipairs(config.sliders) do
@@ -433,20 +445,23 @@ function LinkedSliders.drawVertical(config)
         end
 
         -- Render slider
-        imgui.PushItemWidth(globals.ctx, sliderWidth)
-        local rv, newValue = globals.UndoWrappers.SliderDouble(
-            globals.ctx,
-            "##" .. config.id .. "_slider" .. i,
-            slider.value,
-            slider.min,
-            slider.max,
-            slider.format or "%.1f"
-        )
-        imgui.PopItemWidth(globals.ctx)
+        local defaultValue = slider.defaultValue or slider.value
+        local rv, newValue, wasReset = globals.SliderEnhanced.SliderDouble({
+            id = "##" .. config.id .. "_slider" .. i,
+            value = slider.value,
+            min = slider.min,
+            max = slider.max,
+            defaultValue = defaultValue,
+            format = slider.format or "%.1f",
+            width = sliderWidth
+        })
 
         if rv then
             changedIndex = i
             anyChanged = true
+            if wasReset then
+                anyWasReset = true
+            end
         end
 
         if imgui.IsItemActive(globals.ctx) then
@@ -475,8 +490,15 @@ function LinkedSliders.drawVertical(config)
 
     -- Apply link mode logic if any slider changed
     if anyChanged then
-        local finalValues = processSliderChanges(config, changedIndex, newValues)
-        config.onChange(finalValues)
+        -- Check if this was a reset (right-click) - if so, bypass link mode
+        if anyWasReset then
+            -- Reset: just apply the new value directly without link mode logic
+            config.onChange(newValues)
+        else
+            -- Normal change: apply link mode logic
+            local finalValues = processSliderChanges(config, changedIndex, newValues)
+            config.onChange(finalValues)
+        end
     end
 
     -- Track state for auto-regen on release

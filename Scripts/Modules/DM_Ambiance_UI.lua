@@ -225,6 +225,7 @@ local function drawSliderWithVariation(params)
     local callbacks = params.callbacks
     local autoRegenCallback = params.autoRegenCallback
     local checkAutoRegen = params.checkAutoRegen
+    local defaultValue = params.defaultValue or sliderValue  -- Default to current value if not specified
 
     -- Variation params (optional)
     local variationEnabled = params.variationEnabled ~= false  -- default true
@@ -232,6 +233,7 @@ local function drawSliderWithVariation(params)
     local variationDirection = params.variationDirection
     local variationLabel = params.variationLabel or "Var"
     local variationCallbacks = params.variationCallbacks or {}
+    local defaultVariation = params.defaultVariation or 0  -- Variation default is typically 0
 
     local sliderWidth = params.sliderWidth or -1  -- -1 means fill available space
 
@@ -245,20 +247,32 @@ local function drawSliderWithVariation(params)
         imgui.PushItemWidth(globals.ctx, -1)  -- Fill column width
     end
 
-    local rv, newValue = globals.UndoWrappers.SliderDouble(globals.ctx, sliderId, sliderValue, sliderMin, sliderMax, sliderFormat)
+    local rv, newValue, wasReset = globals.SliderEnhanced.SliderDouble({
+        id = sliderId,
+        value = sliderValue,
+        min = sliderMin,
+        max = sliderMax,
+        defaultValue = defaultValue,
+        format = sliderFormat
+    })
 
-    -- Auto-regen tracking
-    if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[trackingKey] then
-        globals.autoRegenTracking[trackingKey] = sliderValue
+    -- Auto-regen tracking (skip if this was a reset)
+    if not wasReset then
+        if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[trackingKey] then
+            globals.autoRegenTracking[trackingKey] = sliderValue
+        end
     end
 
     if rv and callbacks.setValue then callbacks.setValue(newValue) end
 
-    if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[trackingKey] then
-        if checkAutoRegen then
-            checkAutoRegen(trackingKey, globals.autoRegenTracking[trackingKey], sliderValue)
+    -- Only check auto-regen if NOT a reset
+    if not wasReset then
+        if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[trackingKey] then
+            if checkAutoRegen then
+                checkAutoRegen(trackingKey, globals.autoRegenTracking[trackingKey], sliderValue)
+            end
+            globals.autoRegenTracking[trackingKey] = nil
         end
-        globals.autoRegenTracking[trackingKey] = nil
     end
 
     imgui.PopItemWidth(globals.ctx)
@@ -290,19 +304,33 @@ local function drawSliderWithVariation(params)
         -- Variation input
         imgui.PushItemWidth(globals.ctx, 48)
         local varKey = trackingKey .. "_var"
-        local rvVar, newVar = globals.UndoWrappers.DragInt(globals.ctx, "##" .. varKey, variationValue, 0.5, 0, 100, "%d%%")
+        local rvVar, newVar, wasResetVar = globals.SliderEnhanced.DragInt({
+            id = "##" .. varKey,
+            value = variationValue,
+            speed = 0.5,
+            min = 0,
+            max = 100,
+            defaultValue = defaultVariation,
+            format = "%d%%"
+        })
 
-        if imgui.IsItemActive(globals.ctx) and autoRegenCallback and not globals.autoRegenTracking[varKey] then
-            globals.autoRegenTracking[varKey] = variationValue
+        -- Auto-regen tracking (skip if this was a reset)
+        if not wasResetVar then
+            if imgui.IsItemActive(globals.ctx) and autoRegenCallback and not globals.autoRegenTracking[varKey] then
+                globals.autoRegenTracking[varKey] = variationValue
+            end
         end
 
         if rvVar and variationCallbacks.setValue then variationCallbacks.setValue(newVar) end
 
-        if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and autoRegenCallback and globals.autoRegenTracking[varKey] then
-            if checkAutoRegen then
-                checkAutoRegen(varKey, varKey, globals.autoRegenTracking[varKey], variationValue)
+        -- Only check auto-regen if NOT a reset
+        if not wasResetVar then
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and autoRegenCallback and globals.autoRegenTracking[varKey] then
+                if checkAutoRegen then
+                    checkAutoRegen(varKey, varKey, globals.autoRegenTracking[varKey], variationValue)
+                end
+                globals.autoRegenTracking[varKey] = nil
             end
-            globals.autoRegenTracking[varKey] = nil
         end
 
         imgui.PopItemWidth(globals.ctx)
@@ -531,22 +559,25 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             -- Calculate individual slider width
             local sliderSpacing = 4
             local sliderWidth = (sliderTotalWidth - sliderSpacing) / 2
+            local anyWasReset = false
 
             -- Min Density slider
-            imgui.PushItemWidth(globals.ctx, sliderWidth)
-            local rv1, newThreshold = globals.UndoWrappers.SliderDouble(
-                globals.ctx,
-                "##" .. trackingKey .. "_density_slider1",
-                dataObj.noiseThreshold,
-                0.0,
-                100.0,
-                "%.1f%%"
-            )
-            imgui.PopItemWidth(globals.ctx)
+            local rv1, newThreshold, wasReset1 = globals.SliderEnhanced.SliderDouble({
+                id = "##" .. trackingKey .. "_density_slider1",
+                value = dataObj.noiseThreshold,
+                min = 0.0,
+                max = 100.0,
+                defaultValue = globals.Constants.DEFAULTS.NOISE_THRESHOLD,
+                format = "%.1f%%",
+                width = sliderWidth
+            })
 
             if rv1 then
                 changedIndex = 1
                 anyChanged = true
+                if wasReset1 then
+                    anyWasReset = true
+                end
             end
             if imgui.IsItemActive(globals.ctx) then
                 anyActive = true
@@ -556,20 +587,22 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.SameLine(globals.ctx)
 
             -- Max Density slider
-            imgui.PushItemWidth(globals.ctx, sliderWidth)
-            local rv2, newDensity = globals.UndoWrappers.SliderDouble(
-                globals.ctx,
-                "##" .. trackingKey .. "_density_slider2",
-                dataObj.noiseDensity,
-                0.0,
-                100.0,
-                "%.1f%%"
-            )
-            imgui.PopItemWidth(globals.ctx)
+            local rv2, newDensity, wasReset2 = globals.SliderEnhanced.SliderDouble({
+                id = "##" .. trackingKey .. "_density_slider2",
+                value = dataObj.noiseDensity,
+                min = 0.0,
+                max = 100.0,
+                defaultValue = globals.Constants.DEFAULTS.NOISE_DENSITY,
+                format = "%.1f%%",
+                width = sliderWidth
+            })
 
             if rv2 then
                 changedIndex = 2
                 anyChanged = true
+                if wasReset2 then
+                    anyWasReset = true
+                end
             end
             if imgui.IsItemActive(globals.ctx) then
                 anyActive = true
@@ -578,25 +611,33 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
             -- Apply link mode logic if any slider changed
             if anyChanged then
-                local effectiveMode = globals.LinkedSliders.checkKeyboardOverrides(dataObj.densityLinkMode)
-                local sliderConfigs = {
-                    {value = dataObj.noiseThreshold, min = 0.0, max = 100.0},
-                    {value = dataObj.noiseDensity, min = 0.0, max = 100.0}
-                }
-                local finalValues = globals.LinkedSliders.applyLinkModeLogic(
-                    sliderConfigs,
-                    newValues,
-                    changedIndex,
-                    effectiveMode
-                )
+                -- Check if this was a reset (right-click) - if so, bypass link mode
+                if anyWasReset then
+                    -- Reset: just apply the new value directly without link mode logic
+                    callbacks.setNoiseThreshold(newValues[1])
+                    callbacks.setNoiseDensity(newValues[2])
+                else
+                    -- Normal change: apply link mode logic
+                    local effectiveMode = globals.LinkedSliders.checkKeyboardOverrides(dataObj.densityLinkMode)
+                    local sliderConfigs = {
+                        {value = dataObj.noiseThreshold, min = 0.0, max = 100.0},
+                        {value = dataObj.noiseDensity, min = 0.0, max = 100.0}
+                    }
+                    local finalValues = globals.LinkedSliders.applyLinkModeLogic(
+                        sliderConfigs,
+                        newValues,
+                        changedIndex,
+                        effectiveMode
+                    )
 
-                -- Clamp values
-                for i = 1, 2 do
-                    finalValues[i] = math.max(0.0, math.min(100.0, finalValues[i]))
+                    -- Clamp values
+                    for i = 1, 2 do
+                        finalValues[i] = math.max(0.0, math.min(100.0, finalValues[i]))
+                    end
+
+                    callbacks.setNoiseThreshold(finalValues[1])
+                    callbacks.setNoiseDensity(finalValues[2])
                 end
-
-                callbacks.setNoiseThreshold(finalValues[1])
-                callbacks.setNoiseDensity(finalValues[2])
             end
 
             -- Track state for auto-regen on release
@@ -642,10 +683,16 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Frequency slider
         do
             imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
             local freqKey = trackingKey .. "_noiseFrequency"
-            local rv, newFreq = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseFrequency", dataObj.noiseFrequency, 0.01, 10.0, "%.2f")
+            local rv, newFreq = globals.SliderEnhanced.SliderDouble({
+                id = "##NoiseFrequency",
+                value = dataObj.noiseFrequency,
+                min = 0.01,
+                max = 10.0,
+                defaultValue = globals.Constants.DEFAULTS.NOISE_FREQUENCY,
+                format = "%.2f",
+                width = controlWidth
+            })
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[freqKey] then
                 globals.autoRegenTracking[freqKey] = dataObj.noiseFrequency
@@ -658,7 +705,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 globals.autoRegenTracking[freqKey] = nil
             end
 
-            imgui.PopItemWidth(globals.ctx)
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
@@ -677,10 +723,16 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Amplitude slider
         do
             imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
             local ampKey = trackingKey .. "_noiseAmplitude"
-            local rv, newAmp = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseAmplitude", dataObj.noiseAmplitude, 0.0, 100.0, "%.1f%%")
+            local rv, newAmp = globals.SliderEnhanced.SliderDouble({
+                id = "##NoiseAmplitude",
+                value = dataObj.noiseAmplitude,
+                min = 0.0,
+                max = 100.0,
+                defaultValue = globals.Constants.DEFAULTS.NOISE_AMPLITUDE,
+                format = "%.1f%%",
+                width = controlWidth
+            })
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[ampKey] then
                 globals.autoRegenTracking[ampKey] = dataObj.noiseAmplitude
@@ -693,7 +745,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 globals.autoRegenTracking[ampKey] = nil
             end
 
-            imgui.PopItemWidth(globals.ctx)
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
@@ -705,10 +756,16 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Octaves slider
         do
             imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
             local octKey = trackingKey .. "_noiseOctaves"
-            local rv, newOct = globals.UndoWrappers.SliderInt(globals.ctx, "##NoiseOctaves", dataObj.noiseOctaves, 1, 6, "%d")
+            local rv, newOct = globals.SliderEnhanced.SliderInt({
+                id = "##NoiseOctaves",
+                value = dataObj.noiseOctaves,
+                min = 1,
+                max = 6,
+                defaultValue = globals.Constants.DEFAULTS.NOISE_OCTAVES,
+                format = "%d",
+                width = controlWidth
+            })
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[octKey] then
                 globals.autoRegenTracking[octKey] = dataObj.noiseOctaves
@@ -721,7 +778,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 globals.autoRegenTracking[octKey] = nil
             end
 
-            imgui.PopItemWidth(globals.ctx)
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
@@ -733,10 +789,16 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Persistence slider
         do
             imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
             local persKey = trackingKey .. "_noisePersistence"
-            local rv, newPers = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoisePersistence", dataObj.noisePersistence, 0.1, 1.0, "%.2f")
+            local rv, newPers = globals.SliderEnhanced.SliderDouble({
+                id = "##NoisePersistence",
+                value = dataObj.noisePersistence,
+                min = 0.1,
+                max = 1.0,
+                defaultValue = globals.Constants.DEFAULTS.NOISE_PERSISTENCE,
+                format = "%.2f",
+                width = controlWidth
+            })
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[persKey] then
                 globals.autoRegenTracking[persKey] = dataObj.noisePersistence
@@ -749,7 +811,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 globals.autoRegenTracking[persKey] = nil
             end
 
-            imgui.PopItemWidth(globals.ctx)
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
@@ -761,10 +822,16 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Lacunarity slider
         do
             imgui.BeginGroup(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, controlWidth)
-
             local lacKey = trackingKey .. "_noiseLacunarity"
-            local rv, newLac = globals.UndoWrappers.SliderDouble(globals.ctx, "##NoiseLacunarity", dataObj.noiseLacunarity, 1.5, 4.0, "%.2f")
+            local rv, newLac = globals.SliderEnhanced.SliderDouble({
+                id = "##NoiseLacunarity",
+                value = dataObj.noiseLacunarity,
+                min = 1.5,
+                max = 4.0,
+                defaultValue = globals.Constants.DEFAULTS.NOISE_LACUNARITY,
+                format = "%.2f",
+                width = controlWidth
+            })
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[lacKey] then
                 globals.autoRegenTracking[lacKey] = dataObj.noiseLacunarity
@@ -777,7 +844,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 globals.autoRegenTracking[lacKey] = nil
             end
 
-            imgui.PopItemWidth(globals.ctx)
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
@@ -1017,8 +1083,8 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     globals.LinkedSliders.draw({
         id = objId .. "_pitchRange",
         sliders = {
-            {value = obj.pitchRange.min, min = -48, max = 48, format = "%.1f"},
-            {value = obj.pitchRange.max, min = -48, max = 48, format = "%.1f"}
+            {value = obj.pitchRange.min, min = -48, max = 48, defaultValue = globals.Constants.DEFAULTS.PITCH_RANGE_MIN, format = "%.1f"},
+            {value = obj.pitchRange.max, min = -48, max = 48, defaultValue = globals.Constants.DEFAULTS.PITCH_RANGE_MAX, format = "%.1f"}
         },
         linkMode = obj.pitchLinkMode,
         width = controlWidth,
@@ -1145,8 +1211,8 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     globals.LinkedSliders.draw({
         id = objId .. "_volumeRange",
         sliders = {
-            {value = obj.volumeRange.min, min = -24, max = 24, format = "%.1f dB"},
-            {value = obj.volumeRange.max, min = -24, max = 24, format = "%.1f dB"}
+            {value = obj.volumeRange.min, min = -24, max = 24, defaultValue = globals.Constants.DEFAULTS.VOLUME_RANGE_MIN, format = "%.1f dB"},
+            {value = obj.volumeRange.max, min = -24, max = 24, defaultValue = globals.Constants.DEFAULTS.VOLUME_RANGE_MAX, format = "%.1f dB"}
         },
         linkMode = obj.volumeLinkMode,
         width = controlWidth,
@@ -1209,8 +1275,8 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
         globals.LinkedSliders.draw({
             id = objId .. "_panRange",
             sliders = {
-                {value = obj.panRange.min, min = -100, max = 100, format = "%.0f"},
-                {value = obj.panRange.max, min = -100, max = 100, format = "%.0f"}
+                {value = obj.panRange.min, min = -100, max = 100, defaultValue = globals.Constants.DEFAULTS.PAN_RANGE_MIN, format = "%.0f"},
+                {value = obj.panRange.max, min = -100, max = 100, defaultValue = globals.Constants.DEFAULTS.PAN_RANGE_MAX, format = "%.0f"}
             },
             linkMode = obj.panLinkMode,
             width = controlWidth,
@@ -1352,11 +1418,18 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
 
         -- Duration slider
         imgui.SameLine(globals.ctx)
-        imgui.PushItemWidth(globals.ctx, durationSliderWidth)
         local maxVal = usePercentage and 100 or 10
         local format = usePercentage and "%.0f%%" or "%.2f"
-        local rv, newDuration = globals.UndoWrappers.SliderDouble(globals.ctx, "##Duration" .. suffix,
-            duration or 0.1, 0, maxVal, format)
+        local defaultDuration = isIn and globals.Constants.DEFAULTS.FADE_IN_DURATION or globals.Constants.DEFAULTS.FADE_OUT_DURATION
+        local rv, newDuration = globals.SliderEnhanced.SliderDouble({
+            id = "##Duration" .. suffix,
+            value = duration or 0.1,
+            min = 0,
+            max = maxVal,
+            defaultValue = defaultDuration,
+            format = format,
+            width = durationSliderWidth
+        })
         if rv then
             -- Apply link mode logic using LinkedSliders logic functions
             local effectiveMode = globals.LinkedSliders.checkKeyboardOverrides(obj.fadeLinkMode or "link")
@@ -1424,9 +1497,16 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
 
             -- Curve slider
             imgui.SameLine(globals.ctx)
-            imgui.PushItemWidth(globals.ctx, curveSliderWidth)
-            local rv, newCurve = globals.UndoWrappers.SliderDouble(globals.ctx, "##Curve" .. suffix,
-                curve or 0.0, -1.0, 1.0, "%.1f")
+            local defaultCurve = isIn and globals.Constants.DEFAULTS.FADE_IN_CURVE or globals.Constants.DEFAULTS.FADE_OUT_CURVE
+            local rv, newCurve = globals.SliderEnhanced.SliderDouble({
+                id = "##Curve" .. suffix,
+                value = curve or 0.0,
+                min = -1.0,
+                max = 1.0,
+                defaultValue = defaultCurve,
+                format = "%.1f",
+                width = curveSliderWidth
+            })
             if rv then
                 if isIn then obj.fadeInCurve = newCurve
                 else obj.fadeOutCurve = newCurve end
@@ -1438,7 +1518,6 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
                     globals.Utils.queueFadeUpdate(groupIndex, nil, modifiedFade)
                 end
             end
-            imgui.PopItemWidth(globals.ctx)
         end
         
         imgui.EndDisabled(globals.ctx)

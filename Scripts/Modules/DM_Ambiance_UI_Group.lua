@@ -90,26 +90,26 @@ function UI_Group.displayGroupSettings(groupIndex, width)
 
     -- Volume slider (half width)
     imgui.SameLine(globals.ctx, 0, 8)
-    imgui.PushItemWidth(globals.ctx, width * 0.3)
 
     -- Convert current dB to normalized
     local normalizedVolume = globals.Utils.dbToNormalizedRelative(group.trackVolume)
+    local defaultNormalizedVolume = globals.Utils.dbToNormalizedRelative(globals.Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT)
 
-    local rv, newNormalizedVolume = globals.UndoWrappers.SliderDouble(
-        globals.ctx,
-        "##GroupTrackVolume_" .. groupId,
-        normalizedVolume,
-        0.0,  -- Min normalized
-        1.0,  -- Max normalized
-        ""    -- No format, we'll display custom text
-    )
+    local rv, newNormalizedVolume = globals.SliderEnhanced.SliderDouble({
+        id = "##GroupTrackVolume_" .. groupId,
+        value = normalizedVolume,
+        min = 0.0,
+        max = 1.0,
+        defaultValue = defaultNormalizedVolume,
+        format = "",
+        width = width * 0.3
+    })
     if rv then
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         group.trackVolume = newVolumeDB
         -- Apply volume to track in real-time
         globals.Utils.setGroupTrackVolume(groupIndex, newVolumeDB)
     end
-    imgui.PopItemWidth(globals.ctx)
 
     -- Manual dB input field
     imgui.SameLine(globals.ctx, 0, 8)

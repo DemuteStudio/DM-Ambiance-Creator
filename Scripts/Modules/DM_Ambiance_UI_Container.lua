@@ -481,27 +481,49 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
             if selectedItem.areaCreationMode == 1 then -- Auto Detect mode
                 -- First line: Thresholds and Min Length
-                imgui.PushItemWidth(globals.ctx, 80)
-                local openChanged, newOpenThreshold = globals.UndoWrappers.SliderDouble(globals.ctx, "Open##" .. containerId, selectedItem.gateOpenThreshold, -60, 0, "%.1f dB")
+                local openChanged, newOpenThreshold = globals.SliderEnhanced.SliderDouble({
+                    id = "Open##" .. containerId,
+                    value = selectedItem.gateOpenThreshold,
+                    min = -60,
+                    max = 0,
+                    defaultValue = -40.0,  -- Typical gate open threshold
+                    format = "%.1f dB",
+                    width = 80
+                })
                 if openChanged then
                     selectedItem.gateOpenThreshold = newOpenThreshold
                     itemChanged = true
                 end
 
                 imgui.SameLine(globals.ctx)
-                local closeChanged, newCloseThreshold = globals.UndoWrappers.SliderDouble(globals.ctx, "Close##" .. containerId, selectedItem.gateCloseThreshold, -60, 0, "%.1f dB")
+                local closeChanged, newCloseThreshold = globals.SliderEnhanced.SliderDouble({
+                    id = "Close##" .. containerId,
+                    value = selectedItem.gateCloseThreshold,
+                    min = -60,
+                    max = 0,
+                    defaultValue = -50.0,  -- Typical gate close threshold
+                    format = "%.1f dB",
+                    width = 80
+                })
                 if closeChanged then
                     selectedItem.gateCloseThreshold = newCloseThreshold
                     itemChanged = true
                 end
 
                 imgui.SameLine(globals.ctx)
-                local minLenChanged, newMinLength = globals.UndoWrappers.SliderDouble(globals.ctx, "Min Length##" .. containerId, selectedItem.gateMinLength, 0, 5000, "%.0f ms")
+                local minLenChanged, newMinLength = globals.SliderEnhanced.SliderDouble({
+                    id = "Min Length##" .. containerId,
+                    value = selectedItem.gateMinLength,
+                    min = 0,
+                    max = 5000,
+                    defaultValue = 100.0,  -- Typical minimum gate length
+                    format = "%.0f ms",
+                    width = 80
+                })
                 if minLenChanged then
                     selectedItem.gateMinLength = newMinLength
                     itemChanged = true
                 end
-                imgui.PopItemWidth(globals.ctx)
 
                 -- Second line: Offsets
                 imgui.Text(globals.ctx, "Offset:")
@@ -882,22 +904,21 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                 -- Volume control on same line as stop button
                 imgui.SameLine(globals.ctx)
-                imgui.PushItemWidth(globals.ctx, 100)
-                local rv, newVolume = globals.UndoWrappers.SliderDouble(
-                    globals.ctx,
-                    "##PreviewVolume_" .. containerId,
-                    globals.audioPreview.volume,
-                    0.0,
-                    1.0,
-                    "Vol: %.2f"
-                )
+                local rv, newVolume = globals.SliderEnhanced.SliderDouble({
+                    id = "##PreviewVolume_" .. containerId,
+                    value = globals.audioPreview.volume,
+                    min = 0.0,
+                    max = 1.0,
+                    defaultValue = 0.7,
+                    format = "Vol: %.2f",
+                    width = 100
+                })
                 if rv then
                     globals.audioPreview.volume = newVolume
                     if globals.Waveform and globals.Waveform.setPreviewVolume then
                         globals.Waveform.setPreviewVolume(newVolume)
                     end
                 end
-                imgui.PopItemWidth(globals.ctx)
 
                 -- Show playback position
                 if waveformData then
@@ -932,22 +953,21 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                     -- Volume control on same line as play button
                     imgui.SameLine(globals.ctx)
-                    imgui.PushItemWidth(globals.ctx, 100)
-                    local rv, newVolume = globals.UndoWrappers.SliderDouble(
-                        globals.ctx,
-                        "##PreviewVolume_" .. containerId,
-                        globals.audioPreview.volume,
-                        0.0,
-                        1.0,
-                        "Vol: %.2f"
-                    )
+                    local rv, newVolume = globals.SliderEnhanced.SliderDouble({
+                        id = "##PreviewVolume_" .. containerId,
+                        value = globals.audioPreview.volume,
+                        min = 0.0,
+                        max = 1.0,
+                        defaultValue = 0.7,
+                        format = "Vol: %.2f",
+                        width = 100
+                    })
                     if rv then
                         globals.audioPreview.volume = newVolume
                         if globals.Waveform and globals.Waveform.setPreviewVolume then
                             globals.Waveform.setPreviewVolume(newVolume)
                         end
                     end
-                    imgui.PopItemWidth(globals.ctx)
                 end
             end
 
@@ -1053,22 +1073,22 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
     -- Volume slider (half width)
     imgui.SameLine(globals.ctx, 0, 8)
-    imgui.PushItemWidth(globals.ctx, sliderWidth)
-    local rv, newNormalizedVolume = globals.UndoWrappers.SliderDouble(
-        globals.ctx,
-        "##TrackVolume_" .. containerId,
-        normalizedVolume,
-        0.0,  -- Min normalized
-        1.0,  -- Max normalized
-        ""    -- No format
-    )
+    local defaultNormalizedVolume = globals.Utils.dbToNormalizedRelative(globals.Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT)
+    local rv, newNormalizedVolume = globals.SliderEnhanced.SliderDouble({
+        id = "##TrackVolume_" .. containerId,
+        value = normalizedVolume,
+        min = 0.0,
+        max = 1.0,
+        defaultValue = defaultNormalizedVolume,
+        format = "",
+        width = sliderWidth
+    })
     if rv then
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         container.trackVolume = newVolumeDB
         -- Apply volume to track in real-time (no regeneration needed)
         globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
     end
-    imgui.PopItemWidth(globals.ctx)
 
     -- Manual dB input field with remaining space
     imgui.SameLine(globals.ctx, 0, 8)
@@ -1460,22 +1480,22 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.channelVolumes[i])
 
             -- Volume control with optimized width
-            imgui.PushItemWidth(globals.ctx, sliderWidth)
-            local rv, newNormalizedVolume = globals.UndoWrappers.SliderDouble(
-                globals.ctx,
-                "##Vol_" .. i,
-                normalizedVolume,
-                0.0,  -- Min normalized
-                1.0,  -- Max normalized
-                ""    -- No format
-            )
+            local defaultNormalizedVol = globals.Utils.dbToNormalizedRelative(globals.Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT)
+            local rv, newNormalizedVolume = globals.SliderEnhanced.SliderDouble({
+                id = "##Vol_" .. i,
+                value = normalizedVolume,
+                min = 0.0,
+                max = 1.0,
+                defaultValue = defaultNormalizedVol,
+                format = "",
+                width = sliderWidth
+            })
             if rv then
                 local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
                 container.channelVolumes[i] = newVolumeDB
                 -- Apply volume to channel track in real-time
                 globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, newVolumeDB)
             end
-            imgui.PopItemWidth(globals.ctx)
 
             -- Manual dB input field with consistent spacing
             imgui.SameLine(globals.ctx, 0, 8)

@@ -536,9 +536,15 @@ function Settings.showAppearanceSettings()
     imgui.TextColored(ctx, 0xFFAA00FF, "UI Appearance Settings")
     imgui.Separator(ctx)
     -- UI Rounding slider with immediate UI update
-    imgui.PushItemWidth(ctx, 200)
-    local rv, newRounding = globals.UndoWrappers.SliderDouble(ctx, "UI Rounding", tempSettings.uiRounding, 0.0, 12.0, "%.1f")
-    imgui.PopItemWidth(ctx)
+    local rv, newRounding = globals.SliderEnhanced.SliderDouble({
+        id = "UI Rounding",
+        value = tempSettings.uiRounding,
+        min = 0.0,
+        max = 12.0,
+        defaultValue = 4.0,  -- Reasonable default for UI rounding
+        format = "%.1f",
+        width = 200
+    })
     if rv and newRounding ~= tempSettings.uiRounding then
         tempSettings.uiRounding = newRounding
         globals.settings.uiRounding = newRounding -- Immediate update for UI
@@ -546,9 +552,15 @@ function Settings.showAppearanceSettings()
     imgui.SameLine(ctx)
     globals.Utils.HelpMarker("Controls the roundness of UI elements like buttons, frames, and sliders. Higher values create more rounded corners.")
     -- UI Item Spacing with immediate UI update
-    imgui.PushItemWidth(ctx, 200)
-    local rv, newSpacing = globals.UndoWrappers.SliderInt(ctx, "UI Spacing", tempSettings.itemSpacing, 0, 20, "%d")
-    imgui.PopItemWidth(ctx)
+    local rv, newSpacing = globals.SliderEnhanced.SliderInt({
+        id = "UI Spacing",
+        value = tempSettings.itemSpacing,
+        min = 0,
+        max = 20,
+        defaultValue = 4,  -- Reasonable default for item spacing
+        format = "%d",
+        width = 200
+    })
     if rv and newSpacing ~= tempSettings.itemSpacing then
         tempSettings.itemSpacing = newSpacing
         globals.settings.itemSpacing = newSpacing -- Immediate update for UI
@@ -572,9 +584,15 @@ function Settings.showCrossfadeSettings()
     imgui.TextColored(ctx, 0xFFAA00FF, "Crossfade Settings")
     imgui.Separator(ctx)
     -- Crossfade margin/length setting with immediate UI update
-    imgui.PushItemWidth(ctx, 200)
-    local rv, newMargin = globals.UndoWrappers.SliderDouble(ctx, "Crossfade Length (seconds)", tempSettings.crossfadeMargin, 0.05, 2.0, "%.3f")
-    imgui.PopItemWidth(ctx)
+    local rv, newMargin = globals.SliderEnhanced.SliderDouble({
+        id = "Crossfade Length (seconds)",
+        value = tempSettings.crossfadeMargin,
+        min = 0.05,
+        max = 2.0,
+        defaultValue = globals.Constants.AUDIO.DEFAULT_CROSSFADE_MARGIN,
+        format = "%.3f",
+        width = 200
+    })
     if rv and newMargin ~= tempSettings.crossfadeMargin then
         tempSettings.crossfadeMargin = newMargin
         globals.settings.crossfadeMargin = newMargin -- Immediate update for UI

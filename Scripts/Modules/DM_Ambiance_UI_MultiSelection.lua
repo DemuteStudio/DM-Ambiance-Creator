@@ -349,9 +349,15 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             showMixedValues()
             
             -- Add a slider to set all values to the same value
-            imgui.PushItemWidth(globals.ctx, width * 0.5)
-            local rv, newTriggerRate = globals.UndoWrappers.SliderDouble(globals.ctx, "Set all to##TriggerRate",
-                                                        0, triggerRateMin, triggerRateMax, "%.1f")
+            local rv, newTriggerRate = globals.SliderEnhanced.SliderDouble({
+                id = "Set all to##TriggerRate",
+                value = 0,
+                min = triggerRateMin,
+                max = triggerRateMax,
+                defaultValue = globals.Constants.DEFAULTS.TRIGGER_RATE,
+                format = "%.1f",
+                width = width * 0.5
+            })
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
@@ -368,8 +374,15 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             showMixedValues()
 
             -- Add a slider to set all values to the same value
-            imgui.PushItemWidth(globals.ctx, width * 0.5)
-            local rv, newTriggerDrift = globals.UndoWrappers.SliderInt(globals.ctx, "Set all to##TriggerDrift", 0, 0, 100, "%d")
+            local rv, newTriggerDrift = globals.SliderEnhanced.SliderInt({
+                id = "Set all to##TriggerDrift",
+                value = 0,
+                min = 0,
+                max = 100,
+                defaultValue = globals.Constants.DEFAULTS.TRIGGER_DRIFT,
+                format = "%d",
+                width = width * 0.5
+            })
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
