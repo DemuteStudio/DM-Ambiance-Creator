@@ -1461,7 +1461,6 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
                 globals.Utils.queueFadeUpdate(groupIndex, nil, modifiedFade)
             end
         end
-        imgui.PopItemWidth(globals.ctx)
 
         -- "Shape:" label
         imgui.SameLine(globals.ctx)
