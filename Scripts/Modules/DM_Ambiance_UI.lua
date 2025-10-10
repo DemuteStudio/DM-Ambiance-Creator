@@ -57,6 +57,9 @@ function UI.initModule(g)
 
     -- Make UI accessible to other modules
     globals.UI = UI
+
+    -- Detect default font size from ImGui
+    globals.defaultFontSize = imgui.GetFontSize(globals.ctx) or 13
 end
 
 -- Helper function to scale a size value
@@ -85,16 +88,16 @@ function UI.updateScale(scale)
     local oldScale = globals.currentScale or 1.0
     globals.currentScale = scale
 
-    -- Create scaled font
-    local baseFontSize = 13
-    local scaledSize = math.floor(baseFontSize * scale + 0.5) -- Round to nearest integer
-
     -- Detach old font if exists
     if globals.scaledFont then
         imgui.Detach(ctx, globals.scaledFont)
+        globals.scaledFont = nil
     end
 
-    -- Create and attach new scaled font
+    -- Create scaled font using detected default font size
+    local baseFontSize = globals.defaultFontSize or 13
+    local scaledSize = math.floor(baseFontSize * scale + 0.5) -- Round to nearest integer
+
     globals.scaledFont = imgui.CreateFont('sans-serif', scaledSize)
     imgui.Attach(ctx, globals.scaledFont)
 
