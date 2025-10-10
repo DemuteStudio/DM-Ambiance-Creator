@@ -28,26 +28,31 @@ function UI_Groups.drawGroupPresetControls(i)
         globals.selectedGroupPresetIndex[i] = -1
     end
 
+    -- Initialize search query for this group if not already set
+    if not globals.groupPresetSearchQuery then
+        globals.groupPresetSearchQuery = {}
+    end
+    if not globals.groupPresetSearchQuery[i] then
+        globals.groupPresetSearchQuery[i] = ""
+    end
+
     -- Get the list of available group presets
     local groupPresetList = globals.Presets.listPresets("Groups")
 
-    -- Prepare items for the preset dropdown (ImGui Combo expects a null-separated string)
-    local groupPresetItems = ""
-    for _, name in ipairs(groupPresetList) do
-        groupPresetItems = groupPresetItems .. name .. "\0"
-    end
-
-    -- Group preset dropdown selector
-    imgui.PushItemWidth(globals.ctx, Constants.UI.PRESET_SELECTOR_WIDTH)
-    local rv, newSelectedGroupIndex = globals.UndoWrappers.Combo(
-        globals.ctx,
+    -- Use searchable combo box
+    local changed, newIndex, newSearchQuery = globals.Utils.searchableCombo(
         "##GroupPresetSelector" .. groupId,
         globals.selectedGroupPresetIndex[i],
-        groupPresetItems
+        groupPresetList,
+        globals.groupPresetSearchQuery[i],
+        Constants.UI.PRESET_SELECTOR_WIDTH
     )
-    if rv then
-        globals.selectedGroupPresetIndex[i] = newSelectedGroupIndex
+
+    if changed then
+        globals.selectedGroupPresetIndex[i] = newIndex
     end
+
+    globals.groupPresetSearchQuery[i] = newSearchQuery
 
     -- Load preset button
     imgui.SameLine(globals.ctx)

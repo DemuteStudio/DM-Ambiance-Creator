@@ -1978,6 +1978,12 @@ function UI.ShowMainWindow(open)
     -- CRITICAL: Only call End() if Begin() returned true (visible)
     if visible then
 
+        -- Initialize deferred widget drawing list for animated widgets
+        if not globals.deferredWidgetDraws then
+            globals.deferredWidgetDraws = {}
+        end
+        globals.deferredWidgetDraws = {}  -- Clear previous frame
+
         -- Handle Undo/Redo keyboard shortcuts
         local ctrlPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Ctrl ~= 0)
         local shiftPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Shift ~= 0)
@@ -2177,6 +2183,13 @@ function UI.ShowMainWindow(open)
         if rightVisible then
             drawRightPanel(rightPanelWidth)
             globals.imgui.EndChild(globals.ctx)
+        end
+
+        -- Execute deferred widget draws (animated widgets drawn last = on top)
+        if globals.deferredWidgetDraws then
+            for _, drawFunc in ipairs(globals.deferredWidgetDraws) do
+                drawFunc()
+            end
         end
 
         -- CRITICAL: Only call End() if Begin() returned true

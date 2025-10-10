@@ -10,9 +10,22 @@
 local FadeWidget = {}
 local globals = {}
 
+-- Animation state storage (per widget ID)
+local animationStates = {}
+
 --- Initialize module with globals table
 function FadeWidget.initModule(g)
     globals = g
+end
+
+--- Smooth interpolation for hover animation
+-- @param current number Current animation value (0-1)
+-- @param target number Target value (0 or 1)
+-- @param speed number Animation speed (higher = faster)
+-- @return number New animation value
+local function smoothLerp(current, target, speed)
+    local delta = target - current
+    return current + delta * speed
 end
 
 --- Helper: Calculate fade curve Y position for given X
@@ -92,31 +105,50 @@ function FadeWidget.FadeWidget(config)
     local curve = config.curve or 0.0
     local baseSize = config.size or 48  -- Square widget, default size
 
-    -- Apply UI scaling
-    local size = globals.UI and globals.UI.scaleSize(baseSize) or baseSize
+    -- Initialize animation state for this widget if it doesn't exist
+    if not animationStates[id] then
+        animationStates[id] = 0.0  -- Start at small size (0 = small, 1 = full)
+    end
 
     local shapeChanged = false
     local curveChanged = false
     local newShape = shape
     local newCurve = curve
 
-    -- Calculate vertical centering offset to align with other widgets
+    -- Calculate slider-sized dimensions
     local frame_padding_y = imgui.GetStyleVar(ctx, imgui.StyleVar_FramePadding)
     local text_height = imgui.GetTextLineHeight(ctx)
-    local widget_height = text_height + (frame_padding_y * 2)
-    local vertical_offset = (widget_height - size) * 0.5
+    local slider_height = text_height + (frame_padding_y * 2)
 
     -- Get draw list and cursor position
     local draw_list = imgui.GetWindowDrawList(ctx)
     local cursor_x, cursor_y = imgui.GetCursorScreenPos(ctx)
 
-    -- Apply vertical offset for drawing (but keep button at original position for ImGui layout)
-    local draw_y = cursor_y + vertical_offset
+    -- Update animation state FIRST
+    local target = animationStates[id] > 0.5 and 1.0 or 0.0  -- Temporarily use previous state
+    animationStates[id] = smoothLerp(animationStates[id], target, 0.35)  -- Faster animation
 
-    -- Create invisible button for interaction
+    -- Interpolate size: small (slider height) to large (full baseSize)
+    local animatedSize = slider_height + (baseSize - slider_height) * animationStates[id]
+    local size = globals.UI and globals.UI.scaleSize(animatedSize) or animatedSize
+
+    -- Create invisible button with ANIMATED size (grows/shrinks with widget)
     imgui.InvisibleButton(ctx, id, size, size)
     local is_active = imgui.IsItemActive(ctx)
     local is_hovered = imgui.IsItemHovered(ctx)
+
+    -- NOW update animation based on actual hover state OR active drag
+    -- Keep widget expanded while dragging even if mouse moves outside
+    target = (is_hovered or is_active) and 1.0 or 0.0
+    animationStates[id] = smoothLerp(animationStates[id], target, 0.35)
+
+    -- Recalculate size with updated animation
+    animatedSize = slider_height + (baseSize - slider_height) * animationStates[id]
+    size = globals.UI and globals.UI.scaleSize(animatedSize) or animatedSize
+
+    -- Calculate drawing position (centered in hitbox)
+    local draw_x = cursor_x
+    local draw_y = cursor_y
 
     -- Handle left-click drag to adjust curve (only for shapes that support curve)
     local supportsCurve = (shape == Constants.FADE_SHAPES.LINEAR or
@@ -144,47 +176,57 @@ function FadeWidget.FadeWidget(config)
     local col_curve = buttonColor
     local col_text = 0xD5D5D5FF
 
-    -- Draw background (square) - use draw_y for vertical positioning
-    imgui.DrawList_AddRectFilled(draw_list, cursor_x, draw_y, cursor_x + size, draw_y + size, col_bg, 2)
-    imgui.DrawList_AddRect(draw_list, cursor_x, draw_y, cursor_x + size, draw_y + size, col_border, 2, nil, 1)
+    -- Function to draw the fade widget
+    local function drawFadeWidget()
+        -- Draw background (square) - use draw_x and draw_y for positioning
+        imgui.DrawList_AddRectFilled(draw_list, draw_x, draw_y, draw_x + size, draw_y + size, col_bg, 2)
+        imgui.DrawList_AddRect(draw_list, draw_x, draw_y, draw_x + size, draw_y + size, col_border, 2, nil, 1)
 
-    -- Draw fade curve
-    local padding = 4
-    local curve_start_x = cursor_x + padding
-    local curve_end_x = cursor_x + size - padding
-    local curve_start_y = draw_y + size - padding
-    local curve_end_y = draw_y + padding
-    local curve_width = curve_end_x - curve_start_x
-    local curve_height = curve_start_y - curve_end_y
+        -- Draw fade curve
+        local padding = 4
+        local curve_start_x = draw_x + padding
+        local curve_end_x = draw_x + size - padding
+        local curve_start_y = draw_y + size - padding
+        local curve_end_y = draw_y + padding
+        local curve_width = curve_end_x - curve_start_x
+        local curve_height = curve_start_y - curve_end_y
 
-    -- Draw curve as series of line segments
-    local segments = 30
-    for i = 0, segments - 1 do
-        local t1 = i / segments
-        local t2 = (i + 1) / segments
+        -- Draw curve as series of line segments
+        local segments = 30
+        for i = 0, segments - 1 do
+            local t1 = i / segments
+            local t2 = (i + 1) / segments
 
-        -- For fade out, mirror horizontally (start from right)
-        local x1, y1, x2, y2
-        if fadeType == "Out" then
-            -- Fade out: curve goes from right (full) to left (zero)
-            x1 = 1 - t1
-            y1 = calculateFadeCurve(t1, shape, curve)
-            x2 = 1 - t2
-            y2 = calculateFadeCurve(t2, shape, curve)
-        else
-            -- Fade in: curve goes from left (zero) to right (full)
-            x1 = t1
-            y1 = calculateFadeCurve(t1, shape, curve)
-            x2 = t2
-            y2 = calculateFadeCurve(t2, shape, curve)
+            -- For fade out, mirror horizontally (start from right)
+            local x1, y1, x2, y2
+            if fadeType == "Out" then
+                -- Fade out: curve goes from right (full) to left (zero)
+                x1 = 1 - t1
+                y1 = calculateFadeCurve(t1, shape, curve)
+                x2 = 1 - t2
+                y2 = calculateFadeCurve(t2, shape, curve)
+            else
+                -- Fade in: curve goes from left (zero) to right (full)
+                x1 = t1
+                y1 = calculateFadeCurve(t1, shape, curve)
+                x2 = t2
+                y2 = calculateFadeCurve(t2, shape, curve)
+            end
+
+            local screen_x1 = curve_start_x + x1 * curve_width
+            local screen_y1 = curve_start_y - y1 * curve_height
+            local screen_x2 = curve_start_x + x2 * curve_width
+            local screen_y2 = curve_start_y - y2 * curve_height
+
+            imgui.DrawList_AddLine(draw_list, screen_x1, screen_y1, screen_x2, screen_y2, col_curve, 2)
         end
+    end
 
-        local screen_x1 = curve_start_x + x1 * curve_width
-        local screen_y1 = curve_start_y - y1 * curve_height
-        local screen_x2 = curve_start_x + x2 * curve_width
-        local screen_y2 = curve_start_y - y2 * curve_height
-
-        imgui.DrawList_AddLine(draw_list, screen_x1, screen_y1, screen_x2, screen_y2, col_curve, 2)
+    -- If animated, defer drawing to render on top; otherwise draw immediately
+    if animationStates[id] > 0.01 and globals.deferredWidgetDraws then
+        table.insert(globals.deferredWidgetDraws, drawFadeWidget)
+    else
+        drawFadeWidget()
     end
 
     -- Shape selection popup

@@ -33,34 +33,38 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, wi
         globals.selectedContainerPresetIndex[presetKey] = -1
     end
 
+    -- Initialize search query for this container if not already set
+    if not globals.containerPresetSearchQuery then
+        globals.containerPresetSearchQuery = {}
+    end
+    if not globals.containerPresetSearchQuery[presetKey] then
+        globals.containerPresetSearchQuery[presetKey] = ""
+    end
+
     -- Get a sanitized group name for folder structure (replace non-alphanumeric characters with underscores)
     local groupName = globals.groups[groupIndex].name:gsub("[^%w]", "_")
 
     -- Get the list of available container presets (shared across all groups)
     local containerPresetList = globals.Presets.listPresets("Containers")
 
-    -- Prepare the items for the preset dropdown (ImGui Combo expects a null-separated string)
-    local containerPresetItems = ""
-    for _, name in ipairs(containerPresetList) do
-        containerPresetItems = containerPresetItems .. name .. "\0"
-    end
-
     -- Use parameters if provided, otherwise use defaults for backward compatibility
     local dropdownWidth = presetDropdownWidth or (width * 0.65)
     local spacing = buttonSpacing or 8
 
-    -- Preset dropdown control
-    imgui.PushItemWidth(globals.ctx, dropdownWidth)
-    local rv, newSelectedContainerIndex = globals.UndoWrappers.Combo(
-        globals.ctx,
+    -- Use searchable combo box
+    local changed, newIndex, newSearchQuery = globals.Utils.searchableCombo(
         "##ContainerPresetSelector" .. containerId,
         globals.selectedContainerPresetIndex[presetKey],
-        containerPresetItems
+        containerPresetList,
+        globals.containerPresetSearchQuery[presetKey],
+        dropdownWidth
     )
-    if rv then
-        globals.selectedContainerPresetIndex[presetKey] = newSelectedContainerIndex
+
+    if changed then
+        globals.selectedContainerPresetIndex[presetKey] = newIndex
     end
-    imgui.PopItemWidth(globals.ctx)
+
+    globals.containerPresetSearchQuery[presetKey] = newSearchQuery
 
     -- Load preset button: loads the selected preset into this container
     imgui.SameLine(globals.ctx, 0, spacing)

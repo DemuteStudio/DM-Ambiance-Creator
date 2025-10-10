@@ -15,38 +15,32 @@ end
 function UI_Preset.drawPresetControls()
     -- Display section title with a specific color (orange)
     imgui.TextColored(globals.ctx, 0xFFAA00FF, "Global Presets")
-    
-    -- -- Place the next item on the same line as the title
-    -- imgui.SameLine(globals.ctx)
-    -- -- Button to refresh the list of presets
-    -- if imgui.Button(globals.ctx, "Refresh") then
-    --     globals.Presets.listPresets("Global", nil, true) -- Refresh the global presets list forcibly
-    -- end
-    
+
     imgui.SameLine(globals.ctx)
-    
+
+    -- Initialize search state if needed
+    if not globals.presetSearchQuery then
+        globals.presetSearchQuery = ""
+    end
+
     -- Retrieve the list of global presets from the Presets module
     local presetList = globals.Presets.listPresets("Global")
-    
-    -- Prepare the preset names as a null-separated string for ImGui Combo widget
-    local presetItems = ""
-    for _, name in ipairs(presetList) do
-        presetItems = presetItems .. name .. "\0"
-    end
-    presetItems = presetItems .. "\0" -- ImGui requires double null termination
-    
-    -- Set the width of the combo box to 300 pixels
-    imgui.PushItemWidth(globals.ctx, 300)
-    
-    -- Display the dropdown combo box for selecting a preset
-    -- Don't use wrapper here - loading preset will clear history anyway
-    local rv, newSelectedIndex = globals.imgui.Combo(globals.ctx, "##PresetSelector", globals.selectedPresetIndex, presetItems)
-    
-    -- If the user changed the selection, update the current preset index and name
-    if rv then
-        globals.selectedPresetIndex = newSelectedIndex
+
+    -- Use searchable combo box
+    local changed, newIndex, newSearchQuery = globals.Utils.searchableCombo(
+        "##PresetSelector",
+        globals.selectedPresetIndex,
+        presetList,
+        globals.presetSearchQuery,
+        300
+    )
+
+    if changed then
+        globals.selectedPresetIndex = newIndex
         globals.currentPresetName = presetList[globals.selectedPresetIndex + 1] or ""
     end
+
+    globals.presetSearchQuery = newSearchQuery
     
     -- Button to load the selected preset, only active if a preset is selected
     imgui.SameLine(globals.ctx)
@@ -57,7 +51,7 @@ function UI_Preset.drawPresetControls()
     -- Button to save the current preset
     imgui.SameLine(globals.ctx)
     if globals.Icons.createUploadButton(globals.ctx, "preset", "Save preset") then
-        
+
         -- Check if the media directory is configured before opening the save popup
         if not globals.Utils.isMediaDirectoryConfigured() then
             -- Set flag to show a warning about missing media directory configuration
@@ -68,7 +62,7 @@ function UI_Preset.drawPresetControls()
             globals.newPresetName = globals.currentPresetName -- Initialize the input field with the current preset name
         end
     end
-    
+
     -- Button to delete the currently selected preset, only active if a preset is selected
     imgui.SameLine(globals.ctx)
     if globals.Icons.createDeleteButtonWithFallback(globals.ctx, "preset", "Delete", "Delete preset") and globals.currentPresetName ~= "" then
@@ -120,7 +114,7 @@ function UI_Preset.drawPresetControls()
 
     -- Handle the save preset popup modal window
     UI_Preset.handleSavePresetPopup(presetList)
-    
+
     -- Handle the delete preset confirmation popup modal window
     UI_Preset.handleDeletePresetPopup()
 end

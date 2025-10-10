@@ -798,20 +798,207 @@ function Utils.dbToLinear(volumeDB)
     return 10 ^ (volumeDB / 20)
 end
 
--- Convert linear volume factor to decibel value  
+-- Convert linear volume factor to decibel value
 -- @param linearVolume number: Linear volume factor
 -- @return number: Volume in decibels
 function Utils.linearToDb(linearVolume)
     if type(linearVolume) ~= "number" or linearVolume < 0 then
         error("Utils.linearToDb: linearVolume parameter must be a non-negative number")
     end
-    
+
     -- Special case for mute
     if linearVolume <= 0 then
         return Constants.AUDIO.VOLUME_RANGE_DB_MIN
     end
-    
+
     return 20 * (math.log(linearVolume) / math.log(10))
+end
+
+-- Fuzzy match a search query against a target string
+-- @param query string: The search query
+-- @param target string: The target string to match against
+-- @return boolean, number: true if match found, and match score (higher is better)
+function Utils.fuzzyMatch(query, target)
+    if not query or query == "" then
+        return true, 0
+    end
+
+    if not target or target == "" then
+        return false, 0
+    end
+
+    -- Convert to lowercase for case-insensitive matching
+    query = query:lower()
+    target = target:lower()
+
+    local queryLen = #query
+    local targetLen = #target
+
+    -- If query is longer than target, no match possible
+    if queryLen > targetLen then
+        return false, 0
+    end
+
+    -- Simple substring match gets high score
+    if target:find(query, 1, true) then
+        local startPos = target:find(query, 1, true)
+        -- Prefer matches at start of string
+        local positionBonus = 1.0 / (startPos or 1)
+        return true, 100 + positionBonus
+    end
+
+    -- Fuzzy sequential character matching
+    local queryIdx = 1
+    local targetIdx = 1
+    local matchCount = 0
+    local consecutiveMatches = 0
+    local score = 0
+
+    while queryIdx <= queryLen and targetIdx <= targetLen do
+        local queryChar = query:sub(queryIdx, queryIdx)
+        local targetChar = target:sub(targetIdx, targetIdx)
+
+        if queryChar == targetChar then
+            matchCount = matchCount + 1
+            consecutiveMatches = consecutiveMatches + 1
+            -- Bonus for consecutive matches
+            score = score + 1 + consecutiveMatches
+            queryIdx = queryIdx + 1
+        else
+            consecutiveMatches = 0
+        end
+        targetIdx = targetIdx + 1
+    end
+
+    -- All query characters must be found in sequence
+    if matchCount == queryLen then
+        return true, score
+    end
+
+    return false, 0
+end
+
+-- Searchable combo box that allows typing to filter items
+-- @param label string: The combo box label (include ## for hidden label)
+-- @param currentIndex number: Currently selected index (-1 for none)
+-- @param items table: Array of item names
+-- @param searchQuery string: Current search query
+-- @param width number: Width of the combo box (optional)
+-- @return boolean, number, string: changed, new selected index, new search query
+function Utils.searchableCombo(label, currentIndex, items, searchQuery, width)
+    local ctx = globals.ctx
+    local imgui = globals.imgui
+
+    -- Filter items based on search query
+    local filteredItems = {}
+    local itemScores = {}
+    local indexMap = {} -- Maps filtered index to original index
+
+    for i, name in ipairs(items) do
+        local matches, score = Utils.fuzzyMatch(searchQuery, name)
+        if matches then
+            table.insert(filteredItems, name)
+            itemScores[name] = score
+            indexMap[#filteredItems] = i
+        end
+    end
+
+    -- Sort filtered items by score (highest first)
+    table.sort(filteredItems, function(a, b)
+        return itemScores[a] > itemScores[b]
+    end)
+
+    -- Rebuild index map after sort
+    indexMap = {}
+    for filteredIdx, name in ipairs(filteredItems) do
+        for originalIdx, originalName in ipairs(items) do
+            if name == originalName then
+                indexMap[filteredIdx] = originalIdx
+                break
+            end
+        end
+    end
+
+    -- Find current item in filtered list
+    local filteredIndex = -1
+    if currentIndex >= 0 and currentIndex < #items then
+        local currentName = items[currentIndex + 1]
+        for i, name in ipairs(filteredItems) do
+            if name == currentName then
+                filteredIndex = i - 1
+                break
+            end
+        end
+    end
+
+    -- Display preview value (current selection or search query)
+    local previewValue = ""
+    if searchQuery ~= "" then
+        previewValue = searchQuery
+    elseif currentIndex >= 0 and currentIndex < #items then
+        previewValue = items[currentIndex + 1]
+    end
+
+    if width then
+        imgui.PushItemWidth(ctx, width)
+    end
+
+    local changed = false
+    local newIndex = currentIndex
+    local newSearchQuery = searchQuery
+
+    -- Track if combo was just opened
+    if not globals.comboJustOpened then
+        globals.comboJustOpened = {}
+    end
+
+    -- Begin combo
+    local comboOpened = imgui.BeginCombo(ctx, label, previewValue, 0)
+    if comboOpened then
+        -- Only set focus on first frame when combo opens
+        if not globals.comboJustOpened[label] then
+            imgui.SetKeyboardFocusHere(ctx, 0)
+            globals.comboJustOpened[label] = true
+        end
+
+        -- Search input at the top of the combo
+        local searchChanged, newQuery = imgui.InputTextWithHint(ctx, "##Search" .. label, "Type to search...", searchQuery)
+        if searchChanged then
+            newSearchQuery = newQuery
+        end
+
+        imgui.Separator(ctx)
+
+        -- Display filtered items
+        for i, name in ipairs(filteredItems) do
+            local isSelected = (i - 1 == filteredIndex)
+            if imgui.Selectable(ctx, name, isSelected) then
+                newIndex = indexMap[i] - 1  -- Convert back to original index
+                newSearchQuery = ""  -- Clear search when selecting
+                changed = true
+            end
+
+            if isSelected then
+                imgui.SetItemDefaultFocus(ctx)
+            end
+        end
+
+        -- Show "no results" message if nothing matches
+        if #filteredItems == 0 then
+            imgui.TextDisabled(ctx, "No matches found")
+        end
+
+        imgui.EndCombo(ctx)
+    else
+        -- Combo is closed, reset the "just opened" flag
+        globals.comboJustOpened[label] = nil
+    end
+
+    if width then
+        imgui.PopItemWidth(ctx)
+    end
+
+    return changed, newIndex, newSearchQuery
 end
 
 -- Convert normalized slider value (0-1) to dB with 0dB at center
