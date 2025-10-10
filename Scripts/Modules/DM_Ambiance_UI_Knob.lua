@@ -102,8 +102,8 @@ function Knob.Knob(config)
 
     local col_bg = is_hovered and 0x444444FF or 0x333333FF
     local col_track = 0x666666FF
-    local col_fill = buttonColor  -- Use button color for fill
-    local col_knob = 0xEEEEEEFF
+    local col_fill = buttonColor  -- Use button color for fill arc
+    local col_indicator = buttonColor  -- Use button color for indicator line and center dot
 
     -- Draw background circle
     imgui.DrawList_AddCircleFilled(draw_list, center_x, center_y, radius, col_bg)
@@ -118,14 +118,20 @@ function Knob.Knob(config)
         imgui.DrawList_PathStroke(draw_list, col_fill, nil, 3)
     end
 
-    -- Draw indicator line from center to edge
-    local indicator_length = radius - 8
-    local indicator_x = center_x + math.cos(angle) * indicator_length
-    local indicator_y = center_y + math.sin(angle) * indicator_length
-    imgui.DrawList_AddLine(draw_list, center_x, center_y, indicator_x, indicator_y, col_knob, 2)
+    -- Draw indicator line and center dot (if enabled in settings)
+    local showIndicator = globals.Settings and globals.Settings.getSetting("showKnobIndicator")
+    if showIndicator == nil then showIndicator = true end  -- Default to true if setting not found
 
-    -- Draw center dot
-    imgui.DrawList_AddCircleFilled(draw_list, center_x, center_y, 3, col_knob)
+    if showIndicator then
+        -- Draw indicator line from center to edge
+        local indicator_length = radius - 8
+        local indicator_x = center_x + math.cos(angle) * indicator_length
+        local indicator_y = center_y + math.sin(angle) * indicator_length
+        imgui.DrawList_AddLine(draw_list, center_x, center_y, indicator_x, indicator_y, col_indicator, 2)
+
+        -- Draw center dot
+        imgui.DrawList_AddCircleFilled(draw_list, center_x, center_y, 3, col_indicator)
+    end
 
     -- Draw label and value below knob
     if showLabel then

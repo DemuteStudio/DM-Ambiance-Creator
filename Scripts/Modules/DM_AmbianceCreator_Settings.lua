@@ -30,6 +30,7 @@ local defaultSettings = {
     waveformAutoPlayOnSelect = true, -- Auto-play when selecting items in waveform
     leftPanelWidth = nil, -- Width of the left panel (nil = use default percentage)
     uiScale = 1.0, -- UI scale factor (1.0 = 100%)
+    showKnobIndicator = true, -- Show indicator line on knobs
 }
 
 -- Initialize the module with global references and load settings
@@ -158,6 +159,7 @@ local function initTempSettings()
         originalSettings.waveformColor = globals.settings.waveformColor
         originalSettings.iconColor = globals.settings.iconColor
         originalSettings.uiScale = globals.settings.uiScale
+        originalSettings.showKnobIndicator = globals.settings.showKnobIndicator
         -- Initialize temporary variables
         tempSettings.uiRounding = globals.settings.uiRounding
         tempSettings.itemSpacing = globals.settings.itemSpacing
@@ -169,6 +171,7 @@ local function initTempSettings()
         tempSettings.waveformColor = globals.settings.waveformColor
         tempSettings.iconColor = globals.settings.iconColor
         tempSettings.uiScale = globals.settings.uiScale
+        tempSettings.showKnobIndicator = globals.settings.showKnobIndicator
         tempSettings.initialized = true
     end
 end
@@ -193,6 +196,7 @@ local function restoreOriginalSettings()
     globals.settings.waveformColor = originalSettings.waveformColor
     globals.settings.iconColor = originalSettings.iconColor
     globals.settings.uiScale = originalSettings.uiScale
+    globals.settings.showKnobIndicator = originalSettings.showKnobIndicator
 end
 
 -- Applies all temporary changes to the real settings
@@ -208,6 +212,7 @@ local function applyTempSettings()
     Settings.setSetting("waveformColor", tempSettings.waveformColor)
     Settings.setSetting("iconColor", tempSettings.iconColor)
     Settings.setSetting("uiScale", tempSettings.uiScale)
+    Settings.setSetting("showKnobIndicator", tempSettings.showKnobIndicator)
     Settings.saveSettings()
 end
 
@@ -596,6 +601,17 @@ function Settings.showAppearanceSettings()
     Settings.colorPicker("Text Color", "textColor")
     Settings.colorPicker("Waveform Color", "waveformColor")
     Settings.colorPicker("Icon Color", "iconColor")
+
+    -- Knob indicator visibility checkbox
+    local rv, showIndicator = imgui.Checkbox(ctx, "Show knob indicator line",
+        tempSettings.showKnobIndicator)
+    if rv then
+        tempSettings.showKnobIndicator = showIndicator
+        globals.settings.showKnobIndicator = showIndicator -- Immediate update for UI
+    end
+    imgui.SameLine(ctx)
+    globals.Utils.HelpMarker("Shows or hides the indicator line and center dot on rotary knobs")
+
     imgui.Separator(ctx)
 end
 
