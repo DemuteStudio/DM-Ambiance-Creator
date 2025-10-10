@@ -1532,17 +1532,17 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
             end
         end
 
-        -- "Shape:" label
+        -- Interactive Fade Widget (replaces shape dropdown and curve slider)
         imgui.SameLine(globals.ctx)
-        imgui.AlignTextToFramePadding(globals.ctx)
-        imgui.Text(globals.ctx, "Shape:")
+        local shapeChanged, newShape, curveChanged, newCurve = globals.FadeWidget.FadeWidget({
+            id = "##FadeWidget" .. suffix,
+            fadeType = fadeType,
+            shape = shape or 0,
+            curve = curve or 0.0,
+            size = 48
+        })
 
-        -- Shape dropdown
-        imgui.SameLine(globals.ctx)
-        imgui.PushItemWidth(globals.ctx, shapeDropdownWidth)
-        local fadeShapes = "Linear\0Fast Start\0Fast End\0Fast S/E\0Slow S/E\0Bezier\0S-Curve\0"
-        local rv, newShape = globals.UndoWrappers.Combo(globals.ctx, "##Shape" .. suffix, shape or 0, fadeShapes)
-        if rv then
+        if shapeChanged then
             if isIn then obj.fadeInShape = newShape
             else obj.fadeOutShape = newShape end
             -- Queue fade update to avoid ImGui conflicts
@@ -1553,39 +1553,16 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
                 globals.Utils.queueFadeUpdate(groupIndex, nil, modifiedFade)
             end
         end
-        imgui.PopItemWidth(globals.ctx)
 
-        -- Curve controls (for Linear, Bezier and S-Curve)
-        -- Default to Linear if shape is nil/undefined
-        local actualShape = shape or Constants.FADE_SHAPES.LINEAR
-        if actualShape == Constants.FADE_SHAPES.LINEAR or actualShape == Constants.FADE_SHAPES.BEZIER or actualShape == Constants.FADE_SHAPES.S_CURVE then
-            -- "Curve:" label
-            imgui.SameLine(globals.ctx)
-            imgui.AlignTextToFramePadding(globals.ctx)
-            imgui.Text(globals.ctx, "Curve:")
-
-            -- Curve slider
-            imgui.SameLine(globals.ctx)
-            local defaultCurve = isIn and globals.Constants.DEFAULTS.FADE_IN_CURVE or globals.Constants.DEFAULTS.FADE_OUT_CURVE
-            local rv, newCurve = globals.SliderEnhanced.SliderDouble({
-                id = "##Curve" .. suffix,
-                value = curve or 0.0,
-                min = -1.0,
-                max = 1.0,
-                defaultValue = defaultCurve,
-                format = "%.1f",
-                width = curveSliderWidth
-            })
-            if rv then
-                if isIn then obj.fadeInCurve = newCurve
-                else obj.fadeOutCurve = newCurve end
-                -- Queue fade update to avoid ImGui conflicts
-                local modifiedFade = isIn and "fadeIn" or "fadeOut"
-                if groupIndex and containerIndex then
-                    globals.Utils.queueFadeUpdate(groupIndex, containerIndex, modifiedFade)
-                elseif groupIndex then
-                    globals.Utils.queueFadeUpdate(groupIndex, nil, modifiedFade)
-                end
+        if curveChanged then
+            if isIn then obj.fadeInCurve = newCurve
+            else obj.fadeOutCurve = newCurve end
+            -- Queue fade update to avoid ImGui conflicts
+            local modifiedFade = isIn and "fadeIn" or "fadeOut"
+            if groupIndex and containerIndex then
+                globals.Utils.queueFadeUpdate(groupIndex, containerIndex, modifiedFade)
+            elseif groupIndex then
+                globals.Utils.queueFadeUpdate(groupIndex, nil, modifiedFade)
             end
         end
         
