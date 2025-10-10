@@ -903,10 +903,18 @@ function Utils.searchableCombo(label, currentIndex, items, searchQuery, width)
         end
     end
 
-    -- Sort filtered items by score (highest first)
-    table.sort(filteredItems, function(a, b)
-        return itemScores[a] > itemScores[b]
-    end)
+    -- Sort filtered items
+    if searchQuery ~= "" then
+        -- When searching, sort by score (highest first)
+        table.sort(filteredItems, function(a, b)
+            return itemScores[a] > itemScores[b]
+        end)
+    else
+        -- When not searching, sort alphabetically (case-insensitive)
+        table.sort(filteredItems, function(a, b)
+            return a:lower() < b:lower()
+        end)
+    end
 
     -- Rebuild index map after sort
     indexMap = {}
