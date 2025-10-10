@@ -18,14 +18,22 @@ function FadeWidget.initModule(g)
     globals = g
 end
 
---- Smooth interpolation for hover animation
+--- Smooth interpolation for hover animation with ease-out
 -- @param current number Current animation value (0-1)
 -- @param target number Target value (0 or 1)
 -- @param speed number Animation speed (higher = faster)
 -- @return number New animation value
 local function smoothLerp(current, target, speed)
     local delta = target - current
-    return current + delta * speed
+
+    -- Higher speed for snappier animation that doesn't slow down too much at the end
+    local adjustedSpeed = 0.45
+
+    if math.abs(delta) < 0.001 then
+        return target  -- Snap to target when very close
+    end
+
+    return current + delta * adjustedSpeed
 end
 
 --- Helper: Calculate fade curve Y position for given X
