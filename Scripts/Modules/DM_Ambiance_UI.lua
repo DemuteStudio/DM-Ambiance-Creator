@@ -372,17 +372,18 @@ local function drawSliderWithVariation(params)
 
         imgui.SameLine(globals.ctx, 0, 2)
 
-        -- Variation input
-        imgui.PushItemWidth(globals.ctx, 48)
+        -- Variation knob
         local varKey = trackingKey .. "_var"
-        local rvVar, newVar, wasResetVar = globals.SliderEnhanced.DragInt({
+        local rvVar, newVar, wasResetVar = globals.Knob.Knob({
             id = "##" .. varKey,
+            label = "",
             value = variationValue,
-            speed = 0.5,
             min = 0,
             max = 100,
             defaultValue = defaultVariation,
-            format = "%d%%"
+            size = 24,
+            format = "%d",
+            showLabel = false
         })
 
         -- Auto-regen tracking (skip if this was a reset)
@@ -392,7 +393,7 @@ local function drawSliderWithVariation(params)
             end
         end
 
-        if rvVar and variationCallbacks.setValue then variationCallbacks.setValue(newVar) end
+        if rvVar and variationCallbacks.setValue then variationCallbacks.setValue(math.floor(newVar + 0.5)) end
 
         -- Only check auto-regen if NOT a reset
         if not wasResetVar then
@@ -404,10 +405,8 @@ local function drawSliderWithVariation(params)
             end
         end
 
-        imgui.PopItemWidth(globals.ctx)
-
         imgui.SameLine(globals.ctx, 0, 2)
-        imgui.Text(globals.ctx, variationLabel)
+        imgui.Text(globals.ctx, string.format("%s %d%%", variationLabel, variationValue))
     end
 
     return rv, newValue
