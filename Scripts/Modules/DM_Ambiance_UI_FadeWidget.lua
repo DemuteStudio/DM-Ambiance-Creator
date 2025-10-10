@@ -132,27 +132,19 @@ function FadeWidget.FadeWidget(config)
     local draw_list = imgui.GetWindowDrawList(ctx)
     local cursor_x, cursor_y = imgui.GetCursorScreenPos(ctx)
 
-    -- Update animation state FIRST
-    local target = animationStates[id] > 0.5 and 1.0 or 0.0  -- Temporarily use previous state
-    animationStates[id] = smoothLerp(animationStates[id], target, 0.35)  -- Faster animation
-
-    -- Interpolate size: small (slider height) to large (full baseSize)
-    local animatedSize = slider_height + (baseSize - slider_height) * animationStates[id]
+    -- Use current animation state to determine size for this frame
+    local currentAnimState = animationStates[id]
+    local animatedSize = slider_height + (baseSize - slider_height) * currentAnimState
     local size = globals.UI and globals.UI.scaleSize(animatedSize) or animatedSize
 
-    -- Create invisible button with ANIMATED size (grows/shrinks with widget)
+    -- Create invisible button with current animated size
     imgui.InvisibleButton(ctx, id, size, size)
     local is_active = imgui.IsItemActive(ctx)
     local is_hovered = imgui.IsItemHovered(ctx)
 
-    -- NOW update animation based on actual hover state OR active drag
-    -- Keep widget expanded while dragging even if mouse moves outside
-    target = (is_hovered or is_active) and 1.0 or 0.0
+    -- Update animation for NEXT frame based on hover/active state
+    local target = (is_hovered or is_active) and 1.0 or 0.0
     animationStates[id] = smoothLerp(animationStates[id], target, 0.35)
-
-    -- Recalculate size with updated animation
-    animatedSize = slider_height + (baseSize - slider_height) * animationStates[id]
-    size = globals.UI and globals.UI.scaleSize(animatedSize) or animatedSize
 
     -- Calculate drawing position (centered in hitbox)
     local draw_x = cursor_x

@@ -88,34 +88,29 @@ function Knob.Knob(config)
     local text_height = imgui.GetTextLineHeight(ctx)
     local slider_height = text_height + (frame_padding_y * 2)
 
-    -- Update animation state FIRST to check current hover
-    -- We need to check hover against the CURRENT animated size, not future size
-    local target = animationStates[id] > 0.5 and 1.0 or 0.0  -- Temporarily use previous state
-    animationStates[id] = smoothLerp(animationStates[id], target, 0.35)  -- Faster animation (was 0.2)
+    -- Hitbox is ALWAYS at max size to prevent shrinking when hovering
+    local maxSize = globals.UI and globals.UI.scaleSize(baseSize) or baseSize
 
-    -- Interpolate size: small (slider height) to large (full baseSize)
-    local animatedSize = slider_height + (baseSize - slider_height) * animationStates[id]
-    local size = globals.UI and globals.UI.scaleSize(animatedSize) or animatedSize
-    local hitbox_size = size  -- Hitbox matches current animated size
-
-    -- Create invisible button with ANIMATED size (grows/shrinks with widget)
-    imgui.InvisibleButton(ctx, id, hitbox_size, hitbox_size)
+    -- Create invisible button with FIXED max size
+    imgui.InvisibleButton(ctx, id, maxSize, maxSize)
     local is_active = imgui.IsItemActive(ctx)
     local is_hovered = imgui.IsItemHovered(ctx)
 
-    -- NOW update animation based on actual hover state OR active drag
-    -- Keep widget expanded while dragging even if mouse moves outside
-    target = (is_hovered or is_active) and 1.0 or 0.0
+    -- Update animation for NEXT frame based on hover/active state
+    local target = (is_hovered or is_active) and 1.0 or 0.0
     animationStates[id] = smoothLerp(animationStates[id], target, 0.35)
 
-    -- Recalculate size with updated animation
-    animatedSize = slider_height + (baseSize - slider_height) * animationStates[id]
-    size = globals.UI and globals.UI.scaleSize(animatedSize) or animatedSize
+    -- Use current animation state to determine VISUAL size (not hitbox)
+    local currentAnimState = animationStates[id]
+    local animatedSize = slider_height + (baseSize - slider_height) * currentAnimState
+    local size = globals.UI and globals.UI.scaleSize(animatedSize) or animatedSize
+
+    -- Use the size calculated at the start of the frame (no recalculation)
     local radius = size * 0.5
 
-    -- Calculate where to draw the circle (centered in hitbox)
-    local center_x = cursor_x + radius
-    local center_y = cursor_y + radius
+    -- Calculate where to draw the circle (centered in FIXED hitbox)
+    local center_x = cursor_x + maxSize * 0.5
+    local center_y = cursor_y + maxSize * 0.5
 
     -- Handle mouse drag
     if is_active then
