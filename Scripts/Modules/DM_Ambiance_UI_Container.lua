@@ -1067,21 +1067,19 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     -- Convert current dB to normalized
     local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.trackVolume)
 
-    -- Layout: buttons + slider (half width) + input field
-    local inputFieldWidth = 85  -- Fixed width for dB input
-    local sliderWidth = (width - inputFieldWidth - 8) / 2  -- Half of remaining space
-
-    -- Volume slider (half width)
+    -- Volume knob
     imgui.SameLine(globals.ctx, 0, 8)
     local defaultNormalizedVolume = globals.Utils.dbToNormalizedRelative(globals.Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT)
-    local rv, newNormalizedVolume = globals.SliderEnhanced.SliderDouble({
+    local rv, newNormalizedVolume = globals.Knob.Knob({
         id = "##TrackVolume_" .. containerId,
+        label = "",
         value = normalizedVolume,
         min = 0.0,
         max = 1.0,
         defaultValue = defaultNormalizedVolume,
-        format = "",
-        width = sliderWidth
+        size = 24,
+        format = "%.2f",
+        showLabel = false
     })
     if rv then
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
@@ -1090,9 +1088,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
     end
 
-    -- Manual dB input field with remaining space
+    -- Manual dB input field
     imgui.SameLine(globals.ctx, 0, 8)
-    imgui.PushItemWidth(globals.ctx, inputFieldWidth)
+    imgui.PushItemWidth(globals.ctx, 85)
     local displayValue = container.trackVolume <= -144 and -144 or container.trackVolume
     local rv2, manualDB = globals.UndoWrappers.InputDouble(
         globals.ctx,

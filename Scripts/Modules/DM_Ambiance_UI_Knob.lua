@@ -45,25 +45,31 @@ function Knob.Knob(config)
     local minValue = config.min or 0
     local maxValue = config.max or 1
     local defaultValue = config.defaultValue or ((minValue + maxValue) / 2)
-    local size = config.size or 50
+    local baseSize = config.size or 24  -- Base size before scaling
     local format = config.format or "%.2f"
     local showLabel = config.showLabel ~= false  -- Default true
 
+    -- Apply UI scaling
+    local size = globals.UI and globals.UI.scaleSize(baseSize) or baseSize
     local radius = size * 0.5
+
     local changed = false
     local newValue = value
     local wasReset = false
 
-    -- Get draw list and position
+    -- Get initial cursor position
     local draw_list = imgui.GetWindowDrawList(ctx)
-    local pos_x, pos_y = imgui.GetCursorScreenPos(ctx)
-    local center_x = pos_x + radius
-    local center_y = pos_y + radius
+    local cursor_x, cursor_y = imgui.GetCursorScreenPos(ctx)
 
-    -- Create invisible button for interaction
+    -- Create invisible button at standard cursor position
+    -- This keeps the widget aligned with other ImGui widgets on the same line
     imgui.InvisibleButton(ctx, id, size, size)
     local is_active = imgui.IsItemActive(ctx)
     local is_hovered = imgui.IsItemHovered(ctx)
+
+    -- Calculate where to draw the circle (centered in the button area)
+    local center_x = cursor_x + radius
+    local center_y = cursor_y + radius
 
     -- Handle mouse drag
     if is_active then
@@ -91,9 +97,12 @@ function Knob.Knob(config)
     local angle = angle_min + (angle_max - angle_min) * normalized
 
     -- Colors (using RGBA hex format: 0xRRGGBBAA)
+    -- Get button color from settings for consistency
+    local buttonColor = globals.Settings and globals.Settings.getSetting("buttonColor") or 0x15856DFF
+
     local col_bg = is_hovered and 0x444444FF or 0x333333FF
     local col_track = 0x666666FF
-    local col_fill = is_active and 0x00AAFFFF or 0x0088FFFF
+    local col_fill = buttonColor  -- Use button color for fill
     local col_knob = 0xEEEEEEFF
 
     -- Draw background circle
@@ -122,14 +131,13 @@ function Knob.Knob(config)
     if showLabel then
         local label_text = string.format("%s: " .. format, label, newValue)
         local text_size_x, text_size_y = imgui.CalcTextSize(ctx, label_text)
-        imgui.SetCursorScreenPos(ctx, pos_x + (size - text_size_x) * 0.5, pos_y + size + 4)
+        imgui.SetCursorScreenPos(ctx, cursor_x + (size - text_size_x) * 0.5, cursor_y + size + 4)
         imgui.Text(ctx, label_text)
 
         -- Advance cursor to below text for next widget
-        imgui.SetCursorScreenPos(ctx, pos_x, pos_y + size + text_size_y + 8)
+        imgui.SetCursorScreenPos(ctx, cursor_x, cursor_y + size + text_size_y + 8)
     else
-        -- Just advance cursor past the knob
-        imgui.SetCursorScreenPos(ctx, pos_x, pos_y + size + 4)
+        -- Cursor is already advanced by InvisibleButton, no need to move it
     end
 
     return changed, newValue, wasReset

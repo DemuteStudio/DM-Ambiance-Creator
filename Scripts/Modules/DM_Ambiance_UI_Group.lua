@@ -88,21 +88,23 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         imgui.PopStyleColor(globals.ctx, muteColorPushed)
     end
 
-    -- Volume slider (half width)
+    -- Volume knob
     imgui.SameLine(globals.ctx, 0, 8)
 
-    -- Convert current dB to normalized
+    -- Convert current dB to normalized for knob display
     local normalizedVolume = globals.Utils.dbToNormalizedRelative(group.trackVolume)
     local defaultNormalizedVolume = globals.Utils.dbToNormalizedRelative(globals.Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT)
 
-    local rv, newNormalizedVolume = globals.SliderEnhanced.SliderDouble({
+    local rv, newNormalizedVolume = globals.Knob.Knob({
         id = "##GroupTrackVolume_" .. groupId,
+        label = "",
         value = normalizedVolume,
         min = 0.0,
         max = 1.0,
         defaultValue = defaultNormalizedVolume,
-        format = "",
-        width = width * 0.3
+        size = 24,
+        format = "%.2f",
+        showLabel = false
     })
     if rv then
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)

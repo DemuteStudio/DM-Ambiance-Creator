@@ -43,6 +43,7 @@ local UndoWrappers = dofile(script_path .. "Modules/DM_Ambiance_UndoWrappers.lua
 local UI_UndoHistory = dofile(script_path .. "Modules/DM_Ambiance_UI_UndoHistory.lua")
 local Noise = dofile(script_path .. "Modules/DM_Ambiance_Noise.lua")
 local SliderEnhanced = dofile(script_path .. "Modules/DM_Ambiance_UI_SliderEnhanced.lua")
+local Knob = dofile(script_path .. "Modules/DM_Ambiance_UI_Knob.lua")
 
 -- Global state shared across modules and UI
 local globals = {
@@ -147,6 +148,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     _G.History = History
     _G.Noise = Noise
     _G.SliderEnhanced = SliderEnhanced
+    _G.Knob = Knob
     _G.imgui = imgui
 
     -- Seed the random number generator for consistent randomization
@@ -178,6 +180,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.Noise = Noise
     globals.LinkedSliders = LinkedSliders
     globals.SliderEnhanced = SliderEnhanced
+    globals.Knob = Knob
 
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
@@ -195,6 +198,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     UI_UndoHistory.initModule(globals)
     Noise.initModule(globals)
     SliderEnhanced.initModule(globals)
+    Knob.initModule(globals)
 
     -- Initialize backward compatibility for container volumes
     Utils.initializeContainerVolumes()
