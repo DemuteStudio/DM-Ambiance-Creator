@@ -171,6 +171,7 @@ Constants.DEFAULTS = {
     PAN_RANGE_MIN = -100,               -- Default min pan range
     PAN_RANGE_MAX = 100,                -- Default max pan range
     CONTAINER_VOLUME_DEFAULT = 0.0,     -- Default container track volume (dB)
+    UI_SCALE = 1.0,                     -- Default UI scale factor (1.0 = 100%)
     -- Chunk Mode defaults
     CHUNK_DURATION = 10.0,              -- Default chunk duration in seconds
     CHUNK_SILENCE = 5.0,                -- Default silence duration in seconds

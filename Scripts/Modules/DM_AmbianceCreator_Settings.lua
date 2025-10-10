@@ -29,6 +29,7 @@ local defaultSettings = {
     crossfadeMargin = 0.2, -- Default crossfade margin in seconds
     waveformAutoPlayOnSelect = true, -- Auto-play when selecting items in waveform
     leftPanelWidth = nil, -- Width of the left panel (nil = use default percentage)
+    uiScale = 1.0, -- UI scale factor (1.0 = 100%)
 }
 
 -- Initialize the module with global references and load settings
@@ -156,6 +157,7 @@ local function initTempSettings()
         originalSettings.textColor = globals.settings.textColor
         originalSettings.waveformColor = globals.settings.waveformColor
         originalSettings.iconColor = globals.settings.iconColor
+        originalSettings.uiScale = globals.settings.uiScale
         -- Initialize temporary variables
         tempSettings.uiRounding = globals.settings.uiRounding
         tempSettings.itemSpacing = globals.settings.itemSpacing
@@ -166,6 +168,7 @@ local function initTempSettings()
         tempSettings.textColor = globals.settings.textColor
         tempSettings.waveformColor = globals.settings.waveformColor
         tempSettings.iconColor = globals.settings.iconColor
+        tempSettings.uiScale = globals.settings.uiScale
         tempSettings.initialized = true
     end
 end
@@ -189,6 +192,7 @@ local function restoreOriginalSettings()
     globals.settings.textColor = originalSettings.textColor
     globals.settings.waveformColor = originalSettings.waveformColor
     globals.settings.iconColor = originalSettings.iconColor
+    globals.settings.uiScale = originalSettings.uiScale
 end
 
 -- Applies all temporary changes to the real settings
@@ -203,6 +207,7 @@ local function applyTempSettings()
     Settings.setSetting("textColor", tempSettings.textColor)
     Settings.setSetting("waveformColor", tempSettings.waveformColor)
     Settings.setSetting("iconColor", tempSettings.iconColor)
+    Settings.setSetting("uiScale", tempSettings.uiScale)
     Settings.saveSettings()
 end
 
@@ -281,14 +286,14 @@ function Settings.showSettingsWindow(open)
         Settings.showWaveformSettings()
 
         -- Control buttons at the bottom
-        if imgui.Button(ctx, "Save & Close", 120, 0) then
+        if globals.UI.Button(ctx, "Save & Close", 120, 0) then
             applyTempSettings()
             resetTempSettings()
             openResult = false
             buttonPressed = true
         end
         imgui.SameLine(ctx)
-        if imgui.Button(ctx, "Cancel", 120, 0) then
+        if globals.UI.Button(ctx, "Cancel", 120, 0) then
             restoreOriginalSettings()
             resetTempSettings()
             openResult = false
@@ -535,6 +540,24 @@ function Settings.showAppearanceSettings()
     local imgui = globals.imgui
     imgui.TextColored(ctx, 0xFFAA00FF, "UI Appearance Settings")
     imgui.Separator(ctx)
+
+    -- UI Scale slider with immediate UI update
+    local rv, newScale = globals.SliderEnhanced.SliderDouble({
+        id = "UI Scale",
+        value = tempSettings.uiScale,
+        min = 0.5,
+        max = 2.0,
+        defaultValue = 1.0,
+        format = "%.2f",
+        width = 200
+    })
+    if rv and newScale ~= tempSettings.uiScale then
+        tempSettings.uiScale = newScale
+        globals.settings.uiScale = newScale -- Immediate update for UI
+    end
+    imgui.SameLine(ctx)
+    globals.Utils.HelpMarker("Controls the overall size of the UI (0.5 = 50%, 1.0 = 100%, 2.0 = 200%). Changes the window content size without affecting the window dimensions.")
+
     -- UI Rounding slider with immediate UI update
     local rv, newRounding = globals.SliderEnhanced.SliderDouble({
         id = "UI Rounding",

@@ -56,7 +56,7 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFFAA00FF) -- Same color on hover (no hover effect)
         soloColorPushed = 2
     end
-    if imgui.Button(globals.ctx, "S##GroupSolo_" .. groupId, buttonSize, buttonSize) then
+    if globals.UI.Button(globals.ctx, "S##GroupSolo_" .. groupId, buttonSize, buttonSize) then
         group.isSoloed = not group.isSoloed
         if group.isSoloed and group.isMuted then
             group.isMuted = false
@@ -69,14 +69,14 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     end
 
     -- Mute button (square, red when active)
-    imgui.SameLine(globals.ctx, 0, 4)
+    imgui.SameLine(globals.ctx, 0, globals.UI.scaleSize(4))
     local muteColorPushed = 0
     if group.isMuted then
         imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF) -- Red when active
         imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFF0000FF) -- Same color on hover (no hover effect)
         muteColorPushed = 2
     end
-    if imgui.Button(globals.ctx, "M##GroupMute_" .. groupId, buttonSize, buttonSize) then
+    if globals.UI.Button(globals.ctx, "M##GroupMute_" .. groupId, buttonSize, buttonSize) then
         group.isMuted = not group.isMuted
         if group.isMuted and group.isSoloed then
             group.isSoloed = false

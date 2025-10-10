@@ -89,11 +89,11 @@ local function loop()
     if globals.showMediaDirWarning then
         Utils.showDirectoryWarningPopup()
     end
-    
+
     -- Show routing validation modals
     RoutingValidator.renderModal()
     RoutingValidator.renderChannelOrderModal()
-    
+
     -- Update waveform playback position if playing
     if globals.Waveform and globals.Waveform.updatePlaybackPosition then
         globals.Waveform.updatePlaybackPosition()
@@ -156,6 +156,10 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     local ctx = imgui.CreateContext('Ambiance Creator')
     globals.ctx = ctx
     globals.imgui = imgui
+
+    -- Initialize fonts with default scale (will be updated when settings load)
+    globals.scaledFont = nil
+    globals.currentScale = 1.0
 
     -- Share module references through the globals table for cross-module access
     globals.Constants = Constants

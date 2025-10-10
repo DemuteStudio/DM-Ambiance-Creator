@@ -643,7 +643,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     globals.waveformHeights = {}
                 end
                 if not globals.waveformHeights[itemKey] then
-                    globals.waveformHeights[itemKey] = 120  -- Default height
+                    globals.waveformHeights[itemKey] = globals.UI.scaleSize(120)  -- Default height (scaled)
                 end
 
                 -- Ensure areas from the item are loaded into waveformAreas for display
@@ -737,7 +737,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                 if imgui.IsItemActive(globals.ctx) and imgui.IsMouseDragging(globals.ctx, 0) then
                     local _, mouseY = imgui.GetMouseDragDelta(globals.ctx, 0)
-                    local newHeight = math.max(60, math.min(400, globals.waveformHeights[itemKey] + mouseY))
+                    local newHeight = math.max(globals.UI.scaleSize(60), math.min(globals.UI.scaleSize(400), globals.waveformHeights[itemKey] + mouseY))
                     globals.waveformHeights[itemKey] = newHeight
                     imgui.ResetMouseDragDelta(globals.ctx, 0)
                 end
@@ -813,7 +813,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     globals.waveformHeights = {}
                 end
                 if not globals.waveformHeights[itemKey] then
-                    globals.waveformHeights[itemKey] = 120  -- Default height
+                    globals.waveformHeights[itemKey] = globals.UI.scaleSize(120)  -- Default height (scaled)
                 end
 
                 -- Draw empty waveform box for missing files
@@ -865,7 +865,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                 if imgui.IsItemActive(globals.ctx) and imgui.IsMouseDragging(globals.ctx, 0) then
                     local _, mouseY = imgui.GetMouseDragDelta(globals.ctx, 0)
-                    local newHeight = math.max(60, math.min(400, globals.waveformHeights[itemKey] + mouseY))
+                    local newHeight = math.max(globals.UI.scaleSize(60), math.min(globals.UI.scaleSize(400), globals.waveformHeights[itemKey] + mouseY))
                     globals.waveformHeights[itemKey] = newHeight
                     imgui.ResetMouseDragDelta(globals.ctx, 0)
                 end
@@ -1032,7 +1032,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFFAA00FF) -- Same color on hover (no hover effect)
         soloColorPushed = 2
     end
-    if imgui.Button(globals.ctx, "S##ContainerSolo_" .. containerId, buttonSize, buttonSize) then
+    if globals.UI.Button(globals.ctx, "S##ContainerSolo_" .. containerId, buttonSize, buttonSize) then
         container.isSoloed = not container.isSoloed
         if container.isSoloed and container.isMuted then
             container.isMuted = false
@@ -1045,14 +1045,14 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     end
 
     -- Mute button (square, red when active)
-    imgui.SameLine(globals.ctx, 0, 4)
+    imgui.SameLine(globals.ctx, 0, globals.UI.scaleSize(4))
     local muteColorPushed = 0
     if container.isMuted then
         imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF) -- Red when active
         imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFF0000FF) -- Same color on hover (no hover effect)
         muteColorPushed = 2
     end
-    if imgui.Button(globals.ctx, "M##ContainerMute_" .. containerId, buttonSize, buttonSize) then
+    if globals.UI.Button(globals.ctx, "M##ContainerMute_" .. containerId, buttonSize, buttonSize) then
         container.isMuted = not container.isMuted
         if container.isMuted and container.isSoloed then
             container.isSoloed = false

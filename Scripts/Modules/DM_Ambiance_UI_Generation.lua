@@ -19,17 +19,17 @@ function UI_Generation.drawMainGenerationButton()
     globals.imgui.PushStyleColor(globals.ctx, globals.imgui.Col_Button, 0xFF4CAF50) -- Green button
     globals.imgui.PushStyleColor(globals.ctx, globals.imgui.Col_ButtonHovered, 0xFF66BB6A) -- Lighter green when hovered
     globals.imgui.PushStyleColor(globals.ctx, globals.imgui.Col_ButtonActive, 0xFF43A047) -- Darker green when clicked
-    
-    local buttonPressed = globals.imgui.Button(globals.ctx, "Create Ambiance", 150, 30)
-    
+
+    local buttonPressed = globals.UI.Button(globals.ctx, "Create Ambiance", 150, 30)
+
     -- Pop styling colors to return to default
     globals.imgui.PopStyleColor(globals.ctx, 3)
-    
+
     -- Execute generation if button was pressed
     if buttonPressed then
         globals.Generation.generateGroups()
     end
-    
+
     return buttonPressed
 end
 
@@ -89,8 +89,8 @@ function UI_Generation.drawMultiRegenerateButton(width)
         local t, c = key:match("(%d+)_(%d+)")
         table.insert(selectedContainers, {groupIndex = tonumber(t), containerIndex = tonumber(c)})
     end
-    
-    if globals.imgui.Button(globals.ctx, "Regenerate All", width * 0.5, 30) then
+
+    if globals.imgui.Button(globals.ctx, "Regenerate All", width * 0.5, globals.UI.scaleSize(30)) then
         for _, c in ipairs(selectedContainers) do
             globals.Generation.generateSingleContainer(c.groupIndex, c.containerIndex)
         end

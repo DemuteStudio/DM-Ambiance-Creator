@@ -59,26 +59,88 @@ function UI.initModule(g)
     globals.UI = UI
 end
 
+-- Helper function to scale a size value
+function UI.scaleSize(size)
+    local uiScale = globals.Settings.getSetting("uiScale") or 1.0
+    return size * uiScale
+end
+
+-- Wrapper for Button with automatic scaling
+function UI.Button(ctx, label, width, height)
+    local scaledWidth = width and UI.scaleSize(width) or width
+    local scaledHeight = height and UI.scaleSize(height) or height
+    return globals.imgui.Button(ctx, label, scaledWidth, scaledHeight)
+end
+
+-- Update UI scale (called when scale changes)
+function UI.updateScale(scale)
+    local ctx = globals.ctx
+    local imgui = globals.imgui
+
+    -- Only update if scale actually changed
+    if globals.currentScale == scale then
+        return
+    end
+
+    local oldScale = globals.currentScale or 1.0
+    globals.currentScale = scale
+
+    -- Create scaled font
+    local baseFontSize = 13
+    local scaledSize = math.floor(baseFontSize * scale + 0.5) -- Round to nearest integer
+
+    -- Detach old font if exists
+    if globals.scaledFont then
+        imgui.Detach(ctx, globals.scaledFont)
+    end
+
+    -- Create and attach new scaled font
+    globals.scaledFont = imgui.CreateFont('sans-serif', scaledSize)
+    imgui.Attach(ctx, globals.scaledFont)
+
+    -- Scale waveform heights proportionally when scale changes
+    if globals.waveformHeights then
+        local scaleFactor = scale / oldScale
+        for key, height in pairs(globals.waveformHeights) do
+            globals.waveformHeights[key] = height * scaleFactor
+        end
+    end
+end
+
 -- Push custom style variables for UI
 function UI.PushStyle()
     local ctx = globals.ctx
     local imgui = globals.imgui
     local settings = globals.Settings
     local utils = globals.Utils
-    
-    -- Item Spacing
-    local itemSpacing = settings.getSetting("itemSpacing")
+
+    -- Update UI scale if changed
+    local uiScale = settings.getSetting("uiScale") or 1.0
+    UI.updateScale(uiScale)
+
+    -- Push scaled font
+    if globals.scaledFont then
+        imgui.PushFont(ctx, globals.scaledFont)
+    end
+
+    -- Item Spacing (scaled)
+    local itemSpacing = settings.getSetting("itemSpacing") * uiScale
     imgui.PushStyleVar(ctx, imgui.StyleVar_ItemSpacing, itemSpacing, itemSpacing)
-    
 
+    -- Frame padding (scaled)
+    imgui.PushStyleVar(ctx, imgui.StyleVar_FramePadding, 4 * uiScale, 3 * uiScale)
 
-    -- Round Style for buttons and frames
-    local rounding = settings.getSetting("uiRounding")
-    
+    -- Window padding (scaled)
+    imgui.PushStyleVar(ctx, imgui.StyleVar_WindowPadding, 8 * uiScale, 8 * uiScale)
+
+    -- Round Style for buttons and frames (scaled)
+    local rounding = settings.getSetting("uiRounding") * uiScale
+
     -- Apply the user-defined rounding value
     imgui.PushStyleVar(ctx, imgui.StyleVar_DisabledAlpha, 0.68)
     imgui.PushStyleVar(ctx, imgui.StyleVar_FrameRounding, rounding)
     imgui.PushStyleVar(ctx, imgui.StyleVar_GrabRounding, rounding)
+    imgui.PushStyleVar(ctx, imgui.StyleVar_GrabMinSize, 10 * uiScale)
     
     -- Colors
     local buttonColor = settings.getSetting("buttonColor")
@@ -120,12 +182,18 @@ end
 -- Pop custom style variables
 function UI.PopStyle()
     local ctx = globals.ctx
-    
+    local imgui = globals.imgui
+
+    -- Pop font if we pushed one
+    if globals.scaledFont then
+        imgui.PopFont(ctx)
+    end
+
     -- Increase the number for PushStyleColor
     imgui.PopStyleColor(ctx, 20)
-    
-    -- Increase the number for PushStyleVar
-    imgui.PopStyleVar(ctx, 4)
+
+    -- Increase the number for PushStyleVar (now 8: ItemSpacing, FramePadding, WindowPadding, DisabledAlpha, FrameRounding, GrabRounding, GrabMinSize)
+    imgui.PopStyleVar(ctx, 7)
 end
 
 
@@ -896,9 +964,9 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.TextColored(globals.ctx, 0xAAAA00FF, "(preview mode - 60s - Add time selection to better tweak)")
         end
 
-        local legendWidth = 80  -- Width reserved for legend
-        local previewWidth = width - legendWidth - 10  -- Use full available width minus legend
-        local previewHeight = 120
+        local legendWidth = UI.scaleSize(80)  -- Width reserved for legend (scaled)
+        local previewWidth = width - legendWidth - UI.scaleSize(10)  -- Use full available width minus legend
+        local previewHeight = UI.scaleSize(120)  -- Scaled height
 
         -- Draw preview and legend side by side
         imgui.BeginGroup(globals.ctx)
