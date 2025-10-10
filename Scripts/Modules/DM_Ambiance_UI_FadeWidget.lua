@@ -54,9 +54,24 @@ local function calculateFadeCurve(x, shape, curve)
         -- Cubic bezier approximation
         return t * t * (3 - 2 * t + tension * t * (1 - t))
     elseif shape == Constants.FADE_SHAPES.S_CURVE then
-        -- S-curve with adjustable steepness
-        local steepness = 1 + math.abs(curve) * 3
-        return 1 / (1 + math.exp(-steepness * (x - 0.5)))
+        -- S-curve with adjustable center bias
+        -- Positive curve = push center up (more volume in middle)
+        -- Negative curve = pull center down (less volume in middle)
+
+        -- Adjust both steepness and center based on curve parameter
+        -- Higher absolute curve value = much steeper S-curve
+        local base_steepness = 4 + math.abs(curve) * 15  -- Range from 4 to 19
+        local center_offset = -curve * 0.2  -- Adjust center position (inverted to match REAPER)
+
+        local sigmoid = function(t)
+            return 1 / (1 + math.exp(-base_steepness * (t - (0.5 - center_offset))))
+        end
+
+        -- Normalize to 0-1 range
+        local y0 = sigmoid(0)
+        local y1 = sigmoid(1)
+        local raw_y = sigmoid(x)
+        return (raw_y - y0) / (y1 - y0)
     end
 
     return x  -- Fallback to linear
@@ -110,7 +125,7 @@ function FadeWidget.FadeWidget(config)
 
     if supportsCurve and is_active then
         local mouse_delta_x, mouse_delta_y = imgui.GetMouseDelta(ctx)
-        -- Vertical drag adjusts curve (drag down = positive curve, drag up = negative curve)
+        -- Vertical drag adjusts curve (drag up = positive delta = curve goes up)
         local delta = mouse_delta_y * 0.005
         newCurve = curve + delta
         newCurve = math.max(-1.0, math.min(1.0, newCurve))
@@ -170,15 +185,6 @@ function FadeWidget.FadeWidget(config)
         local screen_y2 = curve_start_y - y2 * curve_height
 
         imgui.DrawList_AddLine(draw_list, screen_x1, screen_y1, screen_x2, screen_y2, col_curve, 2)
-    end
-
-    -- Draw curve value if applicable (centered in widget) - use draw_y
-    if supportsCurve then
-        local curveText = string.format("%.1f", curve)
-        local curve_text_size_x, curve_text_size_y = imgui.CalcTextSize(ctx, curveText)
-        local text_x = cursor_x + (size - curve_text_size_x) * 0.5
-        local text_y = draw_y + (size - curve_text_size_y) * 0.5
-        imgui.DrawList_AddText(draw_list, text_x, text_y, col_text, curveText)
     end
 
     -- Shape selection popup

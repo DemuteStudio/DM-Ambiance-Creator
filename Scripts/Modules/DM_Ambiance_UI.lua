@@ -1534,11 +1534,13 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
 
         -- Interactive Fade Widget (replaces shape dropdown and curve slider)
         imgui.SameLine(globals.ctx)
+        -- For fade out, invert the curve value for display to match REAPER's behavior
+        local displayCurve = (not isIn) and -(curve or 0.0) or (curve or 0.0)
         local shapeChanged, newShape, curveChanged, newCurve = globals.FadeWidget.FadeWidget({
             id = "##FadeWidget" .. suffix,
             fadeType = fadeType,
             shape = shape or 0,
-            curve = curve or 0.0,
+            curve = displayCurve,
             size = 48
         })
 
@@ -1555,8 +1557,10 @@ function UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, 
         end
 
         if curveChanged then
-            if isIn then obj.fadeInCurve = newCurve
-            else obj.fadeOutCurve = newCurve end
+            -- For fade out, invert the curve value to match REAPER's behavior
+            local finalCurve = (not isIn) and -newCurve or newCurve
+            if isIn then obj.fadeInCurve = finalCurve
+            else obj.fadeOutCurve = finalCurve end
             -- Queue fade update to avoid ImGui conflicts
             local modifiedFade = isIn and "fadeIn" or "fadeOut"
             if groupIndex and containerIndex then
