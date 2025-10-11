@@ -313,15 +313,30 @@ function Structures.getEffectiveContainerParams(group, container)
     if group.euclideanAutoBindContainers and container.id then
         -- Container has UUID and group is in auto-bind mode
         if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-            -- Use the specific binding for this container (single layer)
+            -- Combine parent binding + container's own layers
             useBinding = true
-            effectiveParams.euclideanLayers = {
+
+            -- Start with parent binding as first layer
+            local combinedLayers = {
                 {
                     pulses = group.euclideanLayerBindings[container.id].pulses,
                     steps = group.euclideanLayerBindings[container.id].steps,
                     rotation = group.euclideanLayerBindings[container.id].rotation,
                 }
             }
+
+            -- Add container's own euclidean layers (if in Override mode)
+            if container.overrideParent and container.euclideanLayers then
+                for _, layer in ipairs(container.euclideanLayers) do
+                    table.insert(combinedLayers, {
+                        pulses = layer.pulses,
+                        steps = layer.steps,
+                        rotation = layer.rotation,
+                    })
+                end
+            end
+
+            effectiveParams.euclideanLayers = combinedLayers
         end
     end
 

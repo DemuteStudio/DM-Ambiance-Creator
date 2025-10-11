@@ -68,6 +68,27 @@ function UI.scaleSize(size)
     return size * uiScale
 end
 
+-- Get color for a specific euclidean layer index
+-- @param layerIndex number: Layer index (1-based)
+-- @param alpha number: Optional alpha value (0.0-1.0), if nil uses color's original alpha
+-- @return number: Color in 0xRRGGBBAA format
+local function getEuclideanLayerColor(layerIndex, alpha)
+    local colors = {
+        0x4A90E2FF,  -- Bleu (layer 1)
+        0xE67E22FF,  -- Orange (layer 2)
+        0x9B59B6FF,  -- Violet (layer 3)
+        0x1ABC9CFF,  -- Cyan (layer 4)
+        0xF39C12FF,  -- Jaune (layer 5)
+        0xE74C3CFF,  -- Rouge (layer 6)
+    }
+
+    local color = colors[((layerIndex - 1) % #colors) + 1]
+    if alpha then
+        color = (color & 0xFFFFFF00) | math.floor(alpha * 255)
+    end
+    return color
+end
+
 -- Wrapper for Button with automatic scaling
 function UI.Button(ctx, label, width, height)
     local scaledWidth = width and UI.scaleSize(width) or width
@@ -1194,10 +1215,8 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 selectedIndex = dataObj.euclideanSelectedLayer or 1
             end
 
-            -- Layer/Container buttons (disabled for children of auto-bind groups)
-            if isChildOfAutobindGroup then
-                imgui.BeginDisabled(globals.ctx)
-            end
+            -- Layer/Container buttons
+            -- NOTE: For containers in Auto-Bind mode, layers are enabled (additional to parent binding)
             for i, item in ipairs(itemList) do
                 local isSelected = (i == selectedIndex)
 
@@ -1231,7 +1250,14 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     buttonLabel = item.name .. "##eucBinding" .. i
                     buttonWidth = 0  -- Auto-size to fit text
                 else
+                    -- Manual mode: Show color indicator before layer number
                     buttonLabel = tostring(i) .. "##eucLayer" .. i
+                    buttonWidth = 30
+
+                    -- Draw color indicator square before button
+                    local layerColor = getEuclideanLayerColor(i)
+                    imgui.ColorButton(globals.ctx, "##layerColor" .. i, layerColor, imgui.ColorEditFlags_NoTooltip, 12, 12)
+                    imgui.SameLine(globals.ctx, 0, 2)
                 end
 
                 if imgui.Button(globals.ctx, buttonLabel, buttonWidth, 0) then
@@ -1277,14 +1303,8 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     end
                 end
             end
-            if isChildOfAutobindGroup then
-                imgui.EndDisabled(globals.ctx)
-            end
 
             imgui.EndGroup(globals.ctx)
-            if isChildOfAutobindGroup and imgui.IsItemHovered(globals.ctx, imgui.HoveredFlags_AllowWhenDisabled) then
-                imgui.SetTooltip(globals.ctx, "Layer selection is controlled by the parent group in Auto-bind mode")
-            end
         end
 
         -- Warning if selected container is in Override mode
@@ -1386,200 +1406,381 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             end
         end
 
-        -- Pulses slider
-        do
-            -- Determine mode and get current value
-            local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
-            local selectedIndex = 1
-            local currentPulses = 8
-            local itemIdentifier = ""
+        -- Euclidean parameters: Multi-column layout for Manual mode, single column for Auto-bind
+        local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
 
-            if isAutoBind then
-                selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
-                local bindingOrder = dataObj.euclideanBindingOrder or {}
-                local uuid = bindingOrder[selectedIndex]
+        if not isAutoBind then
+            -- MANUAL MODE: Multi-column sliders for each layer
+            local numLayers = #dataObj.euclideanLayers
+            local availableWidth = imgui.GetContentRegionAvail(globals.ctx)
+            local columnWidth = math.max(180, availableWidth / math.min(numLayers, 4))
+
+            for layerIdx = 1, numLayers do
+                if layerIdx > 1 then
+                    imgui.SameLine(globals.ctx)
+                end
+
+                imgui.BeginChild(globals.ctx, "EucLayer" .. layerIdx, columnWidth, 200, imgui.ChildFlags_Border)
+
+                -- Header with color indicator
+                local layerColor = getEuclideanLayerColor(layerIdx)
+                imgui.ColorButton(globals.ctx, "##layerColorHeader" .. layerIdx, layerColor, imgui.ColorEditFlags_NoTooltip, 16, 16)
+                imgui.SameLine(globals.ctx)
+                imgui.Text(globals.ctx, "Layer " .. layerIdx)
+
+                imgui.Spacing(globals.ctx)
+
+                -- Get layer data
+                local layer = dataObj.euclideanLayers[layerIdx]
+                local currentPulses = layer.pulses or 8
+                local currentSteps = layer.steps or 16
+                local currentRotation = layer.rotation or 0
+
+                -- Pulses slider
+                imgui.Text(globals.ctx, "Pulses")
+                local pulsesKey = trackingKey .. "_euclideanPulses_layer_" .. layerIdx
+                local rv, newPulses = globals.SliderEnhanced.SliderDouble({
+                    id = "##Pulses_Layer" .. layerIdx,
+                    value = currentPulses,
+                    min = 1,
+                    max = 64,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
+                    format = "%.0f",
+                    width = columnWidth - 20
+                })
+
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
+                    globals.autoRegenTracking[pulsesKey] = currentPulses
+                end
+
+                if rv then
+                    callbacks.setEuclideanLayerPulses(layerIdx, math.floor(newPulses))
+                end
+
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
+                    checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], currentPulses)
+                    globals.autoRegenTracking[pulsesKey] = nil
+                end
+
+                imgui.Spacing(globals.ctx)
+
+                -- Steps slider
+                imgui.Text(globals.ctx, "Steps")
+                local stepsKey = trackingKey .. "_euclideanSteps_layer_" .. layerIdx
+                local rv, newSteps = globals.SliderEnhanced.SliderDouble({
+                    id = "##Steps_Layer" .. layerIdx,
+                    value = currentSteps,
+                    min = 1,
+                    max = 64,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
+                    format = "%.0f",
+                    width = columnWidth - 20
+                })
+
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
+                    globals.autoRegenTracking[stepsKey] = currentSteps
+                end
+
+                if rv then
+                    callbacks.setEuclideanLayerSteps(layerIdx, math.floor(newSteps))
+                end
+
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
+                    checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], currentSteps)
+                    globals.autoRegenTracking[stepsKey] = nil
+                end
+
+                imgui.Spacing(globals.ctx)
+
+                -- Rotation slider
+                imgui.Text(globals.ctx, "Rotation")
+                local rotationKey = trackingKey .. "_euclideanRotation_layer_" .. layerIdx
+                local maxRotation = currentSteps - 1
+                local rv, newRotation = globals.SliderEnhanced.SliderDouble({
+                    id = "##Rotation_Layer" .. layerIdx,
+                    value = currentRotation,
+                    min = 0,
+                    max = maxRotation,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+                    format = "%.0f",
+                    width = columnWidth - 20
+                })
+
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
+                    globals.autoRegenTracking[rotationKey] = currentRotation
+                end
+
+                if rv then
+                    callbacks.setEuclideanLayerRotation(layerIdx, math.floor(newRotation))
+                end
+
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
+                    checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], currentRotation)
+                    globals.autoRegenTracking[rotationKey] = nil
+                end
+
+                imgui.EndChild(globals.ctx)
+            end
+        else
+            -- AUTO-BIND MODE: Single column layout (original code)
+            local selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
+            local bindingOrder = dataObj.euclideanBindingOrder or {}
+            local uuid = bindingOrder[selectedIndex]
+
+            -- Pulses slider
+            do
+                local currentPulses = 8
+                local itemIdentifier = uuid or ("binding_" .. selectedIndex)
+
                 if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
                     currentPulses = dataObj.euclideanLayerBindings[uuid].pulses or 8
                 end
-                itemIdentifier = uuid or ("binding_" .. selectedIndex)
-            else
-                selectedIndex = dataObj.euclideanSelectedLayer or 1
-                local currentLayer = dataObj.euclideanLayers and dataObj.euclideanLayers[selectedIndex]
-                currentPulses = (currentLayer and currentLayer.pulses) or 8
-                itemIdentifier = "layer_" .. selectedIndex
-            end
 
-            imgui.BeginGroup(globals.ctx)
-            local pulsesKey = trackingKey .. "_euclideanPulses_" .. itemIdentifier
-            local rv, newPulses = globals.SliderEnhanced.SliderDouble({
-                id = "##EuclideanPulses",
-                value = currentPulses,
-                min = 1,
-                max = 64,
-                defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
-                format = "%.0f",
-                width = controlWidth
-            })
+                imgui.BeginGroup(globals.ctx)
+                local pulsesKey = trackingKey .. "_euclideanPulses_" .. itemIdentifier
+                local rv, newPulses = globals.SliderEnhanced.SliderDouble({
+                    id = "##EuclideanPulses",
+                    value = currentPulses,
+                    min = 1,
+                    max = 64,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
+                    format = "%.0f",
+                    width = controlWidth
+                })
 
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
-                globals.autoRegenTracking[pulsesKey] = currentPulses
-            end
-
-            if rv then
-                if isAutoBind then
-                    callbacks.setEuclideanBindingPulses(selectedIndex, math.floor(newPulses))
-                else
-                    callbacks.setEuclideanLayerPulses(selectedIndex, math.floor(newPulses))
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
+                    globals.autoRegenTracking[pulsesKey] = currentPulses
                 end
-            end
 
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
-                checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], currentPulses)
-                globals.autoRegenTracking[pulsesKey] = nil
-            end
+                if rv then
+                    callbacks.setEuclideanBindingPulses(selectedIndex, math.floor(newPulses))
+                end
 
-            imgui.EndGroup(globals.ctx)
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
+                    checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], currentPulses)
+                    globals.autoRegenTracking[pulsesKey] = nil
+                end
 
-            imgui.SameLine(globals.ctx, controlWidth + padding)
-            if isAutoBind then
+                imgui.EndGroup(globals.ctx)
+
+                imgui.SameLine(globals.ctx, controlWidth + padding)
                 imgui.Text(globals.ctx, "Pulses")
-            else
-                imgui.Text(globals.ctx, "Pulses (Layer " .. selectedIndex .. ")")
+                imgui.SameLine(globals.ctx)
+                globals.Utils.HelpMarker("Number of hits to distribute (k)")
             end
-            imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Number of hits to distribute (k)")
-        end
 
-        -- Steps slider
-        do
-            -- Determine mode and get current value
-            local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
-            local selectedIndex = 1
-            local currentSteps = 16
-            local itemIdentifier = ""
+            -- Steps slider
+            do
+                local currentSteps = 16
+                local itemIdentifier = uuid or ("binding_" .. selectedIndex)
 
-            if isAutoBind then
-                selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
-                local bindingOrder = dataObj.euclideanBindingOrder or {}
-                local uuid = bindingOrder[selectedIndex]
                 if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
                     currentSteps = dataObj.euclideanLayerBindings[uuid].steps or 16
                 end
-                itemIdentifier = uuid or ("binding_" .. selectedIndex)
-            else
-                selectedIndex = dataObj.euclideanSelectedLayer or 1
-                local currentLayer = dataObj.euclideanLayers and dataObj.euclideanLayers[selectedIndex]
-                currentSteps = (currentLayer and currentLayer.steps) or 16
-                itemIdentifier = "layer_" .. selectedIndex
-            end
 
-            imgui.BeginGroup(globals.ctx)
-            local stepsKey = trackingKey .. "_euclideanSteps_" .. itemIdentifier
-            local rv, newSteps = globals.SliderEnhanced.SliderDouble({
-                id = "##EuclideanSteps",
-                value = currentSteps,
-                min = 1,
-                max = 64,
-                defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
-                format = "%.0f",
-                width = controlWidth
-            })
+                imgui.BeginGroup(globals.ctx)
+                local stepsKey = trackingKey .. "_euclideanSteps_" .. itemIdentifier
+                local rv, newSteps = globals.SliderEnhanced.SliderDouble({
+                    id = "##EuclideanSteps",
+                    value = currentSteps,
+                    min = 1,
+                    max = 64,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
+                    format = "%.0f",
+                    width = controlWidth
+                })
 
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
-                globals.autoRegenTracking[stepsKey] = currentSteps
-            end
-
-            if rv then
-                if isAutoBind then
-                    callbacks.setEuclideanBindingSteps(selectedIndex, math.floor(newSteps))
-                else
-                    callbacks.setEuclideanLayerSteps(selectedIndex, math.floor(newSteps))
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
+                    globals.autoRegenTracking[stepsKey] = currentSteps
                 end
-            end
 
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
-                checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], currentSteps)
-                globals.autoRegenTracking[stepsKey] = nil
-            end
+                if rv then
+                    callbacks.setEuclideanBindingSteps(selectedIndex, math.floor(newSteps))
+                end
 
-            imgui.EndGroup(globals.ctx)
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
+                    checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], currentSteps)
+                    globals.autoRegenTracking[stepsKey] = nil
+                end
 
-            imgui.SameLine(globals.ctx, controlWidth + padding)
-            if isAutoBind then
+                imgui.EndGroup(globals.ctx)
+
+                imgui.SameLine(globals.ctx, controlWidth + padding)
                 imgui.Text(globals.ctx, "Steps")
-            else
-                imgui.Text(globals.ctx, "Steps (Layer " .. selectedIndex .. ")")
+                imgui.SameLine(globals.ctx)
+                globals.Utils.HelpMarker("Total number of subdivisions (n)")
             end
-            imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Total number of subdivisions (n)")
-        end
 
-        -- Rotation slider
-        do
-            -- Determine mode and get current value
-            local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
-            local selectedIndex = 1
-            local currentRotation = 0
-            local currentSteps = 16
-            local itemIdentifier = ""
+            -- Rotation slider
+            do
+                local currentRotation = 0
+                local currentSteps = 16
+                local itemIdentifier = uuid or ("binding_" .. selectedIndex)
 
-            if isAutoBind then
-                selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
-                local bindingOrder = dataObj.euclideanBindingOrder or {}
-                local uuid = bindingOrder[selectedIndex]
                 if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
                     currentRotation = dataObj.euclideanLayerBindings[uuid].rotation or 0
                     currentSteps = dataObj.euclideanLayerBindings[uuid].steps or 16
                 end
-                itemIdentifier = uuid or ("binding_" .. selectedIndex)
-            else
-                selectedIndex = dataObj.euclideanSelectedLayer or 1
-                local currentLayer = dataObj.euclideanLayers and dataObj.euclideanLayers[selectedIndex]
-                currentRotation = (currentLayer and currentLayer.rotation) or 0
-                currentSteps = (currentLayer and currentLayer.steps) or 16
-                itemIdentifier = "layer_" .. selectedIndex
-            end
 
-            imgui.BeginGroup(globals.ctx)
-            local rotationKey = trackingKey .. "_euclideanRotation_" .. itemIdentifier
-            local maxRotation = currentSteps - 1
-            local rv, newRotation = globals.SliderEnhanced.SliderDouble({
-                id = "##EuclideanRotation",
-                value = currentRotation,
-                min = 0,
-                max = maxRotation,
-                defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
-                format = "%.0f",
-                width = controlWidth
-            })
+                imgui.BeginGroup(globals.ctx)
+                local rotationKey = trackingKey .. "_euclideanRotation_" .. itemIdentifier
+                local maxRotation = currentSteps - 1
+                local rv, newRotation = globals.SliderEnhanced.SliderDouble({
+                    id = "##EuclideanRotation",
+                    value = currentRotation,
+                    min = 0,
+                    max = maxRotation,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+                    format = "%.0f",
+                    width = controlWidth
+                })
 
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
-                globals.autoRegenTracking[rotationKey] = currentRotation
-            end
-
-            if rv then
-                if isAutoBind then
-                    callbacks.setEuclideanBindingRotation(selectedIndex, math.floor(newRotation))
-                else
-                    callbacks.setEuclideanLayerRotation(selectedIndex, math.floor(newRotation))
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
+                    globals.autoRegenTracking[rotationKey] = currentRotation
                 end
-            end
 
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
-                checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], currentRotation)
-                globals.autoRegenTracking[rotationKey] = nil
-            end
+                if rv then
+                    callbacks.setEuclideanBindingRotation(selectedIndex, math.floor(newRotation))
+                end
 
-            imgui.EndGroup(globals.ctx)
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
+                    checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], currentRotation)
+                    globals.autoRegenTracking[rotationKey] = nil
+                end
 
-            imgui.SameLine(globals.ctx, controlWidth + padding)
-            if isAutoBind then
+                imgui.EndGroup(globals.ctx)
+
+                imgui.SameLine(globals.ctx, controlWidth + padding)
                 imgui.Text(globals.ctx, "Rotation")
-            else
-                imgui.Text(globals.ctx, "Rotation (Layer " .. selectedIndex .. ")")
+                imgui.SameLine(globals.ctx)
+                globals.Utils.HelpMarker("Rotate the pattern (0 to steps-1)")
             end
-            imgui.SameLine(globals.ctx)
-            globals.Utils.HelpMarker("Rotate the pattern (0 to steps-1)")
+        end
+
+        -- Container Additional Layers (when child of Auto-Bind parent)
+        if isChildOfAutobindGroup and dataObj.euclideanLayers and #dataObj.euclideanLayers > 0 then
+            imgui.Spacing(globals.ctx)
+            imgui.Separator(globals.ctx)
+            imgui.Spacing(globals.ctx)
+
+            -- Informational text
+            imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x88AAFFFF)  -- Light blue info color
+            imgui.TextWrapped(globals.ctx, "ℹ Additional Layers (combined with parent binding):")
+            imgui.PopStyleColor(globals.ctx)
+            imgui.Spacing(globals.ctx)
+
+            -- Multi-column sliders for container's own layers
+            local numLayers = #dataObj.euclideanLayers
+            local availableWidth = imgui.GetContentRegionAvail(globals.ctx)
+            local columnWidth = math.max(180, availableWidth / math.min(numLayers, 4))
+
+            for layerIdx = 1, numLayers do
+                if layerIdx > 1 then
+                    imgui.SameLine(globals.ctx)
+                end
+
+                imgui.BeginChild(globals.ctx, "ContainerEucLayer" .. layerIdx, columnWidth, 200, imgui.ChildFlags_Border)
+
+                -- Header with color indicator (offset by 1 since parent binding is layer 1)
+                local displayLayerIdx = layerIdx + 1  -- Parent binding is layer 1
+                local layerColor = getEuclideanLayerColor(displayLayerIdx)
+                imgui.ColorButton(globals.ctx, "##containerLayerColorHeader" .. layerIdx, layerColor, imgui.ColorEditFlags_NoTooltip, 16, 16)
+                imgui.SameLine(globals.ctx)
+                imgui.Text(globals.ctx, "Layer " .. displayLayerIdx)
+
+                imgui.Spacing(globals.ctx)
+
+                -- Get layer data
+                local layer = dataObj.euclideanLayers[layerIdx]
+                local currentPulses = layer.pulses or 8
+                local currentSteps = layer.steps or 16
+                local currentRotation = layer.rotation or 0
+
+                -- Pulses slider
+                imgui.Text(globals.ctx, "Pulses")
+                local pulsesKey = trackingKey .. "_euclideanPulses_containerLayer_" .. layerIdx
+                local rv, newPulses = globals.SliderEnhanced.SliderDouble({
+                    id = "##ContainerPulses_Layer" .. layerIdx,
+                    value = currentPulses,
+                    min = 1,
+                    max = 64,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
+                    format = "%.0f",
+                    width = columnWidth - 20
+                })
+
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
+                    globals.autoRegenTracking[pulsesKey] = currentPulses
+                end
+
+                if rv then
+                    callbacks.setEuclideanLayerPulses(layerIdx, math.floor(newPulses))
+                end
+
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
+                    checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], currentPulses)
+                    globals.autoRegenTracking[pulsesKey] = nil
+                end
+
+                imgui.Spacing(globals.ctx)
+
+                -- Steps slider
+                imgui.Text(globals.ctx, "Steps")
+                local stepsKey = trackingKey .. "_euclideanSteps_containerLayer_" .. layerIdx
+                local rv2, newSteps = globals.SliderEnhanced.SliderDouble({
+                    id = "##ContainerSteps_Layer" .. layerIdx,
+                    value = currentSteps,
+                    min = 1,
+                    max = 64,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
+                    format = "%.0f",
+                    width = columnWidth - 20
+                })
+
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
+                    globals.autoRegenTracking[stepsKey] = currentSteps
+                end
+
+                if rv2 then
+                    callbacks.setEuclideanLayerSteps(layerIdx, math.floor(newSteps))
+                end
+
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
+                    checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], currentSteps)
+                    globals.autoRegenTracking[stepsKey] = nil
+                end
+
+                imgui.Spacing(globals.ctx)
+
+                -- Rotation slider
+                imgui.Text(globals.ctx, "Rotation")
+                local rotationKey = trackingKey .. "_euclideanRotation_containerLayer_" .. layerIdx
+                local maxRotation = currentSteps - 1
+                local rv3, newRotation = globals.SliderEnhanced.SliderDouble({
+                    id = "##ContainerRotation_Layer" .. layerIdx,
+                    value = currentRotation,
+                    min = 0,
+                    max = maxRotation,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+                    format = "%.0f",
+                    width = columnWidth - 20
+                })
+
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
+                    globals.autoRegenTracking[rotationKey] = currentRotation
+                end
+
+                if rv3 then
+                    callbacks.setEuclideanLayerRotation(layerIdx, math.floor(newRotation))
+                end
+
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
+                    checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], currentRotation)
+                    globals.autoRegenTracking[rotationKey] = nil
+                end
+
+                imgui.EndChild(globals.ctx)
+            end
         end
 
         -- Euclidean Pattern Visualization and Saved Patterns
@@ -2797,32 +2998,53 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
     local selectedIndex = 1
 
     if isAutoBind then
-        -- AUTO-BIND MODE: Use bindings
+        -- AUTO-BIND MODE: Combine parent binding + container's own layers for each container
         if dataObj.euclideanBindingOrder then
             for i, uuid in ipairs(dataObj.euclideanBindingOrder) do
                 if dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
-                    table.insert(layers, dataObj.euclideanLayerBindings[uuid])
-
-                    -- Find container name by UUID
+                    -- Find container by UUID
+                    local container = nil
                     local containerName = "???"
                     if dataObj.containers then
-                        for _, container in ipairs(dataObj.containers) do
-                            if container.id == uuid then
-                                containerName = container.name
+                        for _, c in ipairs(dataObj.containers) do
+                            if c.id == uuid then
+                                container = c
+                                containerName = c.name
                                 break
                             end
                         end
                     end
+
+                    -- Build combined layer list for this container
+                    local containerLayers = {
+                        -- Start with parent binding
+                        dataObj.euclideanLayerBindings[uuid]
+                    }
+
+                    -- Add container's own layers if in Override mode
+                    if container and container.overrideParent and container.euclideanLayers then
+                        for _, layer in ipairs(container.euclideanLayers) do
+                            table.insert(containerLayers, layer)
+                        end
+                    end
+
+                    -- Store as array of layers (each circle = multiple layers combined)
+                    table.insert(layers, containerLayers)
                     table.insert(layerNames, containerName)
                 end
             end
         end
         selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
     else
-        -- MANUAL MODE: Use layers
-        layers = dataObj.euclideanLayers
-        if not layers or #layers == 0 then
-            layers = {{pulses = 8, steps = 16, rotation = 0}}
+        -- MANUAL MODE: Use layers (each layer is a single pattern)
+        -- Wrap each layer in an array for consistency
+        layers = {}
+        local sourceLayers = dataObj.euclideanLayers
+        if not sourceLayers or #sourceLayers == 0 then
+            sourceLayers = {{pulses = 8, steps = 16, rotation = 0}}
+        end
+        for _, layer in ipairs(sourceLayers) do
+            table.insert(layers, {layer})  -- Wrap single layer in array
         end
         selectedIndex = dataObj.euclideanSelectedLayer or 1
     end
@@ -2840,56 +3062,48 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
     local borderColor = 0x666666FF
     imgui.DrawList_AddRect(drawList, cursorX, cursorY, cursorX + size, cursorY + size, borderColor)
 
-    -- Calculate circle layout - superposed circles with decreasing radius
-    local padding = 10  -- Reduced from 20 to allow larger circles
+    -- Calculate circle layout
+    local padding = 10
     local centerX = cursorX + size / 2
     local centerY = cursorY + size / 2
     local maxRadius = (size / 2) - padding
 
-    -- Use waveform color for consistency
-    local waveformColor = globals.Settings.getSetting("waveformColor")
-
-    -- Calculate brighter color for filled dots
-    local baseColor = waveformColor or 0x00CCA0FF
-    local r = (baseColor & 0x000000FF)
-    local g = (baseColor & 0x0000FF00) >> 8
-    local b = (baseColor & 0x00FF0000) >> 16
-    local a = (baseColor & 0xFF000000) >> 24
-    local brightnessFactor = 1.3
-    r = math.min(255, math.floor(r * brightnessFactor))
-    g = math.min(255, math.floor(g * brightnessFactor))
-    b = math.min(255, math.floor(b * brightnessFactor))
-    local filledColor = r | (g << 8) | (b << 16) | (a << 24)
-
-    -- Colors for empty dots and selected layer highlight
+    -- Colors for empty dots and guide circle
     local emptyColor = 0x666666FF
     local guideColor = 0x444444FF
     local selectedGuideColor = 0x777777FF
 
-    -- Draw layers from largest to smallest (reverse order so inner layers are on top)
-    for layerIdx = layerCount, 1, -1 do
-        local layer = layers[layerIdx]
-        local pulses = layer.pulses or 8
-        local steps = layer.steps or 16
-        local rotation = layer.rotation or 0
+    -- Draw layers
+    -- Auto-Bind mode: concentric circles (largest to smallest, outer to inner)
+    -- Manual mode: single circle with color overlay (reverse order for z-order)
+    local drawOrder = isAutoBind and 1 or layerCount
+    local drawStep = isAutoBind and 1 or -1
+    local drawEnd = isAutoBind and layerCount or 1
 
-        -- Calculate radius for this layer (each layer is smaller)
-        local radiusRatio = 1.0 - ((layerIdx - 1) * 0.16)  -- Each layer 16% smaller to avoid dot overlap
-        local currentRadius = maxRadius * radiusRatio
+    for layerIdx = drawOrder, drawEnd, drawStep do
+        -- Each element in 'layers' is now an array of patterns to combine
+        local layerPatterns = layers[layerIdx]
 
-        -- Generate euclidean pattern first to know where dots are
-        local pattern = globals.Utils.euclideanRhythm(pulses, steps)
-
-        -- Apply rotation
-        if rotation ~= 0 then
-            rotation = rotation % steps
-            local rotated = {}
-            for i = 1, steps do
-                local sourceIndex = ((i - 1 - rotation) % steps) + 1
-                rotated[i] = pattern[sourceIndex]
-            end
-            pattern = rotated
+        -- Calculate radius based on mode
+        local currentRadius
+        if isAutoBind then
+            -- Auto-Bind: Concentric circles (each layer gets smaller radius)
+            local radiusRatio = 1.0 - ((layerIdx - 1) * 0.16)  -- Each layer 16% smaller
+            currentRadius = maxRadius * radiusRatio
+        else
+            -- Manual: Single radius for all layers (superposition)
+            currentRadius = maxRadius
         end
+
+        -- Combine all patterns for this circle using the utility function
+        local combinedPattern, circleSteps = globals.Utils.combineEuclideanLayers(layerPatterns)
+
+        -- For drawing, we need to know the step count
+        -- Use the combined pattern's step count
+        local steps = circleSteps
+
+        -- Convert combined pattern array to simple pattern for drawing
+        local pattern = combinedPattern
 
         -- Draw circle guide segments (avoiding dots)
         local isLayerSelected = (layerIdx == selectedIndex)
@@ -2929,16 +3143,17 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         end
 
         -- Draw dots around the circle
-        local dotRadius = math.min(5.5, maxRadius / 8)  -- Increased from 4.0 and maxRadius/10 for better visibility
+        local dotRadius = math.min(5.5, maxRadius / 8)
 
-        -- Apply transparency to non-selected layers
-        local layerFilledColor = filledColor
+        -- Get layer-specific color
+        local layerFilledColor = getEuclideanLayerColor(layerIdx)
         local layerEmptyColor = emptyColor
         local layerBgColor = bgColor
 
+        -- Apply transparency to non-selected layers
         if not isLayerSelected then
-            -- Make non-selected layers more transparent (40% opacity = 0x66, format: 0xRRGGBBAA)
-            layerFilledColor = (filledColor & 0xFFFFFF00) | 0x66
+            -- Make non-selected layers more transparent (40% opacity = 0x66)
+            layerFilledColor = getEuclideanLayerColor(layerIdx, 0.4)
             layerEmptyColor = (emptyColor & 0xFFFFFF00) | 0x66
             layerBgColor = (bgColor & 0xFFFFFF00) | 0x66
         end

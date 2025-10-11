@@ -2586,4 +2586,106 @@ function Utils.euclideanRhythm(pulses, steps)
     return pattern
 end
 
+-- Calculate GCD (Greatest Common Divisor) using Euclidean algorithm
+-- @param a number: First number
+-- @param b number: Second number
+-- @return number: GCD of a and b
+function Utils.gcd(a, b)
+    while b ~= 0 do
+        a, b = b, a % b
+    end
+    return a
+end
+
+-- Calculate LCM (Least Common Multiple)
+-- @param a number: First number
+-- @param b number: Second number
+-- @return number: LCM of a and b
+function Utils.lcm(a, b)
+    return (a * b) / Utils.gcd(a, b)
+end
+
+-- Calculate LCM of multiple numbers
+-- @param numbers table: Array of numbers
+-- @return number: LCM of all numbers
+function Utils.lcmMultiple(numbers)
+    if #numbers == 0 then return 1 end
+    if #numbers == 1 then return numbers[1] end
+
+    local result = numbers[1]
+    for i = 2, #numbers do
+        result = Utils.lcm(result, numbers[i])
+    end
+    return result
+end
+
+-- Combine euclidean layers into a single pattern using polyrhythmic mapping
+-- @param layers table: Array of layer objects with {pulses, steps, rotation}
+-- @return table: Combined pattern array (1-indexed, true=hit, false=rest)
+-- @return number: LCM steps (length of combined pattern)
+function Utils.combineEuclideanLayers(layers)
+    if not layers or #layers == 0 then
+        return {true}, 1
+    end
+
+    -- Calculate LCM of all step counts
+    local stepCounts = {}
+    for _, layer in ipairs(layers) do
+        table.insert(stepCounts, layer.steps or 16)
+    end
+    local lcmSteps = math.floor(Utils.lcmMultiple(stepCounts))
+
+    -- Initialize combined pattern
+    local combinedPattern = {}
+    for i = 1, lcmSteps do
+        combinedPattern[i] = false
+    end
+
+    -- Process each layer
+    for layerIdx, layer in ipairs(layers) do
+        local pulses = layer.pulses or 8
+        local steps = layer.steps or 16
+        local rotation = layer.rotation or 0
+
+        -- Generate euclidean pattern
+        local pattern = Utils.euclideanRhythm(pulses, steps)
+
+        -- Apply rotation (shift pattern)
+        if rotation ~= 0 then
+            rotation = rotation % steps
+            local rotated = {}
+            for i = 1, steps do
+                local sourceIndex = ((i - 1 - rotation) % steps) + 1
+                rotated[i] = pattern[sourceIndex]
+            end
+            pattern = rotated
+        end
+
+        -- Extract pulse steps
+        local pulseSteps = {}
+        for i = 1, steps do
+            if pattern[i] then
+                table.insert(pulseSteps, i)
+            end
+        end
+
+        -- Map pulses to LCM grid using polyrhythmic formula:
+        -- gridPos = rotation + (stepIndex - 1) * (lcmSteps / layerSteps)
+        local stepSize = lcmSteps / steps  -- How many LCM positions per layer step
+
+        for _, stepIndex in ipairs(pulseSteps) do
+            local gridPos = rotation + (stepIndex - 1) * stepSize
+
+            -- Round to nearest integer and clamp
+            gridPos = math.floor(gridPos + 0.5)
+            if gridPos < 1 then gridPos = 1 end
+            if gridPos > lcmSteps then gridPos = lcmSteps end
+
+            combinedPattern[gridPos] = true
+        end
+    end
+
+    return combinedPattern, lcmSteps
+end
+
 return Utils

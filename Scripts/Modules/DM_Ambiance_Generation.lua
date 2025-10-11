@@ -4001,74 +4001,15 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
         layers = {{pulses = 8, steps = 16, rotation = 0}}
     end
 
-    -- Debug: Print parameters (disabled)
-    -- reaper.ShowConsoleMsg(string.format("Euclidean: mode=%d, layers=%d, tempo=%d, useProject=%s\n",
-    --     mode, #layers, tempo, tostring(useProjectTempo)))
-
-    -- Generate patterns for all layers and combine them
-    local maxSteps = 0
-    local layerPatterns = {}
-
-    for layerIdx, layer in ipairs(layers) do
-        local pulses = layer.pulses or 8
-        local steps = layer.steps or 16
-        local rotation = layer.rotation or 0
-
-        if steps > maxSteps then
-            maxSteps = steps
-        end
-
-        -- Generate euclidean pattern
-        local pattern = Utils.euclideanRhythm(pulses, steps)
-
-        -- Apply rotation
-        if rotation ~= 0 then
-            rotation = rotation % steps
-            local rotated = {}
-            for i = 1, steps do
-                local sourceIndex = ((i - 1 - rotation) % steps) + 1
-                rotated[i] = pattern[sourceIndex]
-            end
-            pattern = rotated
-        end
-
-        layerPatterns[layerIdx] = {pattern = pattern, steps = steps}
-
-        -- Debug: Print pattern (disabled)
-        -- local patternStr = ""
-        -- for i = 1, #pattern do
-        --     patternStr = patternStr .. (pattern[i] and "X" or ".")
-        -- end
-        -- reaper.ShowConsoleMsg(string.format("Layer %d: %s\n", layerIdx, patternStr))
-    end
-
-    -- Combine patterns: OR operation (any layer with hit = combined hit)
-    -- Use highest step count as reference
-    local combinedPattern = {}
-    for i = 1, maxSteps do
-        combinedPattern[i] = false
-        for _, layerData in ipairs(layerPatterns) do
-            local layerStep = ((i - 1) % layerData.steps) + 1
-            if layerData.pattern[layerStep] then
-                combinedPattern[i] = true
-                break  -- One hit is enough
-            end
-        end
-    end
-
-    -- Debug: Print combined pattern (disabled)
-    -- local combinedStr = ""
-    -- for i = 1, #combinedPattern do
-    --     combinedStr = combinedStr .. (combinedPattern[i] and "X" or ".")
-    -- end
-    -- reaper.ShowConsoleMsg("Combined: " .. combinedStr .. "\n")
+    -- Use shared utility function to combine euclidean layers
+    local combinedPattern, lcmSteps = Utils.combineEuclideanLayers(layers)
 
     -- Place items according to combined pattern
     local itemIndex = 0
     local currentTime = globals.startTime
 
     while currentTime < globals.endTime do
-        for stepIdx = 1, maxSteps do
+        for stepIdx = 1, lcmSteps do
             local placementTime
 
             -- Calculate placement time based on mode
@@ -4078,18 +4019,18 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
                     -- Use project tempo at current position (supports tempo changes)
                     -- Calculate beat position for each step
                     local beatStart = reaper.TimeMap2_timeToQN(0, currentTime)
-                    local beatOffset = (stepIdx - 1) * (4.0 / maxSteps)  -- Fraction of 4 beats
+                    local beatOffset = (stepIdx - 1) * (4.0 / lcmSteps)  -- Fraction of 4 beats
                     local targetBeat = beatStart + beatOffset
                     placementTime = reaper.TimeMap2_QNToTime(0, targetBeat)
                 else
                     -- Use fixed tempo
-                    local stepDuration = (60.0 / tempo) * 4 / maxSteps  -- Assuming 4/4 time
+                    local stepDuration = (60.0 / tempo) * 4 / lcmSteps  -- Assuming 4/4 time
                     placementTime = currentTime + (stepIdx - 1) * stepDuration
                 end
             else
                 -- Fit-to-Selection mode: stretch pattern to fit time selection exactly once
                 local duration = globals.endTime - globals.startTime
-                local stepDuration = duration / maxSteps
+                local stepDuration = duration / lcmSteps
                 placementTime = currentTime + (stepIdx - 1) * stepDuration
             end
 
@@ -4234,8 +4175,8 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
                 currentTime = reaper.TimeMap2_QNToTime(0, targetBeat)
             else
                 -- Use fixed tempo
-                local stepDuration = (60.0 / tempo) * 4 / maxSteps
-                currentTime = currentTime + maxSteps * stepDuration
+                local stepDuration = (60.0 / tempo) * 4 / lcmSteps
+                currentTime = currentTime + lcmSteps * stepDuration
             end
         else
             -- Fit mode: only one repetition
