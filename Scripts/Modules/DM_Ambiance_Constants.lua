@@ -205,7 +205,7 @@ Constants.DEFAULTS = {
     EUCLIDEAN_USE_PROJECT_TEMPO = false, -- Default use project tempo
     EUCLIDEAN_PULSES = 8,               -- Default number of pulses (hits)
     EUCLIDEAN_STEPS = 16,               -- Default number of steps (subdivisions)
-    EUCLIDEAN_ROTATION = 0,             -- Default rotation offset
+    EUCLIDEAN_ROTATION = 1,             -- Default rotation offset
     EUCLIDEAN_SELECTED_LAYER = 1,       -- Default selected layer index
     EUCLIDEAN_SELECTED_BINDING_INDEX = 1, -- Default selected binding index (auto-bind mode)
     -- Fibonacci Mode defaults

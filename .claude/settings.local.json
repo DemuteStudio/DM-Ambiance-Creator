@@ -8,7 +8,8 @@
       "Read(//d//**)",
       "Bash(dir)",
       "Bash(ls:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Read(//c/Users/antho/AppData/Roaming/REAPER/Scripts/Demute/Ambiance Creator/Presets/Global/**)"
     ],
     "deny": [],
     "ask": []

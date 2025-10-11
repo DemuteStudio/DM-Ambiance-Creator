@@ -1079,10 +1079,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
     -- Euclidean Rhythm mode specific controls
     if dataObj.intervalMode == 5 then
-        -- DEBUG
-        local debugMsg = "DEBUG: isGroup=" .. tostring(isGroup) .. " | groupIndex=" .. tostring(groupIndex) .. " | containerIndex=" .. tostring(containerIndex)
-        imgui.TextColored(globals.ctx, 0xFF00FFFF, debugMsg)
-
         local labelWidth = 150
         local padding = 10
         local controlWidth = width - labelWidth - padding - 10
@@ -1627,16 +1623,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                 obj.euclideanAutoBindContainers = v
                 -- Sync bindings when toggling auto-bind
                 if v and isGroup and groupIndex and groupIndex >= 1 and groupIndex <= #globals.groups then
-                    reaper.ShowConsoleMsg("DEBUG: Syncing bindings for group " .. groupIndex .. "\n")
-                    reaper.ShowConsoleMsg("DEBUG: Group has " .. #globals.groups[groupIndex].containers .. " containers\n")
                     globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
-                    local bindingCount = 0
-                    if globals.groups[groupIndex].euclideanLayerBindings then
-                        for _ in pairs(globals.groups[groupIndex].euclideanLayerBindings) do
-                            bindingCount = bindingCount + 1
-                        end
-                    end
-                    reaper.ShowConsoleMsg("DEBUG: Created " .. bindingCount .. " bindings\n")
                 end
                 obj.needsRegeneration = true
             end,
@@ -2630,7 +2617,7 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
     imgui.DrawList_AddRect(drawList, cursorX, cursorY, cursorX + size, cursorY + size, borderColor)
 
     -- Calculate circle layout - superposed circles with decreasing radius
-    local padding = 20
+    local padding = 10  -- Reduced from 20 to allow larger circles
     local centerX = cursorX + size / 2
     local centerY = cursorY + size / 2
     local maxRadius = (size / 2) - padding
@@ -2663,7 +2650,7 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         local rotation = layer.rotation or 0
 
         -- Calculate radius for this layer (each layer is smaller)
-        local radiusRatio = 1.0 - ((layerIdx - 1) * 0.15)  -- Each layer 15% smaller
+        local radiusRatio = 1.0 - ((layerIdx - 1) * 0.16)  -- Each layer 16% smaller to avoid dot overlap
         local currentRadius = maxRadius * radiusRatio
 
         -- Generate euclidean pattern first to know where dots are
@@ -2709,7 +2696,7 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         end
 
         -- Draw dots around the circle
-        local dotRadius = math.min(4.0, maxRadius / 10)  -- Scale dot size
+        local dotRadius = math.min(5.5, maxRadius / 8)  -- Increased from 4.0 and maxRadius/10 for better visibility
         for i = 1, steps do
             -- Calculate angle (start at top, rotate clockwise)
             local angle = (2 * math.pi * (i - 1) / steps) - (math.pi / 2)

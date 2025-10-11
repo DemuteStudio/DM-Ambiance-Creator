@@ -104,7 +104,20 @@ local function serializeTable(val, name, depth)
   if type(val) == "table" then
     result = result .. "{\n"
     for k, v in pairs(val) do
-      local key = type(k) == "number" and "[" .. k .. "]" or k
+      local key
+      if type(k) == "number" then
+        key = "[" .. k .. "]"
+      elseif type(k) == "string" then
+        -- Check if key is a valid Lua identifier
+        if k:match("^[%a_][%w_]*$") then
+          key = k
+        else
+          -- Non-identifier string (like UUID), use bracket notation with quotes
+          key = "[" .. string.format("%q", k) .. "]"
+        end
+      else
+        key = "[" .. tostring(k) .. "]"
+      end
       result = result .. serializeTable(v, key, depth + 1) .. ",\n"
     end
     result = result .. indent .. "}"
