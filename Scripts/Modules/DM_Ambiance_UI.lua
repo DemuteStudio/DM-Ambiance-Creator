@@ -1582,13 +1582,20 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             globals.Utils.HelpMarker("Rotate the pattern (0 to steps-1)")
         end
 
-        -- Euclidean Pattern Visualization
+        -- Euclidean Pattern Visualization and Saved Patterns
         imgui.Spacing(globals.ctx)
         imgui.Text(globals.ctx, "Pattern Preview:")
 
         local previewSize = UI.scaleSize(140)  -- Circle diameter
 
+        -- Layout: Preview on left, saved patterns list on right
+        imgui.BeginGroup(globals.ctx)
         UI.drawEuclideanPreview(dataObj, previewSize, isGroup)
+        imgui.EndGroup(globals.ctx)
+
+        -- Draw saved patterns list on the right
+        imgui.SameLine(globals.ctx, 0, 15)
+        UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupIndex, containerIndex, previewSize)
     end
 
     -- Fade in/out controls are commented out but can be enabled if needed
@@ -2960,6 +2967,132 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
 
     -- Reserve space for the preview
     imgui.Dummy(globals.ctx, size, size)
+end
+
+-- Draw saved euclidean patterns list with Save/Override buttons
+function UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupIndex, containerIndex, height)
+    if not dataObj then return end
+
+    -- Initialize saved patterns array if needed
+    if not dataObj.euclideanSavedPatterns then
+        dataObj.euclideanSavedPatterns = {}
+    end
+
+    local savedPatterns = dataObj.euclideanSavedPatterns
+    local listWidth = 180  -- Fixed width for the list
+
+    imgui.BeginGroup(globals.ctx)
+
+    -- Get current layer data
+    local currentPulses, currentSteps, currentRotation
+    local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
+
+    if isAutoBind then
+        local selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
+        if dataObj.euclideanBindingOrder and dataObj.euclideanBindingOrder[selectedIndex] then
+            local uuid = dataObj.euclideanBindingOrder[selectedIndex]
+            local binding = dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid]
+            if binding then
+                currentPulses = binding.pulses or 8
+                currentSteps = binding.steps or 16
+                currentRotation = binding.rotation or 0
+            end
+        end
+    else
+        local selectedIndex = dataObj.euclideanSelectedLayer or 1
+        if dataObj.euclideanLayers and dataObj.euclideanLayers[selectedIndex] then
+            local layer = dataObj.euclideanLayers[selectedIndex]
+            currentPulses = layer.pulses or 8
+            currentSteps = layer.steps or 16
+            currentRotation = layer.rotation or 0
+        end
+    end
+
+    -- Save button
+    if imgui.Button(globals.ctx, "Save Pattern##eucSave", listWidth, 0) then
+        if currentPulses and currentSteps and currentRotation then
+            local patternName = globals.Presets.saveEuclideanPattern(dataObj, currentPulses, currentSteps, currentRotation)
+        end
+    end
+    if imgui.IsItemHovered(globals.ctx) then
+        imgui.SetTooltip(globals.ctx, "Save current pattern (" .. (currentPulses or "?") .. " - " .. (currentSteps or "?") .. " - " .. (currentRotation or "?") .. ")")
+    end
+
+    imgui.Spacing(globals.ctx)
+
+    -- Saved patterns list in a scrollable child window
+    local listHeight = height - 35  -- Reserve space for Save button and spacing
+    if imgui.BeginChild(globals.ctx, "##eucSavedPatternsList", listWidth, listHeight) then
+        if #savedPatterns == 0 then
+            imgui.TextDisabled(globals.ctx, "No saved patterns")
+        else
+            for i, pattern in ipairs(savedPatterns) do
+                -- Calculate available width and reserve space for override + delete buttons
+                local availWidth = imgui.GetContentRegionAvail(globals.ctx)
+                local buttonWidth = 105  -- Width for both buttons + spacing
+                local selectableWidth = availWidth - buttonWidth
+
+                -- Draw selectable with limited width
+                local isSelected = false
+                if imgui.Selectable(globals.ctx, pattern.name .. "##saved" .. i, isSelected, 0, selectableWidth, 0) then
+                    -- Load pattern on click
+                    local patternData = globals.Presets.loadEuclideanPattern(dataObj, pattern.name)
+                    if patternData then
+                        if isAutoBind then
+                            local selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
+                            if callbacks.setEuclideanBindingPulses then
+                                callbacks.setEuclideanBindingPulses(selectedIndex, patternData.pulses)
+                            end
+                            if callbacks.setEuclideanBindingSteps then
+                                callbacks.setEuclideanBindingSteps(selectedIndex, patternData.steps)
+                            end
+                            if callbacks.setEuclideanBindingRotation then
+                                callbacks.setEuclideanBindingRotation(selectedIndex, patternData.rotation)
+                            end
+                        else
+                            local selectedIndex = dataObj.euclideanSelectedLayer or 1
+                            if callbacks.setEuclideanLayerPulses then
+                                callbacks.setEuclideanLayerPulses(selectedIndex, patternData.pulses)
+                            end
+                            if callbacks.setEuclideanLayerSteps then
+                                callbacks.setEuclideanLayerSteps(selectedIndex, patternData.steps)
+                            end
+                            if callbacks.setEuclideanLayerRotation then
+                                callbacks.setEuclideanLayerRotation(selectedIndex, patternData.rotation)
+                            end
+                        end
+                    end
+                end
+
+                -- Position override button
+                imgui.SameLine(globals.ctx, 0, 0)
+                local windowWidth = imgui.GetWindowWidth(globals.ctx)
+                imgui.SetCursorPosX(globals.ctx, windowWidth - buttonWidth - 5)
+
+                if imgui.Button(globals.ctx, "Override##ovr" .. i, 65, 0) then
+                    if currentPulses and currentSteps and currentRotation then
+                        globals.Presets.overrideEuclideanPattern(dataObj, pattern.name, currentPulses, currentSteps, currentRotation)
+                    end
+                end
+                if imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetTooltip(globals.ctx, "Replace '" .. pattern.name .. "' with current pattern")
+                end
+
+                -- Position delete button
+                imgui.SameLine(globals.ctx, 0, 2)
+                if imgui.SmallButton(globals.ctx, "X##del" .. i) then
+                    globals.Presets.deleteEuclideanPattern(dataObj, pattern.name)
+                end
+                if imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetTooltip(globals.ctx, "Delete '" .. pattern.name .. "'")
+                end
+            end
+        end
+
+        imgui.EndChild(globals.ctx)
+    end
+
+    imgui.EndGroup(globals.ctx)
 end
 
 -- Main window rendering function

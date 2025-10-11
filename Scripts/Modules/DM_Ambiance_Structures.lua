@@ -71,17 +71,8 @@ function Structures.createGroup(name)
         euclideanLayerBindings = {},  -- {[containerUUID] = {pulses, steps, rotation}}
         euclideanBindingOrder = {},  -- Array of containerUUIDs in display order
         euclideanSelectedBindingIndex = Constants.DEFAULTS.EUCLIDEAN_SELECTED_BINDING_INDEX,  -- Selected binding index (auto-bind mode)
-        -- Fibonacci Mode parameters
-        fibonacciMode = Constants.DEFAULTS.FIBONACCI_MODE,
-        fibonacciTempo = Constants.DEFAULTS.FIBONACCI_TEMPO,
-        fibonacciStart = Constants.DEFAULTS.FIBONACCI_START,
-        fibonacciScale = Constants.DEFAULTS.FIBONACCI_SCALE,
-        fibonacciCount = Constants.DEFAULTS.FIBONACCI_COUNT,
-        -- Golden Ratio Mode parameters
-        goldenRatioMode = Constants.DEFAULTS.GOLDEN_RATIO_MODE,
-        goldenRatioTempo = Constants.DEFAULTS.GOLDEN_RATIO_TEMPO,
-        goldenRatioBase = Constants.DEFAULTS.GOLDEN_RATIO_BASE,
-        goldenRatioDepth = Constants.DEFAULTS.GOLDEN_RATIO_DEPTH,
+        -- Euclidean Saved Patterns (for both groups and containers)
+        euclideanSavedPatterns = {},  -- Array of {name, pulses, steps, rotation}
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -173,17 +164,8 @@ function Structures.createContainer(name)
                 rotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
             }
         },
-        -- Fibonacci Mode parameters
-        fibonacciMode = Constants.DEFAULTS.FIBONACCI_MODE,
-        fibonacciTempo = Constants.DEFAULTS.FIBONACCI_TEMPO,
-        fibonacciStart = Constants.DEFAULTS.FIBONACCI_START,
-        fibonacciScale = Constants.DEFAULTS.FIBONACCI_SCALE,
-        fibonacciCount = Constants.DEFAULTS.FIBONACCI_COUNT,
-        -- Golden Ratio Mode parameters
-        goldenRatioMode = Constants.DEFAULTS.GOLDEN_RATIO_MODE,
-        goldenRatioTempo = Constants.DEFAULTS.GOLDEN_RATIO_TEMPO,
-        goldenRatioBase = Constants.DEFAULTS.GOLDEN_RATIO_BASE,
-        goldenRatioDepth = Constants.DEFAULTS.GOLDEN_RATIO_DEPTH,
+        -- Euclidean Saved Patterns (for containers only)
+        euclideanSavedPatterns = {},  -- Array of {name, pulses, steps, rotation}
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -356,19 +338,6 @@ function Structures.getEffectiveContainerParams(group, container)
             end
         end
     end
-
-    -- Inherit fibonacci mode settings
-    effectiveParams.fibonacciMode = group.fibonacciMode
-    effectiveParams.fibonacciTempo = group.fibonacciTempo
-    effectiveParams.fibonacciStart = group.fibonacciStart
-    effectiveParams.fibonacciScale = group.fibonacciScale
-    effectiveParams.fibonacciCount = group.fibonacciCount
-
-    -- Inherit golden ratio mode settings
-    effectiveParams.goldenRatioMode = group.goldenRatioMode
-    effectiveParams.goldenRatioTempo = group.goldenRatioTempo
-    effectiveParams.goldenRatioBase = group.goldenRatioBase
-    effectiveParams.goldenRatioDepth = group.goldenRatioDepth
 
     -- Force disable pan randomization for multichannel containers (channelMode > 0)
     -- This ensures old presets don't apply pan in multichannel mode

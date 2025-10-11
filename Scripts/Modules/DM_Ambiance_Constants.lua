@@ -58,8 +58,6 @@ Constants.TRIGGER_MODES = {
     CHUNK = 3,                          -- Chunk mode: structured sound/silence periods
     NOISE = 4,                          -- Noise mode: placement based on noise function
     EUCLIDEAN = 5,                      -- Euclidean rhythm: mathematically optimal distribution
-    FIBONACCI = 6,                      -- Fibonacci sequence: intervals based on Fibonacci numbers
-    GOLDEN_RATIO = 7,                   -- Golden ratio: intervals based on φ (phi ≈ 1.618)
 }
 
 -- Noise Algorithm Mode Constants
@@ -208,17 +206,6 @@ Constants.DEFAULTS = {
     EUCLIDEAN_ROTATION = 1,             -- Default rotation offset
     EUCLIDEAN_SELECTED_LAYER = 1,       -- Default selected layer index
     EUCLIDEAN_SELECTED_BINDING_INDEX = 1, -- Default selected binding index (auto-bind mode)
-    -- Fibonacci Mode defaults
-    FIBONACCI_MODE = 0,                 -- Default mode (0=Tempo-Based, 1=Fit-to-Selection)
-    FIBONACCI_TEMPO = 120,              -- Default tempo (BPM)
-    FIBONACCI_START = 2,                -- Default start index in sequence (2 = first '2' in 1,1,2,3,5...)
-    FIBONACCI_SCALE = 1.0,              -- Default time scale multiplier
-    FIBONACCI_COUNT = 8,                -- Default count for fit-to-selection mode
-    -- Golden Ratio Mode defaults
-    GOLDEN_RATIO_MODE = 0,              -- Default mode (0=Tempo-Based, 1=Fit-to-Selection)
-    GOLDEN_RATIO_TEMPO = 120,           -- Default tempo (BPM)
-    GOLDEN_RATIO_BASE = 1.0,            -- Default base interval (beats)
-    GOLDEN_RATIO_DEPTH = 5,             -- Default recursion depth for fit-to-selection
     -- Fade defaults
     FADE_IN_ENABLED = true,             -- Default fade in state
     FADE_OUT_ENABLED = true,            -- Default fade out state

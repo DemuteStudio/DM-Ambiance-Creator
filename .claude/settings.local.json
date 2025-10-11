@@ -9,7 +9,10 @@
       "Bash(dir)",
       "Bash(ls:*)",
       "Bash(git checkout:*)",
-      "Read(//c/Users/antho/AppData/Roaming/REAPER/Scripts/Demute/Ambiance Creator/Presets/Global/**)"
+      "Read(//c/Users/antho/AppData/Roaming/REAPER/Scripts/Demute/Ambiance Creator/Presets/Global/**)",
+      "Bash(cd:*)",
+      "Read(//d/Git/Scripts/Reaper/DM_Ranch Media Player/**)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []

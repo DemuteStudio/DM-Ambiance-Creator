@@ -419,4 +419,126 @@ function Presets.loadContainerPreset(name, groupIndex, containerIndex)
   end
 end
 
+-- ====================================================================
+-- EUCLIDEAN PATTERN MANAGEMENT
+-- ====================================================================
+
+--- Save a euclidean pattern to the saved patterns list
+-- @param dataObj table The group or container object
+-- @param pulses number Number of pulses in the pattern
+-- @param steps number Number of steps in the pattern
+-- @param rotation number Rotation offset for the pattern
+-- @return string The auto-generated pattern name
+function Presets.saveEuclideanPattern(dataObj, pulses, steps, rotation)
+  if not dataObj then return nil end
+
+  -- Initialize saved patterns array if needed
+  if not dataObj.euclideanSavedPatterns then
+    dataObj.euclideanSavedPatterns = {}
+  end
+
+  -- Auto-generate name from parameters
+  local patternName = string.format("%d - %d - %d", pulses, steps, rotation)
+
+  -- Check if pattern already exists
+  for _, pattern in ipairs(dataObj.euclideanSavedPatterns) do
+    if pattern.name == patternName then
+      -- Pattern already exists, don't add duplicate
+      return patternName
+    end
+  end
+
+  -- Add new pattern
+  table.insert(dataObj.euclideanSavedPatterns, {
+    name = patternName,
+    pulses = pulses,
+    steps = steps,
+    rotation = rotation
+  })
+
+  return patternName
+end
+
+--- Override an existing euclidean pattern with new values
+-- @param dataObj table The group or container object
+-- @param patternName string Name of the pattern to override
+-- @param pulses number New number of pulses
+-- @param steps number New number of steps
+-- @param rotation number New rotation offset
+-- @return boolean Success status
+function Presets.overrideEuclideanPattern(dataObj, patternName, pulses, steps, rotation)
+  if not dataObj or not patternName then return false end
+  if not dataObj.euclideanSavedPatterns then return false end
+
+  -- Find and update the pattern
+  for i, pattern in ipairs(dataObj.euclideanSavedPatterns) do
+    if pattern.name == patternName then
+      -- Update with new auto-generated name
+      local newName = string.format("%d - %d - %d", pulses, steps, rotation)
+      pattern.name = newName
+      pattern.pulses = pulses
+      pattern.steps = steps
+      pattern.rotation = rotation
+      return true
+    end
+  end
+
+  return false
+end
+
+--- Load a saved euclidean pattern
+-- @param dataObj table The group or container object
+-- @param patternName string Name of the pattern to load
+-- @return table|nil Pattern data {pulses, steps, rotation} or nil if not found
+function Presets.loadEuclideanPattern(dataObj, patternName)
+  if not dataObj or not patternName then return nil end
+  if not dataObj.euclideanSavedPatterns then return nil end
+
+  for _, pattern in ipairs(dataObj.euclideanSavedPatterns) do
+    if pattern.name == patternName then
+      return {
+        pulses = pattern.pulses,
+        steps = pattern.steps,
+        rotation = pattern.rotation
+      }
+    end
+  end
+
+  return nil
+end
+
+--- Delete a saved euclidean pattern
+-- @param dataObj table The group or container object
+-- @param patternName string Name of the pattern to delete
+-- @return boolean Success status
+function Presets.deleteEuclideanPattern(dataObj, patternName)
+  if not dataObj or not patternName then return false end
+  if not dataObj.euclideanSavedPatterns then return false end
+
+  for i, pattern in ipairs(dataObj.euclideanSavedPatterns) do
+    if pattern.name == patternName then
+      table.remove(dataObj.euclideanSavedPatterns, i)
+      return true
+    end
+  end
+
+  return false
+end
+
+--- Get list of saved pattern names
+-- @param dataObj table The group or container object
+-- @return table Array of pattern names
+function Presets.getEuclideanPatternNames(dataObj)
+  if not dataObj or not dataObj.euclideanSavedPatterns then
+    return {}
+  end
+
+  local names = {}
+  for _, pattern in ipairs(dataObj.euclideanSavedPatterns) do
+    table.insert(names, pattern.name)
+  end
+
+  return names
+end
+
 return Presets
