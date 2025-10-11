@@ -1131,7 +1131,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         -- Auto-bind to Containers checkbox (only for groups)
         if isGroup then
-            imgui.Text(globals.ctx, "AUTO-BIND SECTION (GROUP DETECTED)")  -- DEBUG
             local autoBind = dataObj.euclideanAutoBindContainers or false
             local rv, newValue = imgui.Checkbox(globals.ctx, "Auto-bind to Containers##eucAutoBind", autoBind)
             imgui.SameLine(globals.ctx)
