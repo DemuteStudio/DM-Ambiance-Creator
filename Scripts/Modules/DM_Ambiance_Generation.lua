@@ -4001,9 +4001,9 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
         layers = {{pulses = 8, steps = 16, rotation = 0}}
     end
 
-    -- Debug: Print parameters
-    reaper.ShowConsoleMsg(string.format("Euclidean: mode=%d, layers=%d, tempo=%d, useProject=%s\n",
-        mode, #layers, tempo, tostring(useProjectTempo)))
+    -- Debug: Print parameters (disabled)
+    -- reaper.ShowConsoleMsg(string.format("Euclidean: mode=%d, layers=%d, tempo=%d, useProject=%s\n",
+    --     mode, #layers, tempo, tostring(useProjectTempo)))
 
     -- Generate patterns for all layers and combine them
     local maxSteps = 0
@@ -4034,12 +4034,12 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
 
         layerPatterns[layerIdx] = {pattern = pattern, steps = steps}
 
-        -- Debug: Print pattern
-        local patternStr = ""
-        for i = 1, #pattern do
-            patternStr = patternStr .. (pattern[i] and "X" or ".")
-        end
-        reaper.ShowConsoleMsg(string.format("Layer %d: %s\n", layerIdx, patternStr))
+        -- Debug: Print pattern (disabled)
+        -- local patternStr = ""
+        -- for i = 1, #pattern do
+        --     patternStr = patternStr .. (pattern[i] and "X" or ".")
+        -- end
+        -- reaper.ShowConsoleMsg(string.format("Layer %d: %s\n", layerIdx, patternStr))
     end
 
     -- Combine patterns: OR operation (any layer with hit = combined hit)
@@ -4056,12 +4056,12 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
         end
     end
 
-    -- Debug: Print combined pattern
-    local combinedStr = ""
-    for i = 1, #combinedPattern do
-        combinedStr = combinedStr .. (combinedPattern[i] and "X" or ".")
-    end
-    reaper.ShowConsoleMsg("Combined: " .. combinedStr .. "\n")
+    -- Debug: Print combined pattern (disabled)
+    -- local combinedStr = ""
+    -- for i = 1, #combinedPattern do
+    --     combinedStr = combinedStr .. (combinedPattern[i] and "X" or ".")
+    -- end
+    -- reaper.ShowConsoleMsg("Combined: " .. combinedStr .. "\n")
 
     -- Place items according to combined pattern
     local itemIndex = 0

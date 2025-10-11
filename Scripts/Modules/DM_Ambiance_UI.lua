@@ -1200,8 +1200,29 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             end
             for i, item in ipairs(itemList) do
                 local isSelected = (i == selectedIndex)
-                if isSelected then
+
+                -- Check if this container is in Override Parent mode
+                local isOverrideParent = false
+                if isAutoBind and isGroup and groupIndex and item.uuid then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.id == item.uuid and container.overrideParent and container.intervalMode == 5 then
+                            isOverrideParent = true
+                            break
+                        end
+                    end
+                end
+
+                -- Apply button color based on state
+                local colorPushed = 0
+                if isOverrideParent then
+                    -- Orange/yellow warning color for override containers with black text
+                    imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFFAA00FF)
+                    imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0x000000FF)  -- Black text
+                    colorPushed = 2
+                elseif isSelected then
                     imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0x00AA77FF)
+                    colorPushed = 1
                 end
 
                 local buttonLabel = ""
@@ -1223,8 +1244,14 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     end
                 end
 
-                if isSelected then
-                    imgui.PopStyleColor(globals.ctx)
+                -- Pop style colors before tooltip so text stays white
+                if colorPushed > 0 then
+                    imgui.PopStyleColor(globals.ctx, colorPushed)
+                end
+
+                -- Tooltip for override containers (with default white text)
+                if isOverrideParent and imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetTooltip(globals.ctx, "⚠ This container is in Override Parent mode.\nChanges sync bidirectionally with its own euclidean settings.")
                 end
 
                 imgui.SameLine(globals.ctx)
