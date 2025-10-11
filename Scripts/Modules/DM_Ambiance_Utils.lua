@@ -2484,6 +2484,7 @@ function Utils.ensureNoiseDefaults(params)
     end
 
     params.noiseSeed = params.noiseSeed or math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX)
+    params.noiseAlgorithm = params.noiseAlgorithm or Constants.DEFAULTS.NOISE_ALGORITHM
     params.noiseFrequency = params.noiseFrequency or Constants.DEFAULTS.NOISE_FREQUENCY
     params.noiseAmplitude = params.noiseAmplitude or Constants.DEFAULTS.NOISE_AMPLITUDE
     params.noiseOctaves = params.noiseOctaves or Constants.DEFAULTS.NOISE_OCTAVES
@@ -2535,6 +2536,100 @@ function Utils.validateNoiseParams(params)
     end
 
     return true, ""
+end
+
+--- Generate Euclidean rhythm pattern using Bjorklund's algorithm
+--- @param pulses number: Number of pulses (hits) to distribute
+--- @param steps number: Total number of steps
+--- @return table: Array of booleans (true = hit, false = rest)
+function Utils.euclideanRhythm(pulses, steps)
+    if pulses >= steps then
+        -- All steps are hits
+        local pattern = {}
+        for i = 1, steps do
+            pattern[i] = true
+        end
+        return pattern
+    end
+
+    if pulses == 0 then
+        -- No hits
+        local pattern = {}
+        for i = 1, steps do
+            pattern[i] = false
+        end
+        return pattern
+    end
+
+    -- Bjorklund's algorithm
+    local pattern = {}
+    local bucket = 0
+
+    for i = 1, steps do
+        bucket = bucket + pulses
+        if bucket >= steps then
+            bucket = bucket - steps
+            pattern[i] = true
+        else
+            pattern[i] = false
+        end
+    end
+
+    return pattern
+end
+
+--- Generate Fibonacci sequence starting from a given index
+--- @param startIndex number: Starting index (0-based, where F(0)=1, F(1)=1, F(2)=2...)
+--- @param count number: How many numbers to generate
+--- @return table: Array of Fibonacci numbers
+function Utils.fibonacciSequence(startIndex, count)
+    local sequence = {}
+    local fib = {1, 1}  -- F(0)=1, F(1)=1
+
+    -- Generate Fibonacci numbers up to startIndex + count
+    for i = 3, startIndex + count + 1 do
+        fib[i] = fib[i-1] + fib[i-2]
+    end
+
+    -- Extract the requested portion
+    for i = 1, count do
+        sequence[i] = fib[startIndex + i]
+    end
+
+    return sequence
+end
+
+--- Subdivide a duration recursively using golden ratio (φ ≈ 1.618)
+--- @param duration number: Total duration to subdivide (seconds)
+--- @param depth number: Recursion depth (how many subdivisions)
+--- @return table: Array of time positions (sorted)
+function Utils.goldenRatioSubdivide(duration, depth)
+    local PHI = 1.618033988749  -- Golden ratio
+    local positions = {}
+
+    -- Helper function to recursively subdivide a segment
+    local function subdivide(startTime, endTime, currentDepth)
+        if currentDepth > depth then
+            return
+        end
+
+        local segmentDuration = endTime - startTime
+        local splitPoint = startTime + (segmentDuration / PHI)  -- Split at 61.8%
+
+        table.insert(positions, splitPoint)
+
+        -- Recursively subdivide the two segments
+        subdivide(startTime, splitPoint, currentDepth + 1)
+        subdivide(splitPoint, endTime, currentDepth + 1)
+    end
+
+    -- Start recursion from full duration
+    subdivide(0, duration, 1)
+
+    -- Sort positions
+    table.sort(positions)
+
+    return positions
 end
 
 return Utils

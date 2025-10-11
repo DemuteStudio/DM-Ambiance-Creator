@@ -57,6 +57,15 @@ Constants.TRIGGER_MODES = {
     COVERAGE = 2,                       -- Coverage interval mode
     CHUNK = 3,                          -- Chunk mode: structured sound/silence periods
     NOISE = 4,                          -- Noise mode: placement based on noise function
+    EUCLIDEAN = 5,                      -- Euclidean rhythm: mathematically optimal distribution
+    FIBONACCI = 6,                      -- Fibonacci sequence: intervals based on Fibonacci numbers
+    GOLDEN_RATIO = 7,                   -- Golden ratio: intervals based on φ (phi ≈ 1.618)
+}
+
+-- Noise Algorithm Mode Constants
+Constants.NOISE_ALGORITHMS = {
+    PROBABILITY = 0,                    -- Probability test at intervals with jitter
+    ACCUMULATION = 1,                   -- Probability accumulation until threshold
 }
 
 -- Channel Mode Constants
@@ -182,13 +191,31 @@ Constants.DEFAULTS = {
     -- Noise Mode defaults
     NOISE_SEED_MIN = 1,                 -- Minimum seed value
     NOISE_SEED_MAX = 999999,            -- Maximum seed value
-    NOISE_FREQUENCY = 1.0,              -- Default noise frequency
+    NOISE_FREQUENCY = 1.0,              -- Default noise frequency (Hz)
     NOISE_AMPLITUDE = 100.0,            -- Default noise amplitude (%)
     NOISE_OCTAVES = 2,                  -- Default number of octaves
     NOISE_PERSISTENCE = 0.5,            -- Default persistence (amplitude decrease per octave)
     NOISE_LACUNARITY = 2.0,             -- Default lacunarity (frequency increase per octave)
     NOISE_DENSITY = 50.0,               -- Default average density percentage
     NOISE_THRESHOLD = 0.0,              -- Default minimum noise value to place item
+    NOISE_ALGORITHM = 0,                -- Default algorithm (PROBABILITY)
+    -- Euclidean Mode defaults
+    EUCLIDEAN_MODE = 0,                 -- Default mode (0=Tempo-Based, 1=Fit-to-Selection)
+    EUCLIDEAN_TEMPO = 120,              -- Default tempo (BPM)
+    EUCLIDEAN_PULSES = 8,               -- Default number of pulses (hits)
+    EUCLIDEAN_STEPS = 16,               -- Default number of steps (subdivisions)
+    EUCLIDEAN_ROTATION = 0,             -- Default rotation offset
+    -- Fibonacci Mode defaults
+    FIBONACCI_MODE = 0,                 -- Default mode (0=Tempo-Based, 1=Fit-to-Selection)
+    FIBONACCI_TEMPO = 120,              -- Default tempo (BPM)
+    FIBONACCI_START = 2,                -- Default start index in sequence (2 = first '2' in 1,1,2,3,5...)
+    FIBONACCI_SCALE = 1.0,              -- Default time scale multiplier
+    FIBONACCI_COUNT = 8,                -- Default count for fit-to-selection mode
+    -- Golden Ratio Mode defaults
+    GOLDEN_RATIO_MODE = 0,              -- Default mode (0=Tempo-Based, 1=Fit-to-Selection)
+    GOLDEN_RATIO_TEMPO = 120,           -- Default tempo (BPM)
+    GOLDEN_RATIO_BASE = 1.0,            -- Default base interval (beats)
+    GOLDEN_RATIO_DEPTH = 5,             -- Default recursion depth for fit-to-selection
     -- Fade defaults
     FADE_IN_ENABLED = true,             -- Default fade in state
     FADE_OUT_ENABLED = true,            -- Default fade out state

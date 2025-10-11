@@ -805,6 +805,24 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             else
                 return Generation.placeItemsNoiseMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
             end
+        elseif effectiveParams.intervalMode == 5 then
+            -- Euclidean Rhythm mode
+            if container.channelMode and container.channelMode > 0 then
+                for _, channelTrack in ipairs(channelTracks) do
+                    Generation.placeItemsEuclideanMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
+                end
+                return
+            else
+                return Generation.placeItemsEuclideanMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
+            end
+        elseif effectiveParams.intervalMode == 6 then
+            -- Fibonacci mode (placeholder for now)
+            reaper.ShowConsoleMsg("Fibonacci mode not yet implemented\n")
+            return
+        elseif effectiveParams.intervalMode == 7 then
+            -- Golden Ratio mode (placeholder for now)
+            reaper.ShowConsoleMsg("Golden Ratio mode not yet implemented\n")
+            return
         end
 
         -- Generate items considering channel count matching
@@ -3676,8 +3694,8 @@ function Generation.placeItemsNoiseMode(effectiveParams, track, channelTracks, c
     end
     local avgItemLength = totalLength / math.max(1, totalCount)
 
-    -- Helper function to get curve value at a specific time (defined outside loop for performance)
-    local function getCurveValue(time)
+    -- Helper function to get placement probability at a specific time (defined outside loop for performance)
+    local function getPlacementProbability(time)
         local noiseValue = globals.Noise.getValueAtTime(
             time,
             globals.startTime,
@@ -3689,35 +3707,120 @@ function Generation.placeItemsNoiseMode(effectiveParams, track, channelTracks, c
             effectiveParams.noiseSeed
         )
 
-        local amplitudeScale = effectiveParams.noiseAmplitude / 100.0
-        local normalizedDensity = effectiveParams.noiseDensity / 100.0
+        -- Convert noise (0-1) to -1 to +1 range for variation
         local normalizedNoiseValue = (noiseValue - 0.5) * 2
-        local densityVariation = normalizedNoiseValue * amplitudeScale * normalizedDensity
-        local placementProbability = normalizedDensity + densityVariation
+
+        -- Calculate base density (0-1)
+        local baseDensity = effectiveParams.noiseDensity / 100.0
+
+        -- Apply amplitude modulation (how much noise affects density)
+        local amplitudeScale = effectiveParams.noiseAmplitude / 100.0
+        local densityVariation = normalizedNoiseValue * amplitudeScale
+
+        -- Final probability = base density + variation
+        local placementProbability = baseDensity + densityVariation
+
+        -- Clamp to 0-1 range
         return math.max(0, math.min(1, placementProbability))
     end
 
-    -- Deterministic noise-based placement algorithm
-    local currentTime = globals.startTime
-    local noiseGen = globals.Constants.NOISE_GENERATION
+    -- Helper function to generate deterministic random value for decisions
+    local function getDecisionNoise(time, seedOffset)
+        return globals.Noise.getValueAtTime(
+            time + 0.789,
+            globals.startTime,
+            globals.endTime,
+            effectiveParams.noiseFrequency * 1.13,
+            1,  -- Single octave
+            0.5,
+            2.0,
+            effectiveParams.noiseSeed + seedOffset
+        )
+    end
 
-    -- Place items deterministically
-    while currentTime < globals.endTime do
-        local curveValue = getCurveValue(currentTime)
+    -- Get algorithm mode (default to PROBABILITY for backwards compatibility)
+    local algorithm = effectiveParams.noiseAlgorithm or globals.Constants.NOISE_ALGORITHMS.PROBABILITY
+    local Constants = globals.Constants
+    local noiseGen = Constants.NOISE_GENERATION
+    local minDensityThreshold = effectiveParams.noiseThreshold / 100.0
 
-        -- Skip ahead in silent zones (curve below user-defined threshold)
-        -- Convert threshold from 0-100% to 0-1 range
-        local minDensityThreshold = effectiveParams.noiseThreshold / 100.0
-        if curveValue < minDensityThreshold then
-            currentTime = currentTime + noiseGen.SKIP_INTERVAL
-            goto continue
+    -- Collection of item placement times (calculated by selected algorithm)
+    local placementTimes = {}
+
+    -- ========================================
+    -- ALGORITHM 1: PROBABILITY
+    -- Probability test at intervals with timing jitter
+    -- ========================================
+    if algorithm == Constants.NOISE_ALGORITHMS.PROBABILITY then
+        local currentTime = globals.startTime
+        local baseInterval = 1.0 / math.max(0.01, effectiveParams.noiseFrequency)
+
+        while currentTime < globals.endTime do
+            local placementProbability = getPlacementProbability(currentTime)
+
+            -- Check if probability meets threshold
+            if placementProbability >= minDensityThreshold then
+                -- Use deterministic random value to decide placement
+                local decisionNoise = getDecisionNoise(currentTime, 54321)
+
+                -- Place item if decision noise falls within placement probability
+                if decisionNoise <= placementProbability then
+                    -- Add timing jitter to avoid perfectly regular placement
+                    -- Use another noise value for jitter amount
+                    local jitterNoise = getDecisionNoise(currentTime, 11111)
+                    -- Jitter is ±25% of the interval
+                    local jitter = (jitterNoise - 0.5) * 0.5 * baseInterval
+                    local placementTime = currentTime + jitter
+
+                    -- Ensure we don't place outside bounds
+                    if placementTime >= globals.startTime and placementTime < globals.endTime then
+                        table.insert(placementTimes, placementTime)
+                    end
+                end
+            end
+
+            currentTime = currentTime + baseInterval
         end
 
-        -- Calculate interval based on curve value
-        -- High curve = short interval (high density), Low curve = long interval (low density)
-        local minInterval = avgItemLength * noiseGen.MIN_INTERVAL_MULTIPLIER
-        local maxInterval = noiseGen.MAX_INTERVAL_SECONDS
-        local interval = minInterval + (maxInterval - minInterval) * (1.0 - curveValue)
+    -- ========================================
+    -- ALGORITHM 2: ACCUMULATION
+    -- Accumulate probability until threshold is reached
+    -- ========================================
+    elseif algorithm == Constants.NOISE_ALGORITHMS.ACCUMULATION then
+        local currentTime = globals.startTime
+        local sampleInterval = 1.0 / math.max(0.01, effectiveParams.noiseFrequency * 10)  -- Fine sampling
+        local accumulated = 0.0
+
+        while currentTime < globals.endTime do
+            local placementProbability = getPlacementProbability(currentTime)
+
+            if placementProbability >= minDensityThreshold then
+                -- Accumulate probability weighted by frequency and time step
+                local rate = placementProbability * effectiveParams.noiseFrequency
+                accumulated = accumulated + (rate * sampleInterval)
+
+                -- When accumulated probability >= 1.0, place item and reset
+                if accumulated >= 1.0 then
+                    table.insert(placementTimes, currentTime)
+                    accumulated = accumulated - 1.0
+                end
+            else
+                -- Below threshold: decay accumulated probability
+                accumulated = accumulated * 0.9
+            end
+
+            currentTime = currentTime + sampleInterval
+        end
+    end
+
+    -- ========================================
+    -- ITEM PLACEMENT
+    -- Place items at all calculated times
+    -- ========================================
+    for _, currentTime in ipairs(placementTimes) do
+        if currentTime >= globals.endTime then
+            break
+        end
 
         -- Select item deterministically using noise-based index
         local selectionNoise = globals.Noise.getValueAtTime(
@@ -3874,11 +3977,207 @@ function Generation.placeItemsNoiseMode(effectiveParams, track, channelTracks, c
                     reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
                 end
             end
+    end
+end
 
-        -- Advance time by the calculated interval
-        currentTime = currentTime + interval
+-- Place items using Euclidean Rhythm mode
+function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTracks, container, trackStructure, xfadeshape)
+    if not effectiveParams.items or #effectiveParams.items == 0 then
+        return
+    end
 
-        ::continue::
+    local Constants = globals.Constants
+    local Utils = globals.Utils
+    local Items = globals.Items
+
+    -- Get parameters with defaults
+    local mode = effectiveParams.euclideanMode or 0
+    local pulses = effectiveParams.euclideanPulses or 8
+    local steps = effectiveParams.euclideanSteps or 16
+    local rotation = effectiveParams.euclideanRotation or 0
+    local tempo = effectiveParams.euclideanTempo or 120
+
+    -- Debug: Print parameters
+    reaper.ShowConsoleMsg(string.format("Euclidean: mode=%d, pulses=%d, steps=%d, rotation=%d, tempo=%d\n",
+        mode, pulses, steps, rotation, tempo))
+
+    -- Generate Euclidean rhythm pattern
+    local pattern = Utils.euclideanRhythm(pulses, steps)
+
+    -- Debug: Print pattern
+    local patternStr = ""
+    for i = 1, #pattern do
+        patternStr = patternStr .. (pattern[i] and "X" or ".")
+    end
+    reaper.ShowConsoleMsg("Pattern: " .. patternStr .. "\n")
+
+    -- Apply rotation
+    if rotation > 0 then
+        rotation = rotation % steps  -- Wrap rotation
+        local rotated = {}
+        for i = 1, steps do
+            rotated[i] = pattern[((i - rotation - 1) % steps) + 1]
+        end
+        pattern = rotated
+    end
+
+    -- Calculate step duration based on mode
+    local stepDuration
+    if mode == 0 then
+        -- Tempo-Based: duration of one step in seconds
+        stepDuration = (60.0 / tempo) * 4 / steps  -- Assuming 4/4 time, steps are subdivisions of 4 beats
+    else
+        -- Fit-to-Selection: stretch pattern to fit time selection exactly once
+        local duration = globals.endTime - globals.startTime
+        stepDuration = duration / steps
+    end
+
+    -- Place items according to pattern
+    local itemIndex = 0
+    local currentTime = globals.startTime
+
+    while currentTime < globals.endTime do
+        for stepIdx = 1, steps do
+            if pattern[stepIdx] then
+                local placementTime = currentTime + (stepIdx - 1) * stepDuration
+
+                -- Stop if we exceed time selection
+                if placementTime >= globals.endTime then
+                    break
+                end
+
+                -- Select item (cycle through available items)
+                itemIndex = (itemIndex % #effectiveParams.items) + 1
+                local originalItemData = effectiveParams.items[itemIndex]
+
+                -- Handle areas if present
+                local itemData
+                if originalItemData.areas and #originalItemData.areas > 0 then
+                    local areaIndex = math.random(1, #originalItemData.areas)
+                    local selectedArea = originalItemData.areas[areaIndex]
+                    itemData = {}
+                    for k, v in pairs(originalItemData) do
+                        itemData[k] = v
+                    end
+                    itemData.startOffset = selectedArea.startPos
+                    itemData.length = selectedArea.endPos - selectedArea.startPos
+                    itemData.originalLength = originalItemData.length
+                    itemData.selectedArea = selectedArea
+                else
+                    itemData = originalItemData
+                end
+
+                -- Determine target track(s)
+                local targetTracks = {track}
+                if channelTracks and #channelTracks > 1 then
+                    local distributionMode = container.itemDistributionMode or 0
+                    if distributionMode == 0 then
+                        -- Round-robin
+                        if not container.distributionCounter then
+                            container.distributionCounter = 0
+                        end
+                        container.distributionCounter = container.distributionCounter + 1
+                        local targetChannel = ((container.distributionCounter - 1) % #channelTracks) + 1
+                        targetTracks = {channelTracks[targetChannel]}
+                    elseif distributionMode == 1 then
+                        -- Random
+                        local targetChannel = math.random(1, #channelTracks)
+                        targetTracks = {channelTracks[targetChannel]}
+                    end
+                end
+
+                -- Place item on target track(s)
+                for _, targetTrack in ipairs(targetTracks) do
+                    local newItem = reaper.AddMediaItemToTrack(targetTrack)
+                    local newTake = reaper.AddTakeToMediaItem(newItem)
+
+                    local PCM_source = reaper.PCM_Source_CreateFromFile(itemData.filePath)
+                    reaper.SetMediaItemTake_Source(newTake, PCM_source)
+                    reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
+
+                    local maxLen = globals.endTime - placementTime
+                    local actualLen = math.min(itemData.length, maxLen)
+
+                    reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", placementTime)
+                    reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
+                    reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
+
+                    -- Apply randomizations
+                    if effectiveParams.randomizePitch then
+                        local randomPitch = itemData.originalPitch + Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+                        if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                            local playrate = Utils.semitonesToPlayrate(randomPitch)
+                            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+                            reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)
+                        else
+                            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+                        end
+                    else
+                        if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
+                            local playrate = Utils.semitonesToPlayrate(itemData.originalPitch)
+                            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
+                            reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)
+                        else
+                            reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
+                        end
+                    end
+
+                    local gainDB = itemData.gainDB or 0.0
+                    local gainScale = 10 ^ (gainDB / 20)
+
+                    if effectiveParams.randomizeVolume then
+                        local randomVolume = itemData.originalVolume * gainScale * 10^(Utils.randomInRange(effectiveParams.volumeRange.min, effectiveParams.volumeRange.max) / 20)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", randomVolume)
+                    else
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL", itemData.originalVolume * gainScale)
+                    end
+
+                    local canUsePan = false
+                    if not effectiveParams.channelMode or effectiveParams.channelMode == 0 then
+                        canUsePan = true
+                    elseif trackStructure and trackStructure.trackType == "stereo" and trackStructure.trackChannels == 2 then
+                        canUsePan = true
+                    end
+
+                    if effectiveParams.randomizePan and canUsePan then
+                        local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+                        randomPan = math.max(-1, math.min(1, randomPan))
+                        Items.createTakePanEnvelope(newTake, randomPan)
+                    end
+
+                    -- Apply fades
+                    if effectiveParams.fadeInEnabled then
+                        local fadeInDuration = effectiveParams.fadeInDuration or 0.1
+                        if effectiveParams.fadeInUsePercentage then
+                            fadeInDuration = (fadeInDuration / 100) * actualLen
+                        end
+                        fadeInDuration = math.min(fadeInDuration, actualLen)
+                        reaper.SetMediaItemInfo_Value(newItem, "D_FADEINLEN", fadeInDuration)
+                        reaper.SetMediaItemInfo_Value(newItem, "C_FADEINSHAPE", effectiveParams.fadeInShape or 0)
+                        reaper.SetMediaItemInfo_Value(newItem, "D_FADEINDIR", effectiveParams.fadeInCurve or 0.0)
+                    end
+
+                    if effectiveParams.fadeOutEnabled then
+                        local fadeOutDuration = effectiveParams.fadeOutDuration or 0.1
+                        if effectiveParams.fadeOutUsePercentage then
+                            fadeOutDuration = (fadeOutDuration / 100) * actualLen
+                        end
+                        fadeOutDuration = math.min(fadeOutDuration, actualLen)
+                        reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", fadeOutDuration)
+                        reaper.SetMediaItemInfo_Value(newItem, "C_FADEOUTSHAPE", effectiveParams.fadeOutShape or 0)
+                        reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
+                    end
+                end
+            end
+        end
+
+        -- Advance to next pattern repetition (only for Tempo-Based mode)
+        if mode == 0 then
+            currentTime = currentTime + steps * stepDuration
+        else
+            -- Fit mode: only one repetition
+            break
+        end
     end
 end
 

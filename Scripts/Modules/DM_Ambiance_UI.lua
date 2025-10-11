@@ -470,7 +470,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.TableNextRow(globals.ctx)
         imgui.TableSetColumnIndex(globals.ctx, 0)
         imgui.PushItemWidth(globals.ctx, -1)
-        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0Noise\0"
+        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0Noise\0Euclidean\0Fibonacci\0Golden Ratio\0"
         local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "##IntervalMode", dataObj.intervalMode, intervalModes)
         if rv then callbacks.setIntervalMode(newIntervalMode) end
         imgui.PopItemWidth(globals.ctx)
@@ -483,11 +483,14 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             "Relative: Interval as percentage of time selection\n" ..
             "Coverage: Percentage of time selection to be filled\n" ..
             "Chunk: Create structured sound/silence periods\n" ..
-            "Noise: Place items based on Perlin noise function"
+            "Noise: Place items based on Perlin noise function\n" ..
+            "Euclidean: Mathematically optimal rhythm distribution\n" ..
+            "Fibonacci: Intervals based on Fibonacci sequence\n" ..
+            "Golden Ratio: Intervals based on φ (phi ≈ 1.618)"
         )
 
-        -- Interval value (slider) - Not shown in Noise mode
-        if dataObj.intervalMode ~= 4 then
+        -- Interval value (slider) - Not shown in Noise, Euclidean, Fibonacci, Golden Ratio modes
+        if dataObj.intervalMode ~= 4 and dataObj.intervalMode ~= 5 and dataObj.intervalMode ~= 6 and dataObj.intervalMode ~= 7 then
             local rateLabel = "Interval (sec)"
             local rateMin = -10.0
             local rateMax = 60.0
@@ -750,6 +753,39 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             )
         end
 
+        -- Noise Algorithm selector
+        do
+            imgui.BeginGroup(globals.ctx)
+            imgui.PushItemWidth(globals.ctx, controlWidth)
+            local algorithmNames = "Probability\0Accumulation\0"
+            local currentAlgorithm = dataObj.noiseAlgorithm or globals.Constants.NOISE_ALGORITHMS.PROBABILITY
+            -- Remap old Poisson (1) to Accumulation (1), keep others
+            if currentAlgorithm > 1 then currentAlgorithm = 1 end
+            local rv, newAlgorithm = globals.UndoWrappers.Combo(globals.ctx, "##NoiseAlgorithm", currentAlgorithm, algorithmNames)
+            if rv then
+                callbacks.setNoiseAlgorithm(newAlgorithm)
+                -- Trigger regeneration when algorithm changes
+                if checkAutoRegen then
+                    checkAutoRegen("noiseAlgorithm", trackingKey .. "_algorithm", currentAlgorithm, newAlgorithm)
+                end
+            end
+            imgui.PopItemWidth(globals.ctx)
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Algorithm")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker(
+                "Algorithm for item placement:\n\n" ..
+                "• Probability: Test placement probability at regular intervals\n" ..
+                "  Adds random jitter to avoid too-regular patterns\n" ..
+                "  Best for: Natural variation, organic feel\n\n" ..
+                "• Accumulation: Accumulate probability until threshold reached\n" ..
+                "  Guarantees consistent density over time\n" ..
+                "  Best for: Predictable coverage, smooth distribution"
+            )
+        end
+
         -- Noise Frequency slider
         do
             imgui.BeginGroup(globals.ctx)
@@ -760,7 +796,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 min = 0.01,
                 max = 10.0,
                 defaultValue = globals.Constants.DEFAULTS.NOISE_FREQUENCY,
-                format = "%.2f",
+                format = "%.2f Hz",
                 width = controlWidth
             })
 
@@ -1041,6 +1077,182 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.EndGroup(globals.ctx)
     end
 
+    -- Euclidean Rhythm mode specific controls
+    if dataObj.intervalMode == 5 then
+        local labelWidth = 150
+        local padding = 10
+        local controlWidth = width - labelWidth - padding - 10
+
+        imgui.Spacing(globals.ctx)
+        imgui.Separator(globals.ctx)
+        imgui.Spacing(globals.ctx)
+
+        -- Mode selection (Tempo-Based / Fit-to-Selection)
+        do
+            imgui.BeginGroup(globals.ctx)
+            local euclideanMode = dataObj.euclideanMode or 0
+            local modeChanged = false
+            if imgui.RadioButton(globals.ctx, "Tempo-Based##eucMode", euclideanMode == 0) then
+                callbacks.setEuclideanMode(0)
+                modeChanged = true
+            end
+            imgui.SameLine(globals.ctx)
+            if imgui.RadioButton(globals.ctx, "Fit-to-Selection##eucMode", euclideanMode == 1) then
+                callbacks.setEuclideanMode(1)
+                modeChanged = true
+            end
+            if modeChanged and checkAutoRegen then
+                checkAutoRegen("euclideanMode", trackingKey .. "_eucMode", not euclideanMode, euclideanMode)
+            end
+            imgui.EndGroup(globals.ctx)
+        end
+
+        imgui.Spacing(globals.ctx)
+
+        -- Tempo slider (only for Tempo-Based mode)
+        if (dataObj.euclideanMode or 0) == 0 then
+            do
+                imgui.BeginGroup(globals.ctx)
+                local tempoKey = trackingKey .. "_euclideanTempo"
+                local rv, newTempo = globals.SliderEnhanced.SliderDouble({
+                    id = "##EuclideanTempo",
+                    value = dataObj.euclideanTempo or 120,
+                    min = 20,
+                    max = 300,
+                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_TEMPO,
+                    format = "%.0f BPM",
+                    width = controlWidth
+                })
+
+                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[tempoKey] then
+                    globals.autoRegenTracking[tempoKey] = dataObj.euclideanTempo
+                end
+
+                if rv then callbacks.setEuclideanTempo(newTempo) end
+
+                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[tempoKey] then
+                    checkAutoRegen("euclideanTempo", tempoKey, globals.autoRegenTracking[tempoKey], dataObj.euclideanTempo)
+                    globals.autoRegenTracking[tempoKey] = nil
+                end
+
+                imgui.EndGroup(globals.ctx)
+
+                imgui.SameLine(globals.ctx, controlWidth + padding)
+                imgui.Text(globals.ctx, "Tempo")
+                imgui.SameLine(globals.ctx)
+                globals.Utils.HelpMarker("BPM for the Euclidean pattern")
+            end
+        end
+
+        -- Pulses slider
+        do
+            imgui.BeginGroup(globals.ctx)
+            local pulsesKey = trackingKey .. "_euclideanPulses"
+            local rv, newPulses = globals.SliderEnhanced.SliderDouble({
+                id = "##EuclideanPulses",
+                value = dataObj.euclideanPulses or 8,
+                min = 1,
+                max = 64,
+                defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
+                format = "%.0f",
+                width = controlWidth
+            })
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
+                globals.autoRegenTracking[pulsesKey] = dataObj.euclideanPulses
+            end
+
+            if rv then callbacks.setEuclideanPulses(math.floor(newPulses)) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
+                checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], dataObj.euclideanPulses)
+                globals.autoRegenTracking[pulsesKey] = nil
+            end
+
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Pulses")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Number of hits to distribute (k)")
+        end
+
+        -- Steps slider
+        do
+            imgui.BeginGroup(globals.ctx)
+            local stepsKey = trackingKey .. "_euclideanSteps"
+            local rv, newSteps = globals.SliderEnhanced.SliderDouble({
+                id = "##EuclideanSteps",
+                value = dataObj.euclideanSteps or 16,
+                min = 1,
+                max = 64,
+                defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
+                format = "%.0f",
+                width = controlWidth
+            })
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
+                globals.autoRegenTracking[stepsKey] = dataObj.euclideanSteps
+            end
+
+            if rv then callbacks.setEuclideanSteps(math.floor(newSteps)) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
+                checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], dataObj.euclideanSteps)
+                globals.autoRegenTracking[stepsKey] = nil
+            end
+
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Steps")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Total number of subdivisions (n)")
+        end
+
+        -- Rotation slider
+        do
+            imgui.BeginGroup(globals.ctx)
+            local rotationKey = trackingKey .. "_euclideanRotation"
+            local maxRotation = (dataObj.euclideanSteps or 16) - 1
+            local rv, newRotation = globals.SliderEnhanced.SliderDouble({
+                id = "##EuclideanRotation",
+                value = dataObj.euclideanRotation or 0,
+                min = 0,
+                max = maxRotation,
+                defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+                format = "%.0f",
+                width = controlWidth
+            })
+
+            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
+                globals.autoRegenTracking[rotationKey] = dataObj.euclideanRotation
+            end
+
+            if rv then callbacks.setEuclideanRotation(math.floor(newRotation)) end
+
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
+                checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], dataObj.euclideanRotation)
+                globals.autoRegenTracking[rotationKey] = nil
+            end
+
+            imgui.EndGroup(globals.ctx)
+
+            imgui.SameLine(globals.ctx, controlWidth + padding)
+            imgui.Text(globals.ctx, "Rotation")
+            imgui.SameLine(globals.ctx)
+            globals.Utils.HelpMarker("Rotate the pattern (0 to steps-1)")
+        end
+
+        -- Euclidean Pattern Visualization
+        imgui.Spacing(globals.ctx)
+        imgui.Text(globals.ctx, "Pattern Preview:")
+
+        local previewSize = UI.scaleSize(140)  -- Circle diameter
+
+        UI.drawEuclideanPreview(dataObj, previewSize)
+    end
+
     -- Fade in/out controls are commented out but can be enabled if needed
 end
 
@@ -1110,6 +1322,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setChunkSilenceVarDirection = function(v) obj.chunkSilenceVarDirection = v; obj.needsRegeneration = true end,
             -- Noise mode callbacks
             setNoiseSeed = function(v) obj.noiseSeed = v; obj.needsRegeneration = true end,
+            setNoiseAlgorithm = function(v) obj.noiseAlgorithm = v; obj.needsRegeneration = true end,
             setNoiseFrequency = function(v) obj.noiseFrequency = v; obj.needsRegeneration = true end,
             setNoiseAmplitude = function(v) obj.noiseAmplitude = v; obj.needsRegeneration = true end,
             setNoiseOctaves = function(v) obj.noiseOctaves = v; obj.needsRegeneration = true end,
@@ -1117,6 +1330,12 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setNoiseLacunarity = function(v) obj.noiseLacunarity = v; obj.needsRegeneration = true end,
             setNoiseDensity = function(v) obj.noiseDensity = v; obj.needsRegeneration = true end,
             setNoiseThreshold = function(v) obj.noiseThreshold = v; obj.needsRegeneration = true end,
+            -- Euclidean mode callbacks
+            setEuclideanMode = function(v) obj.euclideanMode = v; obj.needsRegeneration = true end,
+            setEuclideanTempo = function(v) obj.euclideanTempo = v; obj.needsRegeneration = true end,
+            setEuclideanPulses = function(v) obj.euclideanPulses = v; obj.needsRegeneration = true end,
+            setEuclideanSteps = function(v) obj.euclideanSteps = v; obj.needsRegeneration = true end,
+            setEuclideanRotation = function(v) obj.euclideanRotation = v; obj.needsRegeneration = true end,
         },
         width,
         titlePrefix,
@@ -1854,13 +2073,16 @@ function UI.drawNoisePreview(dataObj, width, height)
     imgui.DrawList_AddLine(drawList, cursorX, zeroY, cursorX + width, zeroY, zeroColor, 1.0)
 
     -- Calculate and draw item placement positions
-    -- This simulates the same algorithm used in DM_Ambiance_Generation.lua (lines 3707-3889)
+    -- This simulates the same algorithm used in DM_Ambiance_Generation.lua
     local noiseGen = globals.Constants.NOISE_GENERATION
-    local avgItemLength = 3.0  -- Estimate for preview (can be improved later if we pass actual items)
     local itemPositions = {}
 
-    -- Helper function to get curve value at a specific time (same as generation)
-    local function getCurveValue(time)
+    -- Calculate duration and adaptive max positions
+    local duration = endTime - startTime
+    local maxPositions = math.min(5000, math.ceil(duration * noiseFrequency * 5))  -- Adaptive limit based on expected density
+
+    -- Helper function to get placement probability at a specific time (same as generation)
+    local function getPlacementProbability(time)
         local noiseValue = globals.Noise.getValueAtTime(
             time,
             startTime,
@@ -1872,42 +2094,96 @@ function UI.drawNoisePreview(dataObj, width, height)
             noiseSeed
         )
 
-        local normalizedDensity = noiseDensity / 100.0
+        -- Convert noise (0-1) to -1 to +1 range for variation
         local normalizedNoiseValue = (noiseValue - 0.5) * 2
-        local densityVariation = normalizedNoiseValue * amplitudeScale * normalizedDensity
-        local placementProbability = normalizedDensity + densityVariation
+
+        -- Calculate base density (0-1)
+        local baseDensity = noiseDensity / 100.0
+
+        -- Apply amplitude modulation (how much noise affects density)
+        local densityVariation = normalizedNoiseValue * amplitudeScale
+
+        -- Final probability = base density + variation
+        local placementProbability = baseDensity + densityVariation
+
+        -- Clamp to 0-1 range
         return math.max(0, math.min(1, placementProbability))
     end
 
-    -- Simulate item placement algorithm
-    local currentTime = startTime
-    local maxPositions = 500  -- Limit to prevent performance issues
-    local positionCount = 0
+    -- Helper function to generate deterministic random value for decisions
+    local function getDecisionNoise(time, seedOffset)
+        return globals.Noise.getValueAtTime(
+            time + 0.789,
+            startTime,
+            endTime,
+            noiseFrequency * 1.13,
+            1,  -- Single octave
+            0.5,
+            2.0,
+            noiseSeed + seedOffset
+        )
+    end
 
-    while currentTime < endTime and positionCount < maxPositions do
-        local curveValue = getCurveValue(currentTime)
+    -- Get algorithm mode from dataObj (default to PROBABILITY)
+    local algorithm = dataObj.noiseAlgorithm or globals.Constants.NOISE_ALGORITHMS.PROBABILITY
+    local Constants = globals.Constants
 
-        -- Skip ahead in silent zones (below threshold)
-        local minDensityThreshold = thresholdNormalized
-        if curveValue < minDensityThreshold then
-            currentTime = currentTime + noiseGen.SKIP_INTERVAL
-            goto continue_preview
+    -- ========================================
+    -- ALGORITHM 1: PROBABILITY
+    -- ========================================
+    if algorithm == Constants.NOISE_ALGORITHMS.PROBABILITY then
+        local currentTime = startTime
+        local baseInterval = 1.0 / math.max(0.01, noiseFrequency)
+
+        while currentTime < endTime and #itemPositions < maxPositions do
+            local placementProbability = getPlacementProbability(currentTime)
+
+            if placementProbability >= thresholdNormalized then
+                local decisionNoise = getDecisionNoise(currentTime, 54321)
+                if decisionNoise <= placementProbability then
+                    -- Add timing jitter to avoid perfectly regular placement
+                    local jitterNoise = getDecisionNoise(currentTime, 11111)
+                    local jitter = (jitterNoise - 0.5) * 0.5 * baseInterval
+                    local placementTime = currentTime + jitter
+
+                    -- Ensure we don't place outside bounds
+                    if placementTime >= startTime and placementTime < endTime then
+                        table.insert(itemPositions, placementTime)
+                    end
+                end
+            end
+
+            currentTime = currentTime + baseInterval
         end
 
-        -- Calculate interval based on curve value
-        -- High curve = short interval (high density), Low curve = long interval (low density)
-        local minInterval = avgItemLength * noiseGen.MIN_INTERVAL_MULTIPLIER
-        local maxInterval = noiseGen.MAX_INTERVAL_SECONDS
-        local interval = minInterval + (maxInterval - minInterval) * (1.0 - curveValue)
+    -- ========================================
+    -- ALGORITHM 2: ACCUMULATION
+    -- ========================================
+    elseif algorithm == Constants.NOISE_ALGORITHMS.ACCUMULATION then
+        local currentTime = startTime
+        local sampleInterval = 1.0 / math.max(0.01, noiseFrequency * 10)
+        local accumulated = 0.0
+        local iterationCount = 0
+        local maxIterations = math.min(50000, math.ceil(duration / sampleInterval))  -- Limit iterations, not placements
 
-        -- Store this position
-        table.insert(itemPositions, currentTime)
-        positionCount = positionCount + 1
+        while currentTime < endTime and iterationCount < maxIterations do
+            local placementProbability = getPlacementProbability(currentTime)
 
-        -- Advance time by calculated interval
-        currentTime = currentTime + interval
+            if placementProbability >= thresholdNormalized then
+                local rate = placementProbability * noiseFrequency
+                accumulated = accumulated + (rate * sampleInterval)
 
-        ::continue_preview::
+                if accumulated >= 1.0 then
+                    table.insert(itemPositions, currentTime)
+                    accumulated = accumulated - 1.0
+                end
+            else
+                accumulated = accumulated * 0.9
+            end
+
+            currentTime = currentTime + sampleInterval
+            iterationCount = iterationCount + 1
+        end
     end
 
     -- Draw item position markers
@@ -1961,6 +2237,95 @@ function UI.drawNoisePreview(dataObj, width, height)
 
     -- Reserve space for the preview + text
     imgui.Dummy(globals.ctx, width, height + 20)
+end
+
+-- Draw euclidean pattern preview visualization (circular representation)
+-- @param dataObj table: Container or group object with euclidean parameters
+-- @param size number: Diameter of the circle
+function UI.drawEuclideanPreview(dataObj, size)
+    local pulses = dataObj.euclideanPulses or 8
+    local steps = dataObj.euclideanSteps or 16
+    local rotation = dataObj.euclideanRotation or 0
+
+    local drawList = imgui.GetWindowDrawList(globals.ctx)
+    local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
+
+    -- Center of the circle
+    local centerX = cursorX + size / 2
+    local centerY = cursorY + size / 2
+    local radius = (size / 2) - 20  -- Padding for dots
+
+    -- Background
+    local bgColor = 0x202020FF
+    imgui.DrawList_AddRectFilled(drawList, cursorX, cursorY, cursorX + size, cursorY + size, bgColor)
+
+    -- Border
+    local borderColor = 0x666666FF
+    imgui.DrawList_AddRect(drawList, cursorX, cursorY, cursorX + size, cursorY + size, borderColor)
+
+    -- Draw circle guide (optional, subtle)
+    local guideColor = 0x444444FF
+    imgui.DrawList_AddCircle(drawList, centerX, centerY, radius, guideColor, 0, 1.0)
+
+    -- Generate euclidean pattern using Utils
+    local pattern = globals.Utils.euclideanRhythm(pulses, steps)
+
+    -- Apply rotation
+    if rotation > 0 then
+        local rotated = {}
+        for i = 1, steps do
+            local sourceIndex = ((i - 1 - rotation) % steps) + 1
+            rotated[i] = pattern[sourceIndex]
+        end
+        pattern = rotated
+    end
+
+    -- Use waveform color for consistency
+    local waveformColor = globals.Settings.getSetting("waveformColor")
+
+    -- Calculate brighter color for filled dots
+    local baseColor = waveformColor or 0x00CCA0FF
+    local r = (baseColor & 0x000000FF)
+    local g = (baseColor & 0x0000FF00) >> 8
+    local b = (baseColor & 0x00FF0000) >> 16
+    local a = (baseColor & 0xFF000000) >> 24
+    local brightnessFactor = 1.3
+    r = math.min(255, math.floor(r * brightnessFactor))
+    g = math.min(255, math.floor(g * brightnessFactor))
+    b = math.min(255, math.floor(b * brightnessFactor))
+    local filledColor = r | (g << 8) | (b << 16) | (a << 24)
+
+    -- Color for empty dots (darker)
+    local emptyColor = 0x666666FF
+
+    -- Draw dots around the circle
+    local dotRadius = 4.0
+    for i = 1, steps do
+        -- Calculate angle (start at top, rotate clockwise)
+        -- Subtract 90 degrees (π/2) to start at top
+        local angle = (2 * math.pi * (i - 1) / steps) - (math.pi / 2)
+
+        -- Calculate position
+        local x = centerX + radius * math.cos(angle)
+        local y = centerY + radius * math.sin(angle)
+
+        -- Draw dot (filled if hit, hollow if silence)
+        if pattern[i] then
+            -- Hit: filled circle
+            imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, filledColor)
+        else
+            -- Silence: hollow circle
+            imgui.DrawList_AddCircle(drawList, x, y, dotRadius, emptyColor, 0, 1.5)
+        end
+    end
+
+    -- Draw pattern info text at bottom
+    local textColor = 0xAAAAAAFF
+    local patternText = string.format("%d hits / %d steps", pulses, steps)
+    imgui.DrawList_AddText(drawList, cursorX + 5, cursorY + size - 15, textColor, patternText)
+
+    -- Reserve space for the preview
+    imgui.Dummy(globals.ctx, size, size)
 end
 
 -- Main window rendering function

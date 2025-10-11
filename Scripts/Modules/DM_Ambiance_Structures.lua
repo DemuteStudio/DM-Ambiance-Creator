@@ -45,6 +45,7 @@ function Structures.createGroup(name)
         chunkSilenceVarDirection = Constants.DEFAULTS.CHUNK_SILENCE_VAR_DIRECTION,
         -- Noise Mode parameters
         noiseSeed = math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX),
+        noiseAlgorithm = Constants.DEFAULTS.NOISE_ALGORITHM,
         noiseFrequency = Constants.DEFAULTS.NOISE_FREQUENCY,
         noiseAmplitude = Constants.DEFAULTS.NOISE_AMPLITUDE,
         noiseOctaves = Constants.DEFAULTS.NOISE_OCTAVES,
@@ -53,6 +54,23 @@ function Structures.createGroup(name)
         noiseDensity = Constants.DEFAULTS.NOISE_DENSITY,
         noiseThreshold = Constants.DEFAULTS.NOISE_THRESHOLD,
         densityLinkMode = "link", -- "unlink", "link", "mirror"
+        -- Euclidean Mode parameters
+        euclideanMode = Constants.DEFAULTS.EUCLIDEAN_MODE,
+        euclideanTempo = Constants.DEFAULTS.EUCLIDEAN_TEMPO,
+        euclideanPulses = Constants.DEFAULTS.EUCLIDEAN_PULSES,
+        euclideanSteps = Constants.DEFAULTS.EUCLIDEAN_STEPS,
+        euclideanRotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+        -- Fibonacci Mode parameters
+        fibonacciMode = Constants.DEFAULTS.FIBONACCI_MODE,
+        fibonacciTempo = Constants.DEFAULTS.FIBONACCI_TEMPO,
+        fibonacciStart = Constants.DEFAULTS.FIBONACCI_START,
+        fibonacciScale = Constants.DEFAULTS.FIBONACCI_SCALE,
+        fibonacciCount = Constants.DEFAULTS.FIBONACCI_COUNT,
+        -- Golden Ratio Mode parameters
+        goldenRatioMode = Constants.DEFAULTS.GOLDEN_RATIO_MODE,
+        goldenRatioTempo = Constants.DEFAULTS.GOLDEN_RATIO_TEMPO,
+        goldenRatioBase = Constants.DEFAULTS.GOLDEN_RATIO_BASE,
+        goldenRatioDepth = Constants.DEFAULTS.GOLDEN_RATIO_DEPTH,
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -119,6 +137,7 @@ function Structures.createContainer(name)
         chunkSilenceVarDirection = Constants.DEFAULTS.CHUNK_SILENCE_VAR_DIRECTION,
         -- Noise Mode parameters
         noiseSeed = math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX),
+        noiseAlgorithm = Constants.DEFAULTS.NOISE_ALGORITHM,
         noiseFrequency = Constants.DEFAULTS.NOISE_FREQUENCY,
         noiseAmplitude = Constants.DEFAULTS.NOISE_AMPLITUDE,
         noiseOctaves = Constants.DEFAULTS.NOISE_OCTAVES,
@@ -127,6 +146,23 @@ function Structures.createContainer(name)
         noiseDensity = Constants.DEFAULTS.NOISE_DENSITY,
         noiseThreshold = Constants.DEFAULTS.NOISE_THRESHOLD,
         densityLinkMode = "link", -- "unlink", "link", "mirror"
+        -- Euclidean Mode parameters
+        euclideanMode = Constants.DEFAULTS.EUCLIDEAN_MODE,
+        euclideanTempo = Constants.DEFAULTS.EUCLIDEAN_TEMPO,
+        euclideanPulses = Constants.DEFAULTS.EUCLIDEAN_PULSES,
+        euclideanSteps = Constants.DEFAULTS.EUCLIDEAN_STEPS,
+        euclideanRotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+        -- Fibonacci Mode parameters
+        fibonacciMode = Constants.DEFAULTS.FIBONACCI_MODE,
+        fibonacciTempo = Constants.DEFAULTS.FIBONACCI_TEMPO,
+        fibonacciStart = Constants.DEFAULTS.FIBONACCI_START,
+        fibonacciScale = Constants.DEFAULTS.FIBONACCI_SCALE,
+        fibonacciCount = Constants.DEFAULTS.FIBONACCI_COUNT,
+        -- Golden Ratio Mode parameters
+        goldenRatioMode = Constants.DEFAULTS.GOLDEN_RATIO_MODE,
+        goldenRatioTempo = Constants.DEFAULTS.GOLDEN_RATIO_TEMPO,
+        goldenRatioBase = Constants.DEFAULTS.GOLDEN_RATIO_BASE,
+        goldenRatioDepth = Constants.DEFAULTS.GOLDEN_RATIO_DEPTH,
         -- Fade parameters
         fadeInEnabled = Constants.DEFAULTS.FADE_IN_ENABLED,
         fadeOutEnabled = Constants.DEFAULTS.FADE_OUT_ENABLED,
@@ -262,6 +298,26 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.noiseDensity = group.noiseDensity
     effectiveParams.noiseThreshold = group.noiseThreshold
     effectiveParams.densityLinkMode = group.densityLinkMode or "link"
+
+    -- Inherit euclidean mode settings
+    effectiveParams.euclideanMode = group.euclideanMode
+    effectiveParams.euclideanTempo = group.euclideanTempo
+    effectiveParams.euclideanPulses = group.euclideanPulses
+    effectiveParams.euclideanSteps = group.euclideanSteps
+    effectiveParams.euclideanRotation = group.euclideanRotation
+
+    -- Inherit fibonacci mode settings
+    effectiveParams.fibonacciMode = group.fibonacciMode
+    effectiveParams.fibonacciTempo = group.fibonacciTempo
+    effectiveParams.fibonacciStart = group.fibonacciStart
+    effectiveParams.fibonacciScale = group.fibonacciScale
+    effectiveParams.fibonacciCount = group.fibonacciCount
+
+    -- Inherit golden ratio mode settings
+    effectiveParams.goldenRatioMode = group.goldenRatioMode
+    effectiveParams.goldenRatioTempo = group.goldenRatioTempo
+    effectiveParams.goldenRatioBase = group.goldenRatioBase
+    effectiveParams.goldenRatioDepth = group.goldenRatioDepth
 
     -- Force disable pan randomization for multichannel containers (channelMode > 0)
     -- This ensures old presets don't apply pan in multichannel mode
