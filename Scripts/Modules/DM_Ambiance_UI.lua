@@ -1109,6 +1109,60 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         imgui.Spacing(globals.ctx)
 
+        -- Layer selection UI
+        do
+            imgui.BeginGroup(globals.ctx)
+
+            -- Ensure layers exist
+            if not dataObj.euclideanLayers or #dataObj.euclideanLayers == 0 then
+                dataObj.euclideanLayers = {{pulses = 8, steps = 16, rotation = 0}}
+            end
+
+            local selectedLayer = dataObj.euclideanSelectedLayer or 1
+            local layerCount = #dataObj.euclideanLayers
+
+            -- Layer buttons (1, 2, 3, ...)
+            for i = 1, layerCount do
+                local isSelected = (i == selectedLayer)
+                if isSelected then
+                    imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0x00AA77FF)
+                end
+
+                if imgui.Button(globals.ctx, tostring(i) .. "##eucLayer" .. i, 30, 0) then
+                    callbacks.setEuclideanSelectedLayer(i)
+                end
+
+                if isSelected then
+                    imgui.PopStyleColor(globals.ctx)
+                end
+
+                imgui.SameLine(globals.ctx)
+            end
+
+            -- "+" button to add layer
+            if imgui.Button(globals.ctx, "+##eucAddLayer", 30, 0) then
+                callbacks.addEuclideanLayer()
+            end
+            if imgui.IsItemHovered(globals.ctx) then
+                imgui.SetTooltip(globals.ctx, "Add a new Euclidean layer")
+            end
+
+            -- "-" button to remove layer (only if more than 1 layer)
+            if layerCount > 1 then
+                imgui.SameLine(globals.ctx)
+                if imgui.Button(globals.ctx, "-##eucRemoveLayer", 30, 0) then
+                    callbacks.removeEuclideanLayer(selectedLayer)
+                end
+                if imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetTooltip(globals.ctx, "Remove current layer")
+                end
+            end
+
+            imgui.EndGroup(globals.ctx)
+        end
+
+        imgui.Spacing(globals.ctx)
+
         -- Tempo controls (only for Tempo-Based mode)
         if (dataObj.euclideanMode or 0) == 0 then
             -- Use Project Tempo checkbox
@@ -1169,11 +1223,15 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         -- Pulses slider
         do
+            local selectedLayer = dataObj.euclideanSelectedLayer or 1
+            local currentLayer = dataObj.euclideanLayers and dataObj.euclideanLayers[selectedLayer]
+            local currentPulses = (currentLayer and currentLayer.pulses) or 8
+
             imgui.BeginGroup(globals.ctx)
-            local pulsesKey = trackingKey .. "_euclideanPulses"
+            local pulsesKey = trackingKey .. "_euclideanPulses_" .. selectedLayer
             local rv, newPulses = globals.SliderEnhanced.SliderDouble({
                 id = "##EuclideanPulses",
-                value = dataObj.euclideanPulses or 8,
+                value = currentPulses,
                 min = 1,
                 max = 64,
                 defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
@@ -1182,31 +1240,35 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             })
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
-                globals.autoRegenTracking[pulsesKey] = dataObj.euclideanPulses
+                globals.autoRegenTracking[pulsesKey] = currentPulses
             end
 
-            if rv then callbacks.setEuclideanPulses(math.floor(newPulses)) end
+            if rv then callbacks.setEuclideanLayerPulses(selectedLayer, math.floor(newPulses)) end
 
             if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
-                checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], dataObj.euclideanPulses)
+                checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], currentPulses)
                 globals.autoRegenTracking[pulsesKey] = nil
             end
 
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
-            imgui.Text(globals.ctx, "Pulses")
+            imgui.Text(globals.ctx, "Pulses (Layer " .. selectedLayer .. ")")
             imgui.SameLine(globals.ctx)
             globals.Utils.HelpMarker("Number of hits to distribute (k)")
         end
 
         -- Steps slider
         do
+            local selectedLayer = dataObj.euclideanSelectedLayer or 1
+            local currentLayer = dataObj.euclideanLayers and dataObj.euclideanLayers[selectedLayer]
+            local currentSteps = (currentLayer and currentLayer.steps) or 16
+
             imgui.BeginGroup(globals.ctx)
-            local stepsKey = trackingKey .. "_euclideanSteps"
+            local stepsKey = trackingKey .. "_euclideanSteps_" .. selectedLayer
             local rv, newSteps = globals.SliderEnhanced.SliderDouble({
                 id = "##EuclideanSteps",
-                value = dataObj.euclideanSteps or 16,
+                value = currentSteps,
                 min = 1,
                 max = 64,
                 defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
@@ -1215,32 +1277,37 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             })
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
-                globals.autoRegenTracking[stepsKey] = dataObj.euclideanSteps
+                globals.autoRegenTracking[stepsKey] = currentSteps
             end
 
-            if rv then callbacks.setEuclideanSteps(math.floor(newSteps)) end
+            if rv then callbacks.setEuclideanLayerSteps(selectedLayer, math.floor(newSteps)) end
 
             if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
-                checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], dataObj.euclideanSteps)
+                checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], currentSteps)
                 globals.autoRegenTracking[stepsKey] = nil
             end
 
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
-            imgui.Text(globals.ctx, "Steps")
+            imgui.Text(globals.ctx, "Steps (Layer " .. selectedLayer .. ")")
             imgui.SameLine(globals.ctx)
             globals.Utils.HelpMarker("Total number of subdivisions (n)")
         end
 
         -- Rotation slider
         do
+            local selectedLayer = dataObj.euclideanSelectedLayer or 1
+            local currentLayer = dataObj.euclideanLayers and dataObj.euclideanLayers[selectedLayer]
+            local currentRotation = (currentLayer and currentLayer.rotation) or 0
+            local currentSteps = (currentLayer and currentLayer.steps) or 16
+
             imgui.BeginGroup(globals.ctx)
-            local rotationKey = trackingKey .. "_euclideanRotation"
-            local maxRotation = (dataObj.euclideanSteps or 16) - 1
+            local rotationKey = trackingKey .. "_euclideanRotation_" .. selectedLayer
+            local maxRotation = currentSteps - 1
             local rv, newRotation = globals.SliderEnhanced.SliderDouble({
                 id = "##EuclideanRotation",
-                value = dataObj.euclideanRotation or 0,
+                value = currentRotation,
                 min = 0,
                 max = maxRotation,
                 defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
@@ -1249,20 +1316,20 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             })
 
             if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
-                globals.autoRegenTracking[rotationKey] = dataObj.euclideanRotation
+                globals.autoRegenTracking[rotationKey] = currentRotation
             end
 
-            if rv then callbacks.setEuclideanRotation(math.floor(newRotation)) end
+            if rv then callbacks.setEuclideanLayerRotation(selectedLayer, math.floor(newRotation)) end
 
             if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
-                checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], dataObj.euclideanRotation)
+                checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], currentRotation)
                 globals.autoRegenTracking[rotationKey] = nil
             end
 
             imgui.EndGroup(globals.ctx)
 
             imgui.SameLine(globals.ctx, controlWidth + padding)
-            imgui.Text(globals.ctx, "Rotation")
+            imgui.Text(globals.ctx, "Rotation (Layer " .. selectedLayer .. ")")
             imgui.SameLine(globals.ctx)
             globals.Utils.HelpMarker("Rotate the pattern (0 to steps-1)")
         end
@@ -1357,9 +1424,36 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setEuclideanMode = function(v) obj.euclideanMode = v; obj.needsRegeneration = true end,
             setEuclideanTempo = function(v) obj.euclideanTempo = v; obj.needsRegeneration = true end,
             setEuclideanUseProjectTempo = function(v) obj.euclideanUseProjectTempo = v; obj.needsRegeneration = true end,
-            setEuclideanPulses = function(v) obj.euclideanPulses = v; obj.needsRegeneration = true end,
-            setEuclideanSteps = function(v) obj.euclideanSteps = v; obj.needsRegeneration = true end,
-            setEuclideanRotation = function(v) obj.euclideanRotation = v; obj.needsRegeneration = true end,
+            setEuclideanSelectedLayer = function(v) obj.euclideanSelectedLayer = v end,
+            addEuclideanLayer = function()
+                if not obj.euclideanLayers then obj.euclideanLayers = {} end
+                table.insert(obj.euclideanLayers, {pulses = 8, steps = 16, rotation = 0})
+                obj.euclideanSelectedLayer = #obj.euclideanLayers
+                obj.needsRegeneration = true
+            end,
+            removeEuclideanLayer = function(layerIdx)
+                if not obj.euclideanLayers or #obj.euclideanLayers <= 1 then return end
+                table.remove(obj.euclideanLayers, layerIdx)
+                if obj.euclideanSelectedLayer > #obj.euclideanLayers then
+                    obj.euclideanSelectedLayer = #obj.euclideanLayers
+                end
+                obj.needsRegeneration = true
+            end,
+            setEuclideanLayerPulses = function(layerIdx, v)
+                if not obj.euclideanLayers or not obj.euclideanLayers[layerIdx] then return end
+                obj.euclideanLayers[layerIdx].pulses = v
+                obj.needsRegeneration = true
+            end,
+            setEuclideanLayerSteps = function(layerIdx, v)
+                if not obj.euclideanLayers or not obj.euclideanLayers[layerIdx] then return end
+                obj.euclideanLayers[layerIdx].steps = v
+                obj.needsRegeneration = true
+            end,
+            setEuclideanLayerRotation = function(layerIdx, v)
+                if not obj.euclideanLayers or not obj.euclideanLayers[layerIdx] then return end
+                obj.euclideanLayers[layerIdx].rotation = v
+                obj.needsRegeneration = true
+            end,
         },
         width,
         titlePrefix,
@@ -2265,19 +2359,19 @@ end
 
 -- Draw euclidean pattern preview visualization (circular representation)
 -- @param dataObj table: Container or group object with euclidean parameters
--- @param size number: Diameter of the circle
+-- @param size number: Diameter of the container
 function UI.drawEuclideanPreview(dataObj, size)
-    local pulses = dataObj.euclideanPulses or 8
-    local steps = dataObj.euclideanSteps or 16
-    local rotation = dataObj.euclideanRotation or 0
+    -- Ensure layers exist
+    local layers = dataObj.euclideanLayers
+    if not layers or #layers == 0 then
+        layers = {{pulses = 8, steps = 16, rotation = 0}}
+    end
+
+    local layerCount = #layers
+    local selectedLayer = dataObj.euclideanSelectedLayer or 1
 
     local drawList = imgui.GetWindowDrawList(globals.ctx)
     local cursorX, cursorY = imgui.GetCursorScreenPos(globals.ctx)
-
-    -- Center of the circle
-    local centerX = cursorX + size / 2
-    local centerY = cursorY + size / 2
-    local radius = (size / 2) - 20  -- Padding for dots
 
     -- Background
     local bgColor = 0x202020FF
@@ -2287,22 +2381,11 @@ function UI.drawEuclideanPreview(dataObj, size)
     local borderColor = 0x666666FF
     imgui.DrawList_AddRect(drawList, cursorX, cursorY, cursorX + size, cursorY + size, borderColor)
 
-    -- Draw circle guide (optional, subtle)
-    local guideColor = 0x444444FF
-    imgui.DrawList_AddCircle(drawList, centerX, centerY, radius, guideColor, 0, 1.0)
-
-    -- Generate euclidean pattern using Utils
-    local pattern = globals.Utils.euclideanRhythm(pulses, steps)
-
-    -- Apply rotation
-    if rotation > 0 then
-        local rotated = {}
-        for i = 1, steps do
-            local sourceIndex = ((i - 1 - rotation) % steps) + 1
-            rotated[i] = pattern[sourceIndex]
-        end
-        pattern = rotated
-    end
+    -- Calculate circle layout - superposed circles with decreasing radius
+    local padding = 20
+    local centerX = cursorX + size / 2
+    local centerY = cursorY + size / 2
+    local maxRadius = (size / 2) - padding
 
     -- Use waveform color for consistency
     local waveformColor = globals.Settings.getSetting("waveformColor")
@@ -2319,34 +2402,92 @@ function UI.drawEuclideanPreview(dataObj, size)
     b = math.min(255, math.floor(b * brightnessFactor))
     local filledColor = r | (g << 8) | (b << 16) | (a << 24)
 
-    -- Color for empty dots (darker)
+    -- Colors for empty dots and selected layer highlight
     local emptyColor = 0x666666FF
+    local guideColor = 0x444444FF
+    local selectedGuideColor = 0x777777FF
 
-    -- Draw dots around the circle
-    local dotRadius = 4.0
-    for i = 1, steps do
-        -- Calculate angle (start at top, rotate clockwise)
-        -- Subtract 90 degrees (π/2) to start at top
-        local angle = (2 * math.pi * (i - 1) / steps) - (math.pi / 2)
+    -- Draw layers from largest to smallest (reverse order so inner layers are on top)
+    for layerIdx = layerCount, 1, -1 do
+        local layer = layers[layerIdx]
+        local pulses = layer.pulses or 8
+        local steps = layer.steps or 16
+        local rotation = layer.rotation or 0
 
-        -- Calculate position
-        local x = centerX + radius * math.cos(angle)
-        local y = centerY + radius * math.sin(angle)
+        -- Calculate radius for this layer (each layer is smaller)
+        local radiusRatio = 1.0 - ((layerIdx - 1) * 0.15)  -- Each layer 15% smaller
+        local currentRadius = maxRadius * radiusRatio
 
-        -- Draw dot (filled if hit, hollow if silence)
-        if pattern[i] then
-            -- Hit: filled circle
-            imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, filledColor)
-        else
-            -- Silence: hollow circle
-            imgui.DrawList_AddCircle(drawList, x, y, dotRadius, emptyColor, 0, 1.5)
+        -- Generate euclidean pattern first to know where dots are
+        local pattern = globals.Utils.euclideanRhythm(pulses, steps)
+
+        -- Apply rotation
+        if rotation > 0 then
+            local rotated = {}
+            for i = 1, steps do
+                local sourceIndex = ((i - 1 - rotation) % steps) + 1
+                rotated[i] = pattern[sourceIndex]
+            end
+            pattern = rotated
         end
-    end
 
-    -- Draw pattern info text at bottom
-    local textColor = 0xAAAAAAFF
-    local patternText = string.format("%d hits / %d steps", pulses, steps)
-    imgui.DrawList_AddText(drawList, cursorX + 5, cursorY + size - 15, textColor, patternText)
+        -- Draw circle guide segments (avoiding dots)
+        local currentGuideColor = (layerIdx == selectedLayer) and selectedGuideColor or guideColor
+        local segmentCount = steps * 2  -- More segments for smoother circle
+        for seg = 1, segmentCount do
+            local angle1 = (2 * math.pi * (seg - 1) / segmentCount) - (math.pi / 2)
+            local angle2 = (2 * math.pi * seg / segmentCount) - (math.pi / 2)
+
+            -- Check if this segment is near a dot
+            local nearDot = false
+            for i = 1, steps do
+                local dotAngle = (2 * math.pi * (i - 1) / steps) - (math.pi / 2)
+                local midAngle = (angle1 + angle2) / 2
+                local angleDiff = math.abs(dotAngle - midAngle)
+                if angleDiff < (math.pi / steps * 0.4) then  -- Near a dot position
+                    nearDot = true
+                    break
+                end
+            end
+
+            -- Only draw segment if not near a dot
+            if not nearDot then
+                local x1 = centerX + currentRadius * math.cos(angle1)
+                local y1 = centerY + currentRadius * math.sin(angle1)
+                local x2 = centerX + currentRadius * math.cos(angle2)
+                local y2 = centerY + currentRadius * math.sin(angle2)
+                imgui.DrawList_AddLine(drawList, x1, y1, x2, y2, currentGuideColor, 1.5)
+            end
+        end
+
+        -- Draw dots around the circle
+        local dotRadius = math.min(4.0, maxRadius / 10)  -- Scale dot size
+        for i = 1, steps do
+            -- Calculate angle (start at top, rotate clockwise)
+            local angle = (2 * math.pi * (i - 1) / steps) - (math.pi / 2)
+
+            -- Calculate position
+            local x = centerX + currentRadius * math.cos(angle)
+            local y = centerY + currentRadius * math.sin(angle)
+
+            -- Draw dot (filled if hit, hollow if silence)
+            if pattern[i] then
+                -- Hit: filled circle
+                imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, filledColor)
+            else
+                -- Silence: filled circle with background color + border
+                imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, bgColor)
+                imgui.DrawList_AddCircle(drawList, x, y, dotRadius, emptyColor, 0, 1.5)
+            end
+        end
+
+        -- Draw layer number near the circle (on the right side)
+        local textColor = 0xAAAAAAFF
+        local layerText = tostring(layerIdx)
+        local textX = centerX + currentRadius + 10
+        local textY = centerY - 6
+        imgui.DrawList_AddText(drawList, textX, textY, textColor, layerText)
+    end
 
     -- Reserve space for the preview
     imgui.Dummy(globals.ctx, size, size)

@@ -58,9 +58,14 @@ function Structures.createGroup(name)
         euclideanMode = Constants.DEFAULTS.EUCLIDEAN_MODE,
         euclideanTempo = Constants.DEFAULTS.EUCLIDEAN_TEMPO,
         euclideanUseProjectTempo = Constants.DEFAULTS.EUCLIDEAN_USE_PROJECT_TEMPO,
-        euclideanPulses = Constants.DEFAULTS.EUCLIDEAN_PULSES,
-        euclideanSteps = Constants.DEFAULTS.EUCLIDEAN_STEPS,
-        euclideanRotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+        euclideanSelectedLayer = Constants.DEFAULTS.EUCLIDEAN_SELECTED_LAYER,
+        euclideanLayers = {
+            {
+                pulses = Constants.DEFAULTS.EUCLIDEAN_PULSES,
+                steps = Constants.DEFAULTS.EUCLIDEAN_STEPS,
+                rotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+            }
+        },
         -- Fibonacci Mode parameters
         fibonacciMode = Constants.DEFAULTS.FIBONACCI_MODE,
         fibonacciTempo = Constants.DEFAULTS.FIBONACCI_TEMPO,
@@ -151,9 +156,14 @@ function Structures.createContainer(name)
         euclideanMode = Constants.DEFAULTS.EUCLIDEAN_MODE,
         euclideanTempo = Constants.DEFAULTS.EUCLIDEAN_TEMPO,
         euclideanUseProjectTempo = Constants.DEFAULTS.EUCLIDEAN_USE_PROJECT_TEMPO,
-        euclideanPulses = Constants.DEFAULTS.EUCLIDEAN_PULSES,
-        euclideanSteps = Constants.DEFAULTS.EUCLIDEAN_STEPS,
-        euclideanRotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+        euclideanSelectedLayer = Constants.DEFAULTS.EUCLIDEAN_SELECTED_LAYER,
+        euclideanLayers = {
+            {
+                pulses = Constants.DEFAULTS.EUCLIDEAN_PULSES,
+                steps = Constants.DEFAULTS.EUCLIDEAN_STEPS,
+                rotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+            }
+        },
         -- Fibonacci Mode parameters
         fibonacciMode = Constants.DEFAULTS.FIBONACCI_MODE,
         fibonacciTempo = Constants.DEFAULTS.FIBONACCI_TEMPO,
@@ -305,9 +315,18 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.euclideanMode = group.euclideanMode
     effectiveParams.euclideanTempo = group.euclideanTempo
     effectiveParams.euclideanUseProjectTempo = group.euclideanUseProjectTempo
-    effectiveParams.euclideanPulses = group.euclideanPulses
-    effectiveParams.euclideanSteps = group.euclideanSteps
-    effectiveParams.euclideanRotation = group.euclideanRotation
+    effectiveParams.euclideanSelectedLayer = group.euclideanSelectedLayer
+    -- Deep copy layers
+    effectiveParams.euclideanLayers = {}
+    if group.euclideanLayers then
+        for i, layer in ipairs(group.euclideanLayers) do
+            effectiveParams.euclideanLayers[i] = {
+                pulses = layer.pulses,
+                steps = layer.steps,
+                rotation = layer.rotation,
+            }
+        end
+    end
 
     -- Inherit fibonacci mode settings
     effectiveParams.fibonacciMode = group.fibonacciMode
