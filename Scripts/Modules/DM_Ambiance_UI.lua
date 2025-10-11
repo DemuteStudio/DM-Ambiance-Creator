@@ -1232,6 +1232,25 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.EndGroup(globals.ctx)
         end
 
+        -- Warning if selected container is in Override mode
+        if isAutoBind and isGroup and groupIndex then
+            local selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
+            local bindingOrder = dataObj.euclideanBindingOrder or {}
+            local uuid = bindingOrder[selectedIndex]
+            if uuid then
+                local group = globals.groups[groupIndex]
+                for _, container in ipairs(group.containers) do
+                    if container.id == uuid and container.overrideParent then
+                        imgui.Spacing(globals.ctx)
+                        imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFFAA00FF)  -- Orange warning
+                        imgui.TextWrapped(globals.ctx, "⚠ This container is in Override Parent mode. Changes here will sync with the container's own settings.")
+                        imgui.PopStyleColor(globals.ctx)
+                        break
+                    end
+                end
+            end
+        end
+
         imgui.Spacing(globals.ctx)
 
         -- Tempo controls (only for Tempo-Based mode)
@@ -1606,16 +1625,55 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setEuclideanLayerPulses = function(layerIdx, v)
                 if not obj.euclideanLayers or not obj.euclideanLayers[layerIdx] then return end
                 obj.euclideanLayers[layerIdx].pulses = v
+
+                -- If this is a container in override mode with Euclidean, sync back to parent binding
+                if not isGroup and containerIndex and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    local container = group.containers[containerIndex]
+                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                            group.euclideanLayerBindings[container.id].pulses = v
+                            group.needsRegeneration = true
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             setEuclideanLayerSteps = function(layerIdx, v)
                 if not obj.euclideanLayers or not obj.euclideanLayers[layerIdx] then return end
                 obj.euclideanLayers[layerIdx].steps = v
+
+                -- If this is a container in override mode with Euclidean, sync back to parent binding
+                if not isGroup and containerIndex and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    local container = group.containers[containerIndex]
+                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                            group.euclideanLayerBindings[container.id].steps = v
+                            group.needsRegeneration = true
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             setEuclideanLayerRotation = function(layerIdx, v)
                 if not obj.euclideanLayers or not obj.euclideanLayers[layerIdx] then return end
                 obj.euclideanLayers[layerIdx].rotation = v
+
+                -- If this is a container in override mode with Euclidean, sync back to parent binding
+                if not isGroup and containerIndex and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    local container = group.containers[containerIndex]
+                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                            group.euclideanLayerBindings[container.id].rotation = v
+                            group.needsRegeneration = true
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             -- Euclidean auto-bind mode callbacks
@@ -1638,6 +1696,19 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                 local uuid = obj.euclideanBindingOrder[bindingIdx]
                 if not obj.euclideanLayerBindings or not obj.euclideanLayerBindings[uuid] then return end
                 obj.euclideanLayerBindings[uuid].pulses = v
+
+                -- Sync with container if it's in override mode with Euclidean
+                if isGroup and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                            if not container.euclideanLayers then container.euclideanLayers = {{pulses = 8, steps = 16, rotation = 1}} end
+                            container.euclideanLayers[1].pulses = v
+                            container.needsRegeneration = true
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             setEuclideanBindingSteps = function(bindingIdx, v)
@@ -1645,6 +1716,19 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                 local uuid = obj.euclideanBindingOrder[bindingIdx]
                 if not obj.euclideanLayerBindings or not obj.euclideanLayerBindings[uuid] then return end
                 obj.euclideanLayerBindings[uuid].steps = v
+
+                -- Sync with container if it's in override mode with Euclidean
+                if isGroup and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                            if not container.euclideanLayers then container.euclideanLayers = {{pulses = 8, steps = 16, rotation = 1}} end
+                            container.euclideanLayers[1].steps = v
+                            container.needsRegeneration = true
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             setEuclideanBindingRotation = function(bindingIdx, v)
@@ -1652,6 +1736,19 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                 local uuid = obj.euclideanBindingOrder[bindingIdx]
                 if not obj.euclideanLayerBindings or not obj.euclideanLayerBindings[uuid] then return end
                 obj.euclideanLayerBindings[uuid].rotation = v
+
+                -- Sync with container if it's in override mode with Euclidean
+                if isGroup and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                            if not container.euclideanLayers then container.euclideanLayers = {{pulses = 8, steps = 16, rotation = 1}} end
+                            container.euclideanLayers[1].rotation = v
+                            container.needsRegeneration = true
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
         },

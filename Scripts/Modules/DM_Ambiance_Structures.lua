@@ -451,9 +451,9 @@ function Structures.syncEuclideanBindings(group)
         else
             -- Create new binding with default values
             newBindings[uuid] = {
-                pulses = 8,
-                steps = 16,
-                rotation = 0
+                pulses = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
+                steps = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
+                rotation = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION
             }
         end
 
