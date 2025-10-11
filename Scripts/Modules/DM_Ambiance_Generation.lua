@@ -4022,11 +4022,12 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
         local pattern = Utils.euclideanRhythm(pulses, steps)
 
         -- Apply rotation
-        if rotation > 0 then
+        if rotation ~= 0 then
             rotation = rotation % steps
             local rotated = {}
             for i = 1, steps do
-                rotated[i] = pattern[((i - rotation - 1) % steps) + 1]
+                local sourceIndex = ((i - 1 - rotation) % steps) + 1
+                rotated[i] = pattern[sourceIndex]
             end
             pattern = rotated
         end

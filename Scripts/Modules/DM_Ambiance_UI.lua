@@ -2657,7 +2657,8 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         local pattern = globals.Utils.euclideanRhythm(pulses, steps)
 
         -- Apply rotation
-        if rotation > 0 then
+        if rotation ~= 0 then
+            rotation = rotation % steps
             local rotated = {}
             for i = 1, steps do
                 local sourceIndex = ((i - 1 - rotation) % steps) + 1
