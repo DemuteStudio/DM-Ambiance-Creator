@@ -1087,9 +1087,23 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.Separator(globals.ctx)
         imgui.Spacing(globals.ctx)
 
+        -- Check if this is a container whose parent is in auto-bind mode
+        local isChildOfAutobindGroup = false
+        if not isGroup and containerIndex and groupIndex then
+            local group = globals.groups[groupIndex]
+            local container = group.containers[containerIndex]
+            if container and container.overrideParent and container.intervalMode == 5 and group.euclideanAutoBindContainers then
+                isChildOfAutobindGroup = true
+            end
+        end
+
         -- Mode selection (Tempo-Based / Fit-to-Selection)
+        -- Disabled for children of auto-bind groups
         do
             imgui.BeginGroup(globals.ctx)
+            if isChildOfAutobindGroup then
+                imgui.BeginDisabled(globals.ctx)
+            end
             local euclideanMode = dataObj.euclideanMode or 0
             local modeChanged = false
             if imgui.RadioButton(globals.ctx, "Tempo-Based##eucMode", euclideanMode == 0) then
@@ -1104,7 +1118,13 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             if modeChanged and checkAutoRegen then
                 checkAutoRegen("euclideanMode", trackingKey .. "_eucMode", not euclideanMode, euclideanMode)
             end
+            if isChildOfAutobindGroup then
+                imgui.EndDisabled(globals.ctx)
+            end
             imgui.EndGroup(globals.ctx)
+            if isChildOfAutobindGroup and imgui.IsItemHovered(globals.ctx, imgui.HoveredFlags_AllowWhenDisabled) then
+                imgui.SetTooltip(globals.ctx, "This parameter is controlled by the parent group in Auto-bind mode")
+            end
         end
 
         imgui.Spacing(globals.ctx)
@@ -1175,7 +1195,10 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 selectedIndex = dataObj.euclideanSelectedLayer or 1
             end
 
-            -- Layer/Container buttons
+            -- Layer/Container buttons (disabled for children of auto-bind groups)
+            if isChildOfAutobindGroup then
+                imgui.BeginDisabled(globals.ctx)
+            end
             for i, item in ipairs(itemList) do
                 local isSelected = (i == selectedIndex)
                 if isSelected then
@@ -1228,8 +1251,14 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     end
                 end
             end
+            if isChildOfAutobindGroup then
+                imgui.EndDisabled(globals.ctx)
+            end
 
             imgui.EndGroup(globals.ctx)
+            if isChildOfAutobindGroup and imgui.IsItemHovered(globals.ctx, imgui.HoveredFlags_AllowWhenDisabled) then
+                imgui.SetTooltip(globals.ctx, "Layer selection is controlled by the parent group in Auto-bind mode")
+            end
         end
 
         -- Warning if selected container is in Override mode
@@ -1255,9 +1284,12 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         -- Tempo controls (only for Tempo-Based mode)
         if (dataObj.euclideanMode or 0) == 0 then
-            -- Use Project Tempo checkbox
+            -- Use Project Tempo checkbox (disabled for children of auto-bind groups)
             do
                 imgui.BeginGroup(globals.ctx)
+                if isChildOfAutobindGroup then
+                    imgui.BeginDisabled(globals.ctx)
+                end
                 local useProjectTempo = dataObj.euclideanUseProjectTempo or false
                 local rv, newValue = imgui.Checkbox(globals.ctx, "Use Project Tempo##eucUseProjectTempo", useProjectTempo)
                 if rv then
@@ -1266,19 +1298,29 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                         checkAutoRegen("euclideanUseProjectTempo", trackingKey .. "_eucUseProjectTempo", useProjectTempo, newValue)
                     end
                 end
+                if isChildOfAutobindGroup then
+                    imgui.EndDisabled(globals.ctx)
+                end
                 imgui.EndGroup(globals.ctx)
 
-                if imgui.IsItemHovered(globals.ctx) then
-                    imgui.SetTooltip(globals.ctx, "Use REAPER's project tempo (supports tempo changes)")
+                if imgui.IsItemHovered(globals.ctx, isChildOfAutobindGroup and imgui.HoveredFlags_AllowWhenDisabled or 0) then
+                    if isChildOfAutobindGroup then
+                        imgui.SetTooltip(globals.ctx, "This parameter is controlled by the parent group in Auto-bind mode")
+                    else
+                        imgui.SetTooltip(globals.ctx, "Use REAPER's project tempo (supports tempo changes)")
+                    end
                 end
             end
 
             imgui.Spacing(globals.ctx)
 
-            -- Tempo slider (only if not using project tempo)
+            -- Tempo slider (only if not using project tempo, disabled for children of auto-bind groups)
             if not (dataObj.euclideanUseProjectTempo or false) then
                 do
                     imgui.BeginGroup(globals.ctx)
+                    if isChildOfAutobindGroup then
+                        imgui.BeginDisabled(globals.ctx)
+                    end
                     local tempoKey = trackingKey .. "_euclideanTempo"
                     local rv, newTempo = globals.SliderEnhanced.SliderDouble({
                         id = "##EuclideanTempo",
@@ -1300,13 +1342,20 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                         checkAutoRegen("euclideanTempo", tempoKey, globals.autoRegenTracking[tempoKey], dataObj.euclideanTempo)
                         globals.autoRegenTracking[tempoKey] = nil
                     end
+                    if isChildOfAutobindGroup then
+                        imgui.EndDisabled(globals.ctx)
+                    end
 
                     imgui.EndGroup(globals.ctx)
 
                     imgui.SameLine(globals.ctx, controlWidth + padding)
                     imgui.Text(globals.ctx, "Tempo")
                     imgui.SameLine(globals.ctx)
-                    globals.Utils.HelpMarker("BPM for the Euclidean pattern")
+                    if isChildOfAutobindGroup then
+                        globals.Utils.HelpMarker("This parameter is controlled by the parent group in Auto-bind mode")
+                    else
+                        globals.Utils.HelpMarker("BPM for the Euclidean pattern")
+                    end
                 end
             end
         end
@@ -1604,9 +1653,54 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             setNoiseDensity = function(v) obj.noiseDensity = v; obj.needsRegeneration = true end,
             setNoiseThreshold = function(v) obj.noiseThreshold = v; obj.needsRegeneration = true end,
             -- Euclidean mode callbacks
-            setEuclideanMode = function(v) obj.euclideanMode = v; obj.needsRegeneration = true end,
-            setEuclideanTempo = function(v) obj.euclideanTempo = v; obj.needsRegeneration = true end,
-            setEuclideanUseProjectTempo = function(v) obj.euclideanUseProjectTempo = v; obj.needsRegeneration = true end,
+            setEuclideanMode = function(v)
+                obj.euclideanMode = v
+
+                -- If group, sync to all containers in override mode with Euclidean (parent -> children only)
+                if isGroup and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.overrideParent and container.intervalMode == 5 then
+                            container.euclideanMode = v
+                            container.needsRegeneration = true
+                        end
+                    end
+                end
+
+                obj.needsRegeneration = true
+            end,
+            setEuclideanTempo = function(v)
+                obj.euclideanTempo = v
+
+                -- If group, sync to all containers in override mode with Euclidean (parent -> children only)
+                if isGroup and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.overrideParent and container.intervalMode == 5 then
+                            container.euclideanTempo = v
+                            container.needsRegeneration = true
+                        end
+                    end
+                end
+
+                obj.needsRegeneration = true
+            end,
+            setEuclideanUseProjectTempo = function(v)
+                obj.euclideanUseProjectTempo = v
+
+                -- If group, sync to all containers in override mode with Euclidean (parent -> children only)
+                if isGroup and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.overrideParent and container.intervalMode == 5 then
+                            container.euclideanUseProjectTempo = v
+                            container.needsRegeneration = true
+                        end
+                    end
+                end
+
+                obj.needsRegeneration = true
+            end,
             setEuclideanSelectedLayer = function(v) obj.euclideanSelectedLayer = v end,
             addEuclideanLayer = function()
                 if not obj.euclideanLayers then obj.euclideanLayers = {} end
