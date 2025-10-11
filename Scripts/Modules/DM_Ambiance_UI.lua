@@ -1409,7 +1409,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Euclidean parameters: Multi-column layout for Manual mode, single column for Auto-bind
         local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
 
-        if not isAutoBind then
+        if not isAutoBind and not isChildOfAutobindGroup then
             -- MANUAL MODE: Multi-column sliders for each layer
             local numLayers = #dataObj.euclideanLayers
             local availableWidth = imgui.GetContentRegionAvail(globals.ctx)
