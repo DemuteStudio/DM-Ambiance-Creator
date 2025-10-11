@@ -180,7 +180,7 @@ function Presets.loadPreset(name)
     -- Migrate containers to UUID system (backward compatibility)
     local migrated = globals.Structures.migrateContainersToUUID(presetData)
     if migrated then
-      reaper.ShowConsoleMsg("Migrated containers to UUID system\n")
+      reaper.ShowConsoleMsg("Migrated containers to UUID system - Please save your presets again.\n")
     end
 
     -- Apply backward compatibility and track volumes for all groups and containers
