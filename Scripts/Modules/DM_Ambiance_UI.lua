@@ -2859,7 +2859,15 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         end
 
         -- Draw circle guide segments (avoiding dots)
-        local currentGuideColor = (layerIdx == selectedIndex) and selectedGuideColor or guideColor
+        local isLayerSelected = (layerIdx == selectedIndex)
+        local currentGuideColor = isLayerSelected and selectedGuideColor or guideColor
+
+        -- Apply transparency to non-selected layer guides
+        if not isLayerSelected then
+            -- Extract RGB and replace alpha with 40% opacity (format: 0xRRGGBBAA)
+            currentGuideColor = (currentGuideColor & 0xFFFFFF00) | 0x66
+        end
+
         local segmentCount = steps * 2  -- More segments for smoother circle
         for seg = 1, segmentCount do
             local angle1 = (2 * math.pi * (seg - 1) / segmentCount) - (math.pi / 2)
@@ -2889,6 +2897,19 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
 
         -- Draw dots around the circle
         local dotRadius = math.min(5.5, maxRadius / 8)  -- Increased from 4.0 and maxRadius/10 for better visibility
+
+        -- Apply transparency to non-selected layers
+        local layerFilledColor = filledColor
+        local layerEmptyColor = emptyColor
+        local layerBgColor = bgColor
+
+        if not isLayerSelected then
+            -- Make non-selected layers more transparent (40% opacity = 0x66, format: 0xRRGGBBAA)
+            layerFilledColor = (filledColor & 0xFFFFFF00) | 0x66
+            layerEmptyColor = (emptyColor & 0xFFFFFF00) | 0x66
+            layerBgColor = (bgColor & 0xFFFFFF00) | 0x66
+        end
+
         for i = 1, steps do
             -- Calculate angle (start at top, rotate clockwise)
             local angle = (2 * math.pi * (i - 1) / steps) - (math.pi / 2)
@@ -2900,30 +2921,15 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
             -- Draw dot (filled if hit, hollow if silence)
             if pattern[i] then
                 -- Hit: filled circle
-                imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, filledColor)
+                imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerFilledColor)
             else
                 -- Silence: filled circle with background color + border
-                imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, bgColor)
-                imgui.DrawList_AddCircle(drawList, x, y, dotRadius, emptyColor, 0, 1.5)
+                imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerBgColor)
+                imgui.DrawList_AddCircle(drawList, x, y, dotRadius, layerEmptyColor, 0, 1.5)
             end
         end
 
-        -- Draw layer label near the circle (on the right side)
-        local textColor = 0xAAAAAAFF
-        local layerText = ""
-        if isAutoBind then
-            -- Show container name (truncated if too long)
-            layerText = layerNames[layerIdx] or "???"
-            if #layerText > 10 then
-                layerText = layerText:sub(1, 8) .. ".."
-            end
-        else
-            -- Show layer number
-            layerText = tostring(layerIdx)
-        end
-        local textX = centerX + currentRadius + 10
-        local textY = centerY - 6
-        imgui.DrawList_AddText(drawList, textX, textY, textColor, layerText)
+        -- Labels removed for cleaner preview
     end
 
     -- Reserve space for the preview
