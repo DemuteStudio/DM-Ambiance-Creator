@@ -1109,38 +1109,61 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         imgui.Spacing(globals.ctx)
 
-        -- Tempo slider (only for Tempo-Based mode)
+        -- Tempo controls (only for Tempo-Based mode)
         if (dataObj.euclideanMode or 0) == 0 then
+            -- Use Project Tempo checkbox
             do
                 imgui.BeginGroup(globals.ctx)
-                local tempoKey = trackingKey .. "_euclideanTempo"
-                local rv, newTempo = globals.SliderEnhanced.SliderDouble({
-                    id = "##EuclideanTempo",
-                    value = dataObj.euclideanTempo or 120,
-                    min = 20,
-                    max = 300,
-                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_TEMPO,
-                    format = "%.0f BPM",
-                    width = controlWidth
-                })
-
-                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[tempoKey] then
-                    globals.autoRegenTracking[tempoKey] = dataObj.euclideanTempo
+                local useProjectTempo = dataObj.euclideanUseProjectTempo or false
+                local rv, newValue = imgui.Checkbox(globals.ctx, "Use Project Tempo##eucUseProjectTempo", useProjectTempo)
+                if rv then
+                    callbacks.setEuclideanUseProjectTempo(newValue)
+                    if checkAutoRegen then
+                        checkAutoRegen("euclideanUseProjectTempo", trackingKey .. "_eucUseProjectTempo", useProjectTempo, newValue)
+                    end
                 end
-
-                if rv then callbacks.setEuclideanTempo(newTempo) end
-
-                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[tempoKey] then
-                    checkAutoRegen("euclideanTempo", tempoKey, globals.autoRegenTracking[tempoKey], dataObj.euclideanTempo)
-                    globals.autoRegenTracking[tempoKey] = nil
-                end
-
                 imgui.EndGroup(globals.ctx)
 
-                imgui.SameLine(globals.ctx, controlWidth + padding)
-                imgui.Text(globals.ctx, "Tempo")
-                imgui.SameLine(globals.ctx)
-                globals.Utils.HelpMarker("BPM for the Euclidean pattern")
+                if imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetTooltip(globals.ctx, "Use REAPER's project tempo (supports tempo changes)")
+                end
+            end
+
+            imgui.Spacing(globals.ctx)
+
+            -- Tempo slider (only if not using project tempo)
+            if not (dataObj.euclideanUseProjectTempo or false) then
+                do
+                    imgui.BeginGroup(globals.ctx)
+                    local tempoKey = trackingKey .. "_euclideanTempo"
+                    local rv, newTempo = globals.SliderEnhanced.SliderDouble({
+                        id = "##EuclideanTempo",
+                        value = dataObj.euclideanTempo or 120,
+                        min = 20,
+                        max = 300,
+                        defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_TEMPO,
+                        format = "%.0f BPM",
+                        width = controlWidth
+                    })
+
+                    if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[tempoKey] then
+                        globals.autoRegenTracking[tempoKey] = dataObj.euclideanTempo
+                    end
+
+                    if rv then callbacks.setEuclideanTempo(newTempo) end
+
+                    if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[tempoKey] then
+                        checkAutoRegen("euclideanTempo", tempoKey, globals.autoRegenTracking[tempoKey], dataObj.euclideanTempo)
+                        globals.autoRegenTracking[tempoKey] = nil
+                    end
+
+                    imgui.EndGroup(globals.ctx)
+
+                    imgui.SameLine(globals.ctx, controlWidth + padding)
+                    imgui.Text(globals.ctx, "Tempo")
+                    imgui.SameLine(globals.ctx)
+                    globals.Utils.HelpMarker("BPM for the Euclidean pattern")
+                end
             end
         end
 
@@ -1333,6 +1356,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
             -- Euclidean mode callbacks
             setEuclideanMode = function(v) obj.euclideanMode = v; obj.needsRegeneration = true end,
             setEuclideanTempo = function(v) obj.euclideanTempo = v; obj.needsRegeneration = true end,
+            setEuclideanUseProjectTempo = function(v) obj.euclideanUseProjectTempo = v; obj.needsRegeneration = true end,
             setEuclideanPulses = function(v) obj.euclideanPulses = v; obj.needsRegeneration = true end,
             setEuclideanSteps = function(v) obj.euclideanSteps = v; obj.needsRegeneration = true end,
             setEuclideanRotation = function(v) obj.euclideanRotation = v; obj.needsRegeneration = true end,

@@ -3995,11 +3995,12 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
     local pulses = effectiveParams.euclideanPulses or 8
     local steps = effectiveParams.euclideanSteps or 16
     local rotation = effectiveParams.euclideanRotation or 0
+    local useProjectTempo = effectiveParams.euclideanUseProjectTempo or false
     local tempo = effectiveParams.euclideanTempo or 120
 
     -- Debug: Print parameters
-    reaper.ShowConsoleMsg(string.format("Euclidean: mode=%d, pulses=%d, steps=%d, rotation=%d, tempo=%d\n",
-        mode, pulses, steps, rotation, tempo))
+    reaper.ShowConsoleMsg(string.format("Euclidean: mode=%d, pulses=%d, steps=%d, rotation=%d, tempo=%d, useProject=%s\n",
+        mode, pulses, steps, rotation, tempo, tostring(useProjectTempo)))
 
     -- Generate Euclidean rhythm pattern
     local pattern = Utils.euclideanRhythm(pulses, steps)
@@ -4021,30 +4022,42 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
         pattern = rotated
     end
 
-    -- Calculate step duration based on mode
-    local stepDuration
-    if mode == 0 then
-        -- Tempo-Based: duration of one step in seconds
-        stepDuration = (60.0 / tempo) * 4 / steps  -- Assuming 4/4 time, steps are subdivisions of 4 beats
-    else
-        -- Fit-to-Selection: stretch pattern to fit time selection exactly once
-        local duration = globals.endTime - globals.startTime
-        stepDuration = duration / steps
-    end
-
     -- Place items according to pattern
     local itemIndex = 0
     local currentTime = globals.startTime
 
     while currentTime < globals.endTime do
         for stepIdx = 1, steps do
-            if pattern[stepIdx] then
-                local placementTime = currentTime + (stepIdx - 1) * stepDuration
+            local placementTime
 
-                -- Stop if we exceed time selection
-                if placementTime >= globals.endTime then
-                    break
+            -- Calculate placement time based on mode
+            if mode == 0 then
+                -- Tempo-Based mode
+                if useProjectTempo then
+                    -- Use project tempo at current position (supports tempo changes)
+                    -- Calculate beat position for each step
+                    local beatStart = reaper.TimeMap2_timeToQN(0, currentTime)
+                    local beatOffset = (stepIdx - 1) * (4.0 / steps)  -- Fraction of 4 beats
+                    local targetBeat = beatStart + beatOffset
+                    placementTime = reaper.TimeMap2_QNToTime(0, targetBeat)
+                else
+                    -- Use fixed tempo
+                    local stepDuration = (60.0 / tempo) * 4 / steps  -- Assuming 4/4 time
+                    placementTime = currentTime + (stepIdx - 1) * stepDuration
                 end
+            else
+                -- Fit-to-Selection mode: stretch pattern to fit time selection exactly once
+                local duration = globals.endTime - globals.startTime
+                local stepDuration = duration / steps
+                placementTime = currentTime + (stepIdx - 1) * stepDuration
+            end
+
+            -- Stop if we exceed time selection
+            if placementTime >= globals.endTime then
+                break
+            end
+
+            if pattern[stepIdx] then
 
                 -- Select item (cycle through available items)
                 itemIndex = (itemIndex % #effectiveParams.items) + 1
@@ -4173,7 +4186,16 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
 
         -- Advance to next pattern repetition (only for Tempo-Based mode)
         if mode == 0 then
-            currentTime = currentTime + steps * stepDuration
+            if useProjectTempo then
+                -- Use project tempo: advance by musical beats
+                local beatStart = reaper.TimeMap2_timeToQN(0, currentTime)
+                local targetBeat = beatStart + 4.0  -- Advance by 4 beats (one bar)
+                currentTime = reaper.TimeMap2_QNToTime(0, targetBeat)
+            else
+                -- Use fixed tempo
+                local stepDuration = (60.0 / tempo) * 4 / steps
+                currentTime = currentTime + steps * stepDuration
+            end
         else
             -- Fit mode: only one repetition
             break

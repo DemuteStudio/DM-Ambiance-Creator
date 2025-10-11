@@ -57,6 +57,7 @@ function Structures.createGroup(name)
         -- Euclidean Mode parameters
         euclideanMode = Constants.DEFAULTS.EUCLIDEAN_MODE,
         euclideanTempo = Constants.DEFAULTS.EUCLIDEAN_TEMPO,
+        euclideanUseProjectTempo = Constants.DEFAULTS.EUCLIDEAN_USE_PROJECT_TEMPO,
         euclideanPulses = Constants.DEFAULTS.EUCLIDEAN_PULSES,
         euclideanSteps = Constants.DEFAULTS.EUCLIDEAN_STEPS,
         euclideanRotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
@@ -149,6 +150,7 @@ function Structures.createContainer(name)
         -- Euclidean Mode parameters
         euclideanMode = Constants.DEFAULTS.EUCLIDEAN_MODE,
         euclideanTempo = Constants.DEFAULTS.EUCLIDEAN_TEMPO,
+        euclideanUseProjectTempo = Constants.DEFAULTS.EUCLIDEAN_USE_PROJECT_TEMPO,
         euclideanPulses = Constants.DEFAULTS.EUCLIDEAN_PULSES,
         euclideanSteps = Constants.DEFAULTS.EUCLIDEAN_STEPS,
         euclideanRotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
@@ -302,6 +304,7 @@ function Structures.getEffectiveContainerParams(group, container)
     -- Inherit euclidean mode settings
     effectiveParams.euclideanMode = group.euclideanMode
     effectiveParams.euclideanTempo = group.euclideanTempo
+    effectiveParams.euclideanUseProjectTempo = group.euclideanUseProjectTempo
     effectiveParams.euclideanPulses = group.euclideanPulses
     effectiveParams.euclideanSteps = group.euclideanSteps
     effectiveParams.euclideanRotation = group.euclideanRotation

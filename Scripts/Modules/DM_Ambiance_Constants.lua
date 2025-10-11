@@ -202,6 +202,7 @@ Constants.DEFAULTS = {
     -- Euclidean Mode defaults
     EUCLIDEAN_MODE = 0,                 -- Default mode (0=Tempo-Based, 1=Fit-to-Selection)
     EUCLIDEAN_TEMPO = 120,              -- Default tempo (BPM)
+    EUCLIDEAN_USE_PROJECT_TEMPO = false, -- Default use project tempo
     EUCLIDEAN_PULSES = 8,               -- Default number of pulses (hits)
     EUCLIDEAN_STEPS = 16,               -- Default number of steps (subdivisions)
     EUCLIDEAN_ROTATION = 0,             -- Default rotation offset
