@@ -93,8 +93,17 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
     if rv then
         -- Apply to all selected containers
+        local affectedGroups = {}
         for _, c in ipairs(containers) do
             globals.groups[c.groupIndex].containers[c.containerIndex].overrideParent = newOverrideParent
+            affectedGroups[c.groupIndex] = true
+        end
+
+        -- Sync euclidean bindings for all affected groups
+        for groupIndex, _ in pairs(affectedGroups) do
+            if groupIndex >= 1 and groupIndex <= #globals.groups then
+                globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+            end
         end
 
         -- Update state for UI refresh
@@ -417,8 +426,16 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         
         local callbacks = {
             setIntervalMode = function(newValue)
+                local affectedGroups = {}
                 for _, c in ipairs(containers) do
                     globals.groups[c.groupIndex].containers[c.containerIndex].intervalMode = newValue
+                    affectedGroups[c.groupIndex] = true
+                end
+                -- Sync euclidean bindings for all affected groups
+                for groupIndex, _ in pairs(affectedGroups) do
+                    if groupIndex >= 1 and groupIndex <= #globals.groups then
+                        globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+                    end
                 end
                 -- Update state for UI refresh
                 commonIntervalMode = newValue
@@ -531,7 +548,8 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         }
         
         -- Use the common trigger settings function
-        globals.UI.drawTriggerSettingsSection(dataObj, callbacks, width, "", nil)
+        -- Multi-selection doesn't support auto-bind (not a group context)
+        globals.UI.drawTriggerSettingsSection(dataObj, callbacks, width, "", nil, false, nil, nil)
     end
 
     -- RANDOMIZATION PARAMETERS SECTION

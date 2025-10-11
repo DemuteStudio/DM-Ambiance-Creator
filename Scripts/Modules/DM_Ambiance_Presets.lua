@@ -164,6 +164,12 @@ function Presets.loadPreset(name)
     globals.groups = presetData
     globals.currentPresetName = name
 
+    -- Migrate containers to UUID system (backward compatibility)
+    local migrated = globals.Structures.migrateContainersToUUID(presetData)
+    if migrated then
+      reaper.ShowConsoleMsg("Migrated containers to UUID system\n")
+    end
+
     -- Apply backward compatibility and track volumes for all groups and containers
     for groupIndex, group in ipairs(presetData) do
       -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
@@ -275,6 +281,11 @@ function Presets.loadGroupPreset(name, groupIndex)
       presetData.pitchMode = globals.Constants.PITCH_MODES.PITCH
     end
 
+    -- Migrate containers to UUID system
+    if presetData.containers then
+      globals.Structures.migrateContainersToUUID({presetData})
+    end
+
     globals.groups[groupIndex] = presetData
 
     -- Set regeneration flag since preset loading changes parameters
@@ -364,6 +375,12 @@ function Presets.loadContainerPreset(name, groupIndex, containerIndex)
     -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
     if presetData.pitchMode == nil then
       presetData.pitchMode = globals.Constants.PITCH_MODES.PITCH
+    end
+
+    -- Migrate container to UUID system
+    if not presetData.id then
+      local Utils = require("DM_Ambiance_Utils")
+      presetData.id = Utils.generateUUID()
     end
 
     -- Apply the preset data to the container

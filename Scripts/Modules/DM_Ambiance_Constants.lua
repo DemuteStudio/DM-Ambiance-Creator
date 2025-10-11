@@ -207,6 +207,7 @@ Constants.DEFAULTS = {
     EUCLIDEAN_STEPS = 16,               -- Default number of steps (subdivisions)
     EUCLIDEAN_ROTATION = 0,             -- Default rotation offset
     EUCLIDEAN_SELECTED_LAYER = 1,       -- Default selected layer index
+    EUCLIDEAN_SELECTED_BINDING_INDEX = 1, -- Default selected binding index (auto-bind mode)
     -- Fibonacci Mode defaults
     FIBONACCI_MODE = 0,                 -- Default mode (0=Tempo-Based, 1=Fit-to-Selection)
     FIBONACCI_TEMPO = 120,              -- Default tempo (BPM)

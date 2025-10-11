@@ -1535,6 +1535,10 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         -- UndoWrappers.Checkbox already captures state - no need for manual capture
         container.overrideParent = newOverrideParent
         container.needsRegeneration = true
+        -- Sync euclidean bindings after override mode change
+        if groupIndex and groupIndex >= 1 and groupIndex <= #globals.groups then
+            globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+        end
     end
 
     -- Display trigger/randomization settings or inheritance info

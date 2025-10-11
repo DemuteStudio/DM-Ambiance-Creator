@@ -15,6 +15,14 @@ function Utils.initModule(g)
     globals = g
 end
 
+-- Generate a simple UUID for stable container identification
+-- Format: timestamp-random (e.g., "1704123456-a3f9")
+function Utils.generateUUID()
+    local timestamp = os.time()
+    local random = math.random(0, 0xFFFF)
+    return string.format("%d-%04x", timestamp, random)
+end
+
 -- Display a help marker "(?)" with a tooltip containing the provided description
 function Utils.HelpMarker(desc)
     if not desc or desc == "" then

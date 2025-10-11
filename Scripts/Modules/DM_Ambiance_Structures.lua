@@ -66,6 +66,11 @@ function Structures.createGroup(name)
                 rotation = Constants.DEFAULTS.EUCLIDEAN_ROTATION,
             }
         },
+        -- Euclidean Layer Bindings (for groups only)
+        euclideanAutoBindContainers = false,  -- If true, bind layers to child containers by UUID
+        euclideanLayerBindings = {},  -- {[containerUUID] = {pulses, steps, rotation}}
+        euclideanBindingOrder = {},  -- Array of containerUUIDs in display order
+        euclideanSelectedBindingIndex = Constants.DEFAULTS.EUCLIDEAN_SELECTED_BINDING_INDEX,  -- Selected binding index (auto-bind mode)
         -- Fibonacci Mode parameters
         fibonacciMode = Constants.DEFAULTS.FIBONACCI_MODE,
         fibonacciTempo = Constants.DEFAULTS.FIBONACCI_TEMPO,
@@ -103,7 +108,11 @@ end
 -- @param name string: Container name (optional, defaults to "New Container")
 -- @return table: Container structure
 function Structures.createContainer(name)
+    -- Generate UUID using Utils (will be available after initModule)
+    local Utils = require("DM_Ambiance_Utils")
+
     return {
+        id = Utils.generateUUID(),  -- Stable identifier for layer binding
         name = name or "New Container",
         items = {},
         expanded = true,
@@ -316,15 +325,35 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.euclideanTempo = group.euclideanTempo
     effectiveParams.euclideanUseProjectTempo = group.euclideanUseProjectTempo
     effectiveParams.euclideanSelectedLayer = group.euclideanSelectedLayer
-    -- Deep copy layers
-    effectiveParams.euclideanLayers = {}
-    if group.euclideanLayers then
-        for i, layer in ipairs(group.euclideanLayers) do
-            effectiveParams.euclideanLayers[i] = {
-                pulses = layer.pulses,
-                steps = layer.steps,
-                rotation = layer.rotation,
+
+    -- Check if group is in auto-bind mode and container has a specific binding
+    local useBinding = false
+    if group.euclideanAutoBindContainers and container.id then
+        -- Container has UUID and group is in auto-bind mode
+        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+            -- Use the specific binding for this container (single layer)
+            useBinding = true
+            effectiveParams.euclideanLayers = {
+                {
+                    pulses = group.euclideanLayerBindings[container.id].pulses,
+                    steps = group.euclideanLayerBindings[container.id].steps,
+                    rotation = group.euclideanLayerBindings[container.id].rotation,
+                }
             }
+        end
+    end
+
+    -- If not using binding, inherit layers from group (manual mode)
+    if not useBinding then
+        effectiveParams.euclideanLayers = {}
+        if group.euclideanLayers then
+            for i, layer in ipairs(group.euclideanLayers) do
+                effectiveParams.euclideanLayers[i] = {
+                    pulses = layer.pulses,
+                    steps = layer.steps,
+                    rotation = layer.rotation,
+                }
+            end
         end
     end
 
@@ -348,6 +377,92 @@ function Structures.getEffectiveContainerParams(group, container)
     end
 
     return effectiveParams
+end
+
+-- Migrate old presets: Add UUIDs to containers that don't have them
+-- This ensures backward compatibility with presets created before UUID implementation
+function Structures.migrateContainersToUUID(groups)
+    local Utils = require("DM_Ambiance_Utils")
+    local migrated = false
+
+    for _, group in ipairs(groups) do
+        if group.containers then
+            for _, container in ipairs(group.containers) do
+                if not container.id then
+                    container.id = Utils.generateUUID()
+                    migrated = true
+                end
+            end
+        end
+    end
+
+    return migrated
+end
+
+-- Sync euclidean layer bindings for a group
+-- This function maintains the binding system between group layers and containers
+-- Called after container add/delete/move operations
+function Structures.syncEuclideanBindings(group)
+    -- Only sync if auto-bind is enabled
+    if not group.euclideanAutoBindContainers then
+        return
+    end
+
+    -- Initialize binding structures if missing
+    if not group.euclideanLayerBindings then
+        group.euclideanLayerBindings = {}
+    end
+    if not group.euclideanBindingOrder then
+        group.euclideanBindingOrder = {}
+    end
+
+    -- Get list of containers that should have bindings
+    local eligibleContainers = {}
+    if group.containers then
+        for _, container in ipairs(group.containers) do
+            -- Container is eligible if:
+            -- 1. It doesn't override parent (inherits euclidean settings), OR
+            -- 2. It overrides AND uses euclidean trigger mode
+            local isEligible = false
+            if not container.overrideParent then
+                -- Inherits from parent - eligible if parent is euclidean
+                isEligible = (group.intervalMode == 5)  -- TRIGGER_MODES.EUCLIDEAN
+            else
+                -- Overrides parent - eligible if container itself is euclidean
+                isEligible = (container.intervalMode == 5)
+            end
+
+            if isEligible and container.id then
+                table.insert(eligibleContainers, container)
+            end
+        end
+    end
+
+    -- Create new bindings and binding order
+    local newBindings = {}
+    local newBindingOrder = {}
+
+    for _, container in ipairs(eligibleContainers) do
+        local uuid = container.id
+
+        -- Preserve existing binding if it exists
+        if group.euclideanLayerBindings[uuid] then
+            newBindings[uuid] = group.euclideanLayerBindings[uuid]
+        else
+            -- Create new binding with default values
+            newBindings[uuid] = {
+                pulses = 8,
+                steps = 16,
+                rotation = 0
+            }
+        end
+
+        table.insert(newBindingOrder, uuid)
+    end
+
+    -- Update group's binding structures
+    group.euclideanLayerBindings = newBindings
+    group.euclideanBindingOrder = newBindingOrder
 end
 
 return Structures

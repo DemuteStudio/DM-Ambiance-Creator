@@ -482,12 +482,16 @@ function UI_Groups.moveContainerToGroup(sourceGroupIndex, sourceContainerIndex, 
         globals.selectedContainers[key] = nil
         globals.selectedContainers[targetGroupIndex .. "_" .. insertIndex] = true
     end
-    
+
     if globals.selectedGroupIndex == sourceGroupIndex and globals.selectedContainerIndex == sourceContainerIndex then
         globals.selectedGroupIndex = targetGroupIndex
         globals.selectedContainerIndex = insertIndex
     end
-    
+
+    -- Sync euclidean bindings for both source and target groups
+    globals.Structures.syncEuclideanBindings(globals.groups[sourceGroupIndex])
+    globals.Structures.syncEuclideanBindings(globals.groups[targetGroupIndex])
+
     globals.Utils.reorganizeTracksAfterContainerMove(sourceGroupIndex, targetGroupIndex, movingContainer.name)
 end
 
@@ -528,6 +532,18 @@ function UI_Groups.moveMultipleContainersToGroup(containers, targetGroupIndex, t
     globals.inMultiSelectMode = false
     globals.selectedContainerIndex = nil
 
+    -- Sync euclidean bindings for all affected groups
+    local affectedGroups = {}
+    for _, item in ipairs(containers) do
+        affectedGroups[item.groupIndex] = true
+    end
+    affectedGroups[targetGroupIndex] = true
+    for groupIndex, _ in pairs(affectedGroups) do
+        if groupIndex >= 1 and groupIndex <= #globals.groups then
+            globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+        end
+    end
+
     -- Trigger track reorganization
     for _, item in ipairs(containers) do
         globals.Utils.reorganizeTracksAfterContainerMove(item.groupIndex, targetGroupIndex, "multiple containers")
@@ -554,18 +570,21 @@ function UI_Groups.reorderContainers(groupIndex, sourceIndex, targetIndex)
     insertIndex = math.max(1, math.min(insertIndex, #globals.groups[groupIndex].containers + 1))
     
     table.insert(globals.groups[groupIndex].containers, insertIndex, movingContainer)
-    
+
     -- Update selections
     local oldKey = groupIndex .. "_" .. sourceIndex
     if globals.selectedContainers[oldKey] then
         globals.selectedContainers[oldKey] = nil
         globals.selectedContainers[groupIndex .. "_" .. insertIndex] = true
     end
-    
+
     if globals.selectedGroupIndex == groupIndex and globals.selectedContainerIndex == sourceIndex then
         globals.selectedContainerIndex = insertIndex
     end
-    
+
+    -- Sync euclidean bindings after reordering
+    globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+
     -- No need to reorganize tracks for reordering within same group
 end
 
@@ -768,6 +787,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                     globals.shiftAnchorContainerIndex = newContainerIndex
                     -- Ensure the group is expanded to show the new container
                     group.expanded = true
+                    -- Sync euclidean bindings after adding container
+                    globals.Structures.syncEuclideanBindings(group)
                     -- Capture AFTER all changes
                     globals.History.captureState("Add container")
                 end},
@@ -801,11 +822,29 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 -- Get actual available width after indentation
                 local containerAvailWidth = imgui.GetContentRegionAvail(globals.ctx)
 
+                -- Check if this container should be highlighted (temporary highlight from layer button click)
+                local isHighlighted = false
+                if globals.highlightedContainerUUID and container.id == globals.highlightedContainerUUID then
+                    -- Check if highlight is still active (1 second duration)
+                    local now = reaper.time_precise()
+                    if not globals.highlightStartTime then
+                        globals.highlightStartTime = now
+                    end
+                    local elapsed = now - globals.highlightStartTime
+                    if elapsed < 1.0 then
+                        isHighlighted = true
+                    else
+                        -- Highlight expired, clear it
+                        globals.highlightedContainerUUID = nil
+                        globals.highlightStartTime = nil
+                    end
+                end
+
                 -- Draw container using the helper function
                 local containerClicked = drawListItemWithButtons({
                     id = containerId,
                     text = containerDisplayName,
-                    isSelected = isSelected,
+                    isSelected = isSelected or isHighlighted,  -- Show as selected if highlighted
                     hasArrow = false, -- Containers don't have expansion arrow
                     isOpen = false,
                     availableWidth = containerAvailWidth,
@@ -973,6 +1012,8 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                         globals.selectedContainers[i .. "_" .. k] = nil
                     end
                 end
+                -- Sync euclidean bindings after deleting container
+                globals.Structures.syncEuclideanBindings(group)
                 -- Capture AFTER all changes
                 globals.History.captureState("Delete container")
             end
