@@ -1390,58 +1390,66 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Euclidean parameters: Multi-column layout for Manual mode, single column for Auto-bind
         local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
 
-        if not isAutoBind then
-            -- MANUAL MODE: Use modular Euclidean UI
-            local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
-            globals.EuclideanUI.renderLayerColumns(
-                dataObj.euclideanLayers,
-                trackingKey,
-                adaptedCallbacks,
-                checkAutoRegen,
-                "manual_"
-            )
-        else
-            -- AUTO-BIND MODE: Use modular Euclidean UI
-            local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
-            local bindingOrder = dataObj.euclideanBindingOrder or {}
-            local uuid = bindingOrder[selectedBindingIndex]
-
-            -- Get binding layers for selected container
-            local bindingLayers = {}
-            if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
-                bindingLayers = dataObj.euclideanLayerBindings[uuid]
-            end
-
-            local numLayers = #bindingLayers
-            if numLayers == 0 then
-                -- Fallback: create default layer
-                bindingLayers = {{pulses = 8, steps = 16, rotation = 0}}
-            end
-
-            local adaptedCallbacks = globals.EuclideanUI.createAutoBindModeCallbacks(callbacks, selectedBindingIndex)
-            local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
-            globals.EuclideanUI.renderLayerColumns(
-                bindingLayers,
-                trackingKey .. "_" .. itemIdentifier,
-                adaptedCallbacks,
-                checkAutoRegen,
-                "bind" .. selectedBindingIndex .. "_"
-            )
-        end
-
-        -- Euclidean Pattern Visualization and Saved Patterns
-        imgui.Spacing(globals.ctx)
-        imgui.Text(globals.ctx, "Pattern Preview:")
-
         local previewSize = UI.scaleSize(154)  -- Circle diameter (140 * 1.1 = 154, increased by 10%)
 
-        -- Layout: Preview on left, saved patterns list on right
-        imgui.BeginGroup(globals.ctx)
-        UI.drawEuclideanPreview(dataObj, previewSize, isGroup)
-        imgui.EndGroup(globals.ctx)
+        -- Use table layout for preview + layers side-by-side
+        if imgui.BeginTable(globals.ctx, "EuclideanLayoutTable" .. trackingKey, 2, imgui.TableFlags_None) then
+            -- Set column widths: Preview first (fixed), then Layers (stretch)
+            imgui.TableSetupColumn(globals.ctx, "Preview", imgui.TableColumnFlags_WidthFixed, previewSize + 20)
+            imgui.TableSetupColumn(globals.ctx, "Layers", imgui.TableColumnFlags_WidthStretch)
 
-        -- Draw saved patterns list on the right
-        imgui.SameLine(globals.ctx, 0, 15)
+            imgui.TableNextRow(globals.ctx)
+
+            -- Column 1: Preview
+            imgui.TableSetColumnIndex(globals.ctx, 0)
+            UI.drawEuclideanPreview(dataObj, previewSize, isGroup)
+
+            -- Column 2: Layers
+            imgui.TableSetColumnIndex(globals.ctx, 1)
+            if not isAutoBind then
+                -- MANUAL MODE: Use modular Euclidean UI
+                local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
+                globals.EuclideanUI.renderLayerColumns(
+                    dataObj.euclideanLayers,
+                    trackingKey,
+                    adaptedCallbacks,
+                    checkAutoRegen,
+                    "manual_"
+                )
+            else
+                -- AUTO-BIND MODE: Use modular Euclidean UI
+                local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
+                local bindingOrder = dataObj.euclideanBindingOrder or {}
+                local uuid = bindingOrder[selectedBindingIndex]
+
+                -- Get binding layers for selected container
+                local bindingLayers = {}
+                if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
+                    bindingLayers = dataObj.euclideanLayerBindings[uuid]
+                end
+
+                local numLayers = #bindingLayers
+                if numLayers == 0 then
+                    -- Fallback: create default layer
+                    bindingLayers = {{pulses = 8, steps = 16, rotation = 0}}
+                end
+
+                local adaptedCallbacks = globals.EuclideanUI.createAutoBindModeCallbacks(callbacks, selectedBindingIndex)
+                local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
+                globals.EuclideanUI.renderLayerColumns(
+                    bindingLayers,
+                    trackingKey .. "_" .. itemIdentifier,
+                    adaptedCallbacks,
+                    checkAutoRegen,
+                    "bind" .. selectedBindingIndex .. "_"
+                )
+            end
+
+            imgui.EndTable(globals.ctx)
+        end
+
+        -- Saved patterns list BELOW the table
+        imgui.Spacing(globals.ctx)
         UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupIndex, containerIndex, previewSize)
     end
 
