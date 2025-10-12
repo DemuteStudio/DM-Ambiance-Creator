@@ -23,6 +23,25 @@ function Utils.generateUUID()
     return string.format("%d-%04x", timestamp, random)
 end
 
+-- Deep copy function to create independent copies of tables
+-- Recursively copies all nested tables and preserves metatables
+-- @param orig any: The value to copy (table, number, string, boolean, etc.)
+-- @return any: A deep copy of the original value
+function Utils.deepCopy(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in next, orig, nil do
+            copy[Utils.deepCopy(orig_key)] = Utils.deepCopy(orig_value)
+        end
+        setmetatable(copy, Utils.deepCopy(getmetatable(orig)))
+    else -- number, string, boolean, etc
+        copy = orig
+    end
+    return copy
+end
+
 -- Display a help marker "(?)" with a tooltip containing the provided description
 function Utils.HelpMarker(desc)
     if not desc or desc == "" then

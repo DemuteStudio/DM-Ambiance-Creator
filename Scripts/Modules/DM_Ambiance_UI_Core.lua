@@ -25,6 +25,13 @@ function Core.initModule(g)
     globals.shiftAnchorGroupIndex = nil
     globals.shiftAnchorContainerIndex = nil
 
+    -- Initialize clipboard for copy/paste functionality
+    globals.clipboard = {
+        type = nil,  -- "group" or "container"
+        data = nil,  -- deep copy of group/container
+        source = nil -- {groupIndex, containerIndex} for reference tracking
+    }
+
     -- Initialize splitter state
     globals.splitterDragging = false
     globals.leftPanelWidth = nil  -- Will be loaded from settings

@@ -133,7 +133,118 @@ local function handleDeleteKey()
     end
 end
 
--- Handle keyboard shortcuts (Undo/Redo/Delete)
+-- Handle copy operation (Ctrl+C)
+local function handleCopy()
+    if globals.inMultiSelectMode and next(globals.selectedContainers) then
+        -- Multi-selection copy: copy all selected containers
+        local containers = {}
+        for key in pairs(globals.selectedContainers) do
+            local groupIdx, containerIdx = key:match("(%d+)_(%d+)")
+            if groupIdx and containerIdx then
+                groupIdx = tonumber(groupIdx)
+                containerIdx = tonumber(containerIdx)
+                if globals.groups[groupIdx] and globals.groups[groupIdx].containers[containerIdx] then
+                    table.insert(containers, globals.Utils.deepCopy(globals.groups[groupIdx].containers[containerIdx]))
+                end
+            end
+        end
+
+        if #containers > 0 then
+            globals.clipboard = {
+                type = "containers",
+                data = containers,
+                source = nil
+            }
+        end
+    elseif globals.selectedContainerIndex then
+        -- Single container copy
+        local container = globals.groups[globals.selectedGroupIndex].containers[globals.selectedContainerIndex]
+        globals.clipboard = {
+            type = "container",
+            data = globals.Utils.deepCopy(container),
+            source = {groupIndex = globals.selectedGroupIndex, containerIndex = globals.selectedContainerIndex}
+        }
+    elseif globals.selectedGroupIndex then
+        -- Group copy
+        local group = globals.groups[globals.selectedGroupIndex]
+        globals.clipboard = {
+            type = "group",
+            data = globals.Utils.deepCopy(group),
+            source = {groupIndex = globals.selectedGroupIndex}
+        }
+    end
+end
+
+-- Handle paste operation (Ctrl+V)
+local function handlePaste()
+    if not globals.clipboard.data then
+        return
+    end
+
+    globals.History.captureState("Paste " .. globals.clipboard.type)
+
+    if globals.clipboard.type == "group" then
+        -- Paste group
+        local groupCopy = globals.Utils.deepCopy(globals.clipboard.data)
+        groupCopy.name = groupCopy.name .. " (Copy)"
+
+        -- Generate new UUIDs for all containers in the group
+        for _, container in ipairs(groupCopy.containers) do
+            container.id = globals.Utils.generateUUID()
+            container.channelTrackGUIDs = {}
+        end
+
+        -- Insert after currently selected group or at end
+        local insertIndex = globals.selectedGroupIndex and (globals.selectedGroupIndex + 1) or (#globals.groups + 1)
+        table.insert(globals.groups, insertIndex, groupCopy)
+        globals.selectedGroupIndex = insertIndex
+        globals.selectedContainerIndex = nil
+        clearContainerSelections()
+
+    elseif globals.clipboard.type == "container" then
+        -- Paste single container into selected group
+        if not globals.selectedGroupIndex then
+            return
+        end
+
+        local containerCopy = globals.Utils.deepCopy(globals.clipboard.data)
+        containerCopy.id = globals.Utils.generateUUID()
+        containerCopy.name = containerCopy.name .. " (Copy)"
+        containerCopy.channelTrackGUIDs = {}
+
+        -- Insert after currently selected container or at end
+        local insertIndex = globals.selectedContainerIndex and (globals.selectedContainerIndex + 1) or (#globals.groups[globals.selectedGroupIndex].containers + 1)
+        table.insert(globals.groups[globals.selectedGroupIndex].containers, insertIndex, containerCopy)
+        globals.selectedContainerIndex = insertIndex
+        clearContainerSelections()
+
+    elseif globals.clipboard.type == "containers" then
+        -- Paste multiple containers into selected group
+        if not globals.selectedGroupIndex then
+            return
+        end
+
+        local insertIndex = globals.selectedContainerIndex and (globals.selectedContainerIndex + 1) or (#globals.groups[globals.selectedGroupIndex].containers + 1)
+
+        for i, container in ipairs(globals.clipboard.data) do
+            local containerCopy = globals.Utils.deepCopy(container)
+            containerCopy.id = globals.Utils.generateUUID()
+            containerCopy.name = containerCopy.name .. " (Copy)"
+            containerCopy.channelTrackGUIDs = {}
+            table.insert(globals.groups[globals.selectedGroupIndex].containers, insertIndex + i - 1, containerCopy)
+        end
+
+        clearContainerSelections()
+    end
+end
+
+-- Handle duplicate operation (Ctrl+D)
+local function handleDuplicate()
+    handleCopy()
+    handlePaste()
+end
+
+-- Handle keyboard shortcuts (Undo/Redo/Delete/Copy/Paste)
 local function handleKeyboardShortcuts()
     local ctrlPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Ctrl ~= 0)
     local shiftPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Shift ~= 0)
@@ -147,6 +258,21 @@ local function handleKeyboardShortcuts()
     if (ctrlPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Y)) or
        (ctrlPressed and shiftPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_Z)) then
         globals.History.redo()
+    end
+
+    -- Ctrl+C: Copy
+    if ctrlPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_C) then
+        handleCopy()
+    end
+
+    -- Ctrl+V: Paste
+    if ctrlPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_V) then
+        handlePaste()
+    end
+
+    -- Ctrl+D: Duplicate
+    if ctrlPressed and globals.imgui.IsKeyPressed(globals.ctx, globals.imgui.Key_D) then
+        handleDuplicate()
     end
 
     -- Delete key: Delete selected items

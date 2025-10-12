@@ -237,6 +237,36 @@ local function drawListItemWithButtons(params)
         params.onSelect()
     end
 
+    -- Right-click context menu
+    if params.contextMenu then
+        if imgui.BeginPopupContextItem(ctx, "##contextMenu_" .. params.id) then
+            for _, menuItem in ipairs(params.contextMenu) do
+                -- Check if item should be enabled/disabled
+                local enabled = true
+                if menuItem.enabled ~= nil then
+                    enabled = type(menuItem.enabled) == "function" and menuItem.enabled() or menuItem.enabled
+                end
+
+                if menuItem.separator then
+                    imgui.Separator(ctx)
+                else
+                    if enabled then
+                        if imgui.Selectable(ctx, menuItem.label) then
+                            if menuItem.onClick then
+                                menuItem.onClick()
+                            end
+                        end
+                    else
+                        imgui.BeginDisabled(ctx)
+                        imgui.Selectable(ctx, menuItem.label, false)
+                        imgui.EndDisabled(ctx)
+                    end
+                end
+            end
+            imgui.EndPopup(ctx)
+        end
+    end
+
     -- Draw buttons aligned to the right
     for i, button in ipairs(params.buttons) do
         imgui.SameLine(ctx, 0, buttonSpacing)
@@ -798,6 +828,50 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                 {icon = "↻", id = groupId, tooltip = "Regenerate group", onClick = function()
                     globals.Generation.generateSingleGroup(i)
                 end}
+            },
+
+            contextMenu = {
+                {label = "Copy (Ctrl+C)", onClick = function()
+                    globals.clipboard = {
+                        type = "group",
+                        data = globals.Utils.deepCopy(group),
+                        source = {groupIndex = i}
+                    }
+                end},
+                {label = "Paste (Ctrl+V)", onClick = function()
+                    if not globals.clipboard.data then return end
+                    globals.History.captureState("Paste " .. globals.clipboard.type)
+
+                    if globals.clipboard.type == "group" then
+                        local groupCopy = globals.Utils.deepCopy(globals.clipboard.data)
+                        groupCopy.name = groupCopy.name .. " (Copy)"
+                        for _, container in ipairs(groupCopy.containers) do
+                            container.id = globals.Utils.generateUUID()
+                            container.channelTrackGUIDs = {}
+                        end
+                        table.insert(globals.groups, i + 1, groupCopy)
+                        globals.selectedGroupIndex = i + 1
+                        globals.selectedContainerIndex = nil
+                        clearContainerSelections()
+                    end
+                end, enabled = function() return globals.clipboard.data ~= nil end},
+                {label = "Duplicate (Ctrl+D)", onClick = function()
+                    globals.History.captureState("Duplicate group")
+                    local groupCopy = globals.Utils.deepCopy(group)
+                    groupCopy.name = group.name .. " (Copy)"
+                    for _, container in ipairs(groupCopy.containers) do
+                        container.id = globals.Utils.generateUUID()
+                        container.channelTrackGUIDs = {}
+                    end
+                    table.insert(globals.groups, i + 1, groupCopy)
+                    globals.selectedGroupIndex = i + 1
+                    globals.selectedContainerIndex = nil
+                    clearContainerSelections()
+                end},
+                {separator = true},
+                {label = "Delete (Del)", onClick = function()
+                    groupToDelete = i
+                end}
             }
         })
 
@@ -989,6 +1063,108 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
                         end},
                         {icon = "↻", id = containerId, tooltip = "Regenerate container", onClick = function()
                             globals.Generation.generateSingleContainer(i, j)
+                        end}
+                    },
+
+                    contextMenu = {
+                        {label = "Copy (Ctrl+C)", onClick = function()
+                            if globals.inMultiSelectMode and isSelected then
+                                -- Multi-selection copy
+                                local containers = {}
+                                for key in pairs(globals.selectedContainers) do
+                                    local groupIdx, containerIdx = key:match("(%d+)_(%d+)")
+                                    if groupIdx and containerIdx then
+                                        groupIdx = tonumber(groupIdx)
+                                        containerIdx = tonumber(containerIdx)
+                                        if globals.groups[groupIdx] and globals.groups[groupIdx].containers[containerIdx] then
+                                            table.insert(containers, globals.Utils.deepCopy(globals.groups[groupIdx].containers[containerIdx]))
+                                        end
+                                    end
+                                end
+                                if #containers > 0 then
+                                    globals.clipboard = {
+                                        type = "containers",
+                                        data = containers,
+                                        source = nil
+                                    }
+                                end
+                            else
+                                -- Single container copy
+                                globals.clipboard = {
+                                    type = "container",
+                                    data = globals.Utils.deepCopy(container),
+                                    source = {groupIndex = i, containerIndex = j}
+                                }
+                            end
+                        end},
+                        {label = "Paste (Ctrl+V)", onClick = function()
+                            if not globals.clipboard.data then return end
+                            globals.History.captureState("Paste " .. globals.clipboard.type)
+
+                            if globals.clipboard.type == "container" then
+                                local containerCopy = globals.Utils.deepCopy(globals.clipboard.data)
+                                containerCopy.id = globals.Utils.generateUUID()
+                                containerCopy.name = containerCopy.name .. " (Copy)"
+                                containerCopy.channelTrackGUIDs = {}
+                                table.insert(group.containers, j + 1, containerCopy)
+                                clearContainerSelections()
+                                toggleContainerSelection(i, j + 1)
+                            elseif globals.clipboard.type == "containers" then
+                                local insertIndex = j + 1
+                                for idx, cont in ipairs(globals.clipboard.data) do
+                                    local containerCopy = globals.Utils.deepCopy(cont)
+                                    containerCopy.id = globals.Utils.generateUUID()
+                                    containerCopy.name = containerCopy.name .. " (Copy)"
+                                    containerCopy.channelTrackGUIDs = {}
+                                    table.insert(group.containers, insertIndex + idx - 1, containerCopy)
+                                end
+                                clearContainerSelections()
+                            end
+                        end, enabled = function() return globals.clipboard.data ~= nil end},
+                        {label = "Duplicate (Ctrl+D)", onClick = function()
+                            globals.History.captureState("Duplicate container")
+                            if globals.inMultiSelectMode and isSelected then
+                                -- Duplicate all selected containers
+                                local containersToDuplicate = {}
+                                for key in pairs(globals.selectedContainers) do
+                                    local groupIdx, containerIdx = key:match("(%d+)_(%d+)")
+                                    if groupIdx and containerIdx then
+                                        table.insert(containersToDuplicate, {
+                                            groupIndex = tonumber(groupIdx),
+                                            containerIndex = tonumber(containerIdx)
+                                        })
+                                    end
+                                end
+                                -- Sort in reverse to maintain indices
+                                table.sort(containersToDuplicate, function(a, b)
+                                    if a.groupIndex == b.groupIndex then
+                                        return a.containerIndex > b.containerIndex
+                                    end
+                                    return a.groupIndex > b.groupIndex
+                                end)
+                                for _, item in ipairs(containersToDuplicate) do
+                                    local cont = globals.groups[item.groupIndex].containers[item.containerIndex]
+                                    local containerCopy = globals.Utils.deepCopy(cont)
+                                    containerCopy.id = globals.Utils.generateUUID()
+                                    containerCopy.name = cont.name .. " (Copy)"
+                                    containerCopy.channelTrackGUIDs = {}
+                                    table.insert(globals.groups[item.groupIndex].containers, item.containerIndex + 1, containerCopy)
+                                end
+                                clearContainerSelections()
+                            else
+                                -- Duplicate single container
+                                local containerCopy = globals.Utils.deepCopy(container)
+                                containerCopy.id = globals.Utils.generateUUID()
+                                containerCopy.name = container.name .. " (Copy)"
+                                containerCopy.channelTrackGUIDs = {}
+                                table.insert(group.containers, j + 1, containerCopy)
+                                clearContainerSelections()
+                                toggleContainerSelection(i, j + 1)
+                            end
+                        end},
+                        {separator = true},
+                        {label = "Delete (Del)", onClick = function()
+                            containerToDelete = j
                         end}
                     }
                 })

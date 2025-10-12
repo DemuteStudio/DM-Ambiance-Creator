@@ -25,19 +25,9 @@ function History.initModule(g)
 end
 
 -- Deep copy function to create independent state snapshots
+-- Now uses Utils.deepCopy for consistency across the codebase
 local function deepCopy(orig)
-    local orig_type = type(orig)
-    local copy
-    if orig_type == 'table' then
-        copy = {}
-        for orig_key, orig_value in next, orig, nil do
-            copy[deepCopy(orig_key)] = deepCopy(orig_value)
-        end
-        setmetatable(copy, deepCopy(getmetatable(orig)))
-    else -- number, string, boolean, etc
-        copy = orig
-    end
-    return copy
+    return globals.Utils.deepCopy(orig)
 end
 
 -- Add a snapshot to the history stack
