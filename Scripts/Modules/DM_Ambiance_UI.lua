@@ -2985,15 +2985,29 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
                     end
 
                     -- Build combined layer list for this container
-                    local containerLayers = {
-                        -- Start with parent binding
-                        dataObj.euclideanLayerBindings[uuid]
-                    }
+                    -- This should match exactly the logic in getEffectiveContainerParams()
+                    local containerLayers = {}
 
-                    -- Add container's own layers if in Override mode
+                    -- Start with parent binding layers (now an array)
+                    local parentBindingLayers = dataObj.euclideanLayerBindings[uuid]
+                    if parentBindingLayers then
+                        for _, bindingLayer in ipairs(parentBindingLayers) do
+                            table.insert(containerLayers, {
+                                pulses = bindingLayer.pulses,
+                                steps = bindingLayer.steps,
+                                rotation = bindingLayer.rotation,
+                            })
+                        end
+                    end
+
+                    -- Add container's own euclidean layers (if in Override mode)
                     if container and container.overrideParent and container.euclideanLayers then
                         for _, layer in ipairs(container.euclideanLayers) do
-                            table.insert(containerLayers, layer)
+                            table.insert(containerLayers, {
+                                pulses = layer.pulses,
+                                steps = layer.steps,
+                                rotation = layer.rotation,
+                            })
                         end
                     end
 
@@ -3071,9 +3085,6 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         -- Use the combined pattern's step count
         local steps = circleSteps
 
-        -- Convert combined pattern array to simple pattern for drawing
-        local pattern = combinedPattern
-
         -- Draw circle guide segments (avoiding dots)
         local isLayerSelected = (layerIdx == selectedIndex)
         local currentGuideColor = isLayerSelected and selectedGuideColor or guideColor
@@ -3112,37 +3123,66 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         end
 
         -- Draw dots around the circle
+        -- NEW: Draw each individual layer with its own color to show contributions
         local dotRadius = math.min(5.5, maxRadius / 8)
 
-        -- Get layer-specific color
-        local layerFilledColor = getEuclideanLayerColor(layerIdx)
-        local layerEmptyColor = emptyColor
-        local layerBgColor = bgColor
-
-        -- Apply transparency to non-selected layers
-        if not isLayerSelected then
-            -- Make non-selected layers more transparent (40% opacity = 0x66)
-            layerFilledColor = getEuclideanLayerColor(layerIdx, 0.4)
-            layerEmptyColor = (emptyColor & 0xFFFFFF00) | 0x66
-            layerBgColor = (bgColor & 0xFFFFFF00) | 0x66
-        end
-
+        -- First pass: draw empty dots (background)
         for i = 1, steps do
-            -- Calculate angle (start at top, rotate clockwise)
             local angle = (2 * math.pi * (i - 1) / steps) - (math.pi / 2)
-
-            -- Calculate position
             local x = centerX + currentRadius * math.cos(angle)
             local y = centerY + currentRadius * math.sin(angle)
 
-            -- Draw dot (filled if hit, hollow if silence)
-            if pattern[i] then
-                -- Hit: filled circle
-                imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerFilledColor)
-            else
-                -- Silence: filled circle with background color + border
-                imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerBgColor)
-                imgui.DrawList_AddCircle(drawList, x, y, dotRadius, layerEmptyColor, 0, 1.5)
+            -- Draw empty dot background
+            local layerBgColor = bgColor
+            local layerEmptyColor = emptyColor
+            if not isLayerSelected then
+                layerBgColor = (bgColor & 0xFFFFFF00) | 0x66
+                layerEmptyColor = (emptyColor & 0xFFFFFF00) | 0x66
+            end
+
+            imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerBgColor)
+            imgui.DrawList_AddCircle(drawList, x, y, dotRadius, layerEmptyColor, 0, 1.5)
+        end
+
+        -- Second pass: draw each layer's contribution with its own color
+        for subLayerIdx, layer in ipairs(layerPatterns) do
+            -- Generate pattern for this individual layer
+            local layerPattern = globals.Utils.euclideanRhythm(layer.pulses, layer.steps)
+
+            -- Apply rotation
+            if layer.rotation and layer.rotation > 0 then
+                local rotatedPattern = {}
+                for i = 1, #layerPattern do
+                    local newIdx = ((i - 1 - layer.rotation) % #layerPattern) + 1
+                    rotatedPattern[i] = layerPattern[newIdx]
+                end
+                layerPattern = rotatedPattern
+            end
+
+            -- Map this layer's pattern to the LCM grid
+            local layerSteps = layer.steps
+            for stepIdx = 1, layerSteps do
+                if layerPattern[stepIdx] then
+                    -- Calculate position on LCM grid
+                    local gridPos = (layer.rotation or 0) + ((stepIdx - 1) * (circleSteps / layerSteps))
+                    gridPos = math.floor(gridPos + 0.5) % circleSteps
+                    if gridPos == 0 then gridPos = circleSteps end
+
+                    -- Draw colored dot for this layer's hit
+                    local angle = (2 * math.pi * (gridPos - 1) / steps) - (math.pi / 2)
+                    local x = centerX + currentRadius * math.cos(angle)
+                    local y = centerY + currentRadius * math.sin(angle)
+
+                    -- Get color for this sub-layer (cycle through colors)
+                    local subLayerColor = getEuclideanLayerColor(subLayerIdx)
+                    if not isLayerSelected then
+                        subLayerColor = getEuclideanLayerColor(subLayerIdx, 0.4)
+                    end
+
+                    -- Draw smaller dot on top with layer-specific color
+                    local colorDotRadius = dotRadius * 0.7
+                    imgui.DrawList_AddCircleFilled(drawList, x, y, colorDotRadius, subLayerColor)
+                end
             end
         end
 
