@@ -423,14 +423,13 @@ end
 -- EUCLIDEAN PATTERN MANAGEMENT
 -- ====================================================================
 
---- Save a euclidean pattern to the saved patterns list
+--- Save a euclidean pattern to the saved patterns list (supports multi-layer)
 -- @param dataObj table The group or container object
--- @param pulses number Number of pulses in the pattern
--- @param steps number Number of steps in the pattern
--- @param rotation number Rotation offset for the pattern
+-- @param layers table Array of layers {{pulses, steps, rotation}, ...}
 -- @return string The auto-generated pattern name
-function Presets.saveEuclideanPattern(dataObj, pulses, steps, rotation)
+function Presets.saveEuclideanPattern(dataObj, layers)
   if not dataObj then return nil end
+  if not layers or #layers == 0 then return nil end
 
   -- Initialize saved patterns array if needed
   if not dataObj.euclideanSavedPatterns then
@@ -438,7 +437,11 @@ function Presets.saveEuclideanPattern(dataObj, pulses, steps, rotation)
   end
 
   -- Auto-generate name from parameters
-  local patternName = string.format("%d - %d - %d", pulses, steps, rotation)
+  local patternName = ""
+  for i, layer in ipairs(layers) do
+    if i > 1 then patternName = patternName .. " | " end
+    patternName = patternName .. string.format("%d-%d-%d", layer.pulses, layer.steps, layer.rotation)
+  end
 
   -- Check if pattern already exists
   for _, pattern in ipairs(dataObj.euclideanSavedPatterns) do
@@ -448,37 +451,60 @@ function Presets.saveEuclideanPattern(dataObj, pulses, steps, rotation)
     end
   end
 
-  -- Add new pattern
+  -- Add new pattern with deep copy of layers
+  local layersCopy = {}
+  for i, layer in ipairs(layers) do
+    table.insert(layersCopy, {
+      pulses = layer.pulses,
+      steps = layer.steps,
+      rotation = layer.rotation
+    })
+  end
+
   table.insert(dataObj.euclideanSavedPatterns, {
     name = patternName,
-    pulses = pulses,
-    steps = steps,
-    rotation = rotation
+    layers = layersCopy  -- Store entire array of layers
   })
 
   return patternName
 end
 
---- Override an existing euclidean pattern with new values
+--- Override an existing euclidean pattern with new values (supports multi-layer)
 -- @param dataObj table The group or container object
 -- @param patternName string Name of the pattern to override
--- @param pulses number New number of pulses
--- @param steps number New number of steps
--- @param rotation number New rotation offset
+-- @param layers table Array of layers {{pulses, steps, rotation}, ...}
 -- @return boolean Success status
-function Presets.overrideEuclideanPattern(dataObj, patternName, pulses, steps, rotation)
+function Presets.overrideEuclideanPattern(dataObj, patternName, layers)
   if not dataObj or not patternName then return false end
   if not dataObj.euclideanSavedPatterns then return false end
+  if not layers or #layers == 0 then return false end
 
   -- Find and update the pattern
   for i, pattern in ipairs(dataObj.euclideanSavedPatterns) do
     if pattern.name == patternName then
       -- Update with new auto-generated name
-      local newName = string.format("%d - %d - %d", pulses, steps, rotation)
+      local newName = ""
+      for j, layer in ipairs(layers) do
+        if j > 1 then newName = newName .. " | " end
+        newName = newName .. string.format("%d-%d-%d", layer.pulses, layer.steps, layer.rotation)
+      end
+
+      -- Deep copy layers
+      local layersCopy = {}
+      for j, layer in ipairs(layers) do
+        table.insert(layersCopy, {
+          pulses = layer.pulses,
+          steps = layer.steps,
+          rotation = layer.rotation
+        })
+      end
+
       pattern.name = newName
-      pattern.pulses = pulses
-      pattern.steps = steps
-      pattern.rotation = rotation
+      pattern.layers = layersCopy
+      -- Clear old format fields if they exist
+      pattern.pulses = nil
+      pattern.steps = nil
+      pattern.rotation = nil
       return true
     end
   end
@@ -486,21 +512,38 @@ function Presets.overrideEuclideanPattern(dataObj, patternName, pulses, steps, r
   return false
 end
 
---- Load a saved euclidean pattern
+--- Load a saved euclidean pattern (supports multi-layer)
 -- @param dataObj table The group or container object
 -- @param patternName string Name of the pattern to load
--- @return table|nil Pattern data {pulses, steps, rotation} or nil if not found
+-- @return table|nil Pattern data {layers = {{pulses, steps, rotation}, ...}} or nil if not found
 function Presets.loadEuclideanPattern(dataObj, patternName)
   if not dataObj or not patternName then return nil end
   if not dataObj.euclideanSavedPatterns then return nil end
 
   for _, pattern in ipairs(dataObj.euclideanSavedPatterns) do
     if pattern.name == patternName then
-      return {
-        pulses = pattern.pulses,
-        steps = pattern.steps,
-        rotation = pattern.rotation
-      }
+      -- Support old format (single layer) and new format (multi-layer)
+      if pattern.layers then
+        -- New format: return deep copy of layers
+        local layersCopy = {}
+        for i, layer in ipairs(pattern.layers) do
+          table.insert(layersCopy, {
+            pulses = layer.pulses,
+            steps = layer.steps,
+            rotation = layer.rotation
+          })
+        end
+        return {layers = layersCopy}
+      else
+        -- Old format: convert to new format
+        return {
+          layers = {{
+            pulses = pattern.pulses,
+            steps = pattern.steps,
+            rotation = pattern.rotation
+          }}
+        }
+      end
     end
   end
 

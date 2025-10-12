@@ -3381,12 +3381,12 @@ function UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupInd
     end
 
     local savedPatterns = dataObj.euclideanSavedPatterns
-    local listWidth = 180  -- Fixed width for the list
+    local listWidth = 280  -- Increased width for multi-layer pattern names
 
     imgui.BeginGroup(globals.ctx)
 
-    -- Get current layer data
-    local currentPulses, currentSteps, currentRotation
+    -- Get current layers data (ALL layers, not just selected one)
+    local currentLayers = {}
     local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
 
     if isAutoBind then
@@ -3395,32 +3395,43 @@ function UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupInd
             local uuid = dataObj.euclideanBindingOrder[selectedIndex]
             local bindingLayers = dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid]
             if bindingLayers and #bindingLayers > 0 then
-                -- Get selected layer for this binding
-                local selectedLayerIdx = (dataObj.euclideanSelectedLayerPerBinding and dataObj.euclideanSelectedLayerPerBinding[uuid]) or 1
-                local layer = bindingLayers[selectedLayerIdx] or bindingLayers[1]
-                currentPulses = layer.pulses or 8
-                currentSteps = layer.steps or 16
-                currentRotation = layer.rotation or 0
+                -- Get ALL layers for this binding
+                for i, layer in ipairs(bindingLayers) do
+                    table.insert(currentLayers, {
+                        pulses = layer.pulses or 8,
+                        steps = layer.steps or 16,
+                        rotation = layer.rotation or 0
+                    })
+                end
             end
         end
     else
-        local selectedIndex = dataObj.euclideanSelectedLayer or 1
-        if dataObj.euclideanLayers and dataObj.euclideanLayers[selectedIndex] then
-            local layer = dataObj.euclideanLayers[selectedIndex]
-            currentPulses = layer.pulses or 8
-            currentSteps = layer.steps or 16
-            currentRotation = layer.rotation or 0
+        if dataObj.euclideanLayers and #dataObj.euclideanLayers > 0 then
+            -- Get ALL layers
+            for i, layer in ipairs(dataObj.euclideanLayers) do
+                table.insert(currentLayers, {
+                    pulses = layer.pulses or 8,
+                    steps = layer.steps or 16,
+                    rotation = layer.rotation or 0
+                })
+            end
         end
     end
 
     -- Save button
     if imgui.Button(globals.ctx, "Save Pattern##eucSave", listWidth, 0) then
-        if currentPulses and currentSteps and currentRotation then
-            local patternName = globals.Presets.saveEuclideanPattern(dataObj, currentPulses, currentSteps, currentRotation)
+        if #currentLayers > 0 then
+            local patternName = globals.Presets.saveEuclideanPattern(dataObj, currentLayers)
         end
     end
     if imgui.IsItemHovered(globals.ctx) then
-        imgui.SetTooltip(globals.ctx, "Save current pattern (" .. (currentPulses or "?") .. " - " .. (currentSteps or "?") .. " - " .. (currentRotation or "?") .. ")")
+        local tooltipText = "Save current pattern ("
+        for i, layer in ipairs(currentLayers) do
+            if i > 1 then tooltipText = tooltipText .. " | " end
+            tooltipText = tooltipText .. layer.pulses .. "-" .. layer.steps .. "-" .. layer.rotation
+        end
+        tooltipText = tooltipText .. ")"
+        imgui.SetTooltip(globals.ctx, tooltipText)
     end
 
     imgui.Spacing(globals.ctx)
@@ -3440,31 +3451,42 @@ function UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupInd
                 -- Draw selectable with limited width
                 local isSelected = false
                 if imgui.Selectable(globals.ctx, pattern.name .. "##saved" .. i, isSelected, 0, selectableWidth, 0) then
-                    -- Load pattern on click
+                    -- Load pattern on click (supports multi-layer)
                     local patternData = globals.Presets.loadEuclideanPattern(dataObj, pattern.name)
-                    if patternData then
+                    if patternData and patternData.layers then
                         if isAutoBind then
                             local selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
-                            if callbacks.setEuclideanBindingPulses then
-                                callbacks.setEuclideanBindingPulses(selectedIndex, patternData.pulses)
-                            end
-                            if callbacks.setEuclideanBindingSteps then
-                                callbacks.setEuclideanBindingSteps(selectedIndex, patternData.steps)
-                            end
-                            if callbacks.setEuclideanBindingRotation then
-                                callbacks.setEuclideanBindingRotation(selectedIndex, patternData.rotation)
+                            local uuid = dataObj.euclideanBindingOrder[selectedIndex]
+
+                            -- Replace ALL layers in the binding
+                            if uuid and dataObj.euclideanLayerBindings then
+                                dataObj.euclideanLayerBindings[uuid] = {}
+                                for layerIdx, layer in ipairs(patternData.layers) do
+                                    table.insert(dataObj.euclideanLayerBindings[uuid], {
+                                        pulses = layer.pulses,
+                                        steps = layer.steps,
+                                        rotation = layer.rotation
+                                    })
+                                end
+                                -- Reset selected layer to first
+                                if not dataObj.euclideanSelectedLayerPerBinding then
+                                    dataObj.euclideanSelectedLayerPerBinding = {}
+                                end
+                                dataObj.euclideanSelectedLayerPerBinding[uuid] = 1
+                                dataObj.needsRegeneration = true
                             end
                         else
-                            local selectedIndex = dataObj.euclideanSelectedLayer or 1
-                            if callbacks.setEuclideanLayerPulses then
-                                callbacks.setEuclideanLayerPulses(selectedIndex, patternData.pulses)
+                            -- Replace ALL layers in container/group
+                            dataObj.euclideanLayers = {}
+                            for layerIdx, layer in ipairs(patternData.layers) do
+                                table.insert(dataObj.euclideanLayers, {
+                                    pulses = layer.pulses,
+                                    steps = layer.steps,
+                                    rotation = layer.rotation
+                                })
                             end
-                            if callbacks.setEuclideanLayerSteps then
-                                callbacks.setEuclideanLayerSteps(selectedIndex, patternData.steps)
-                            end
-                            if callbacks.setEuclideanLayerRotation then
-                                callbacks.setEuclideanLayerRotation(selectedIndex, patternData.rotation)
-                            end
+                            dataObj.euclideanSelectedLayer = 1
+                            dataObj.needsRegeneration = true
                         end
                     end
                 end
@@ -3475,8 +3497,8 @@ function UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupInd
                 imgui.SetCursorPosX(globals.ctx, windowWidth - buttonWidth - 5)
 
                 if imgui.Button(globals.ctx, "Override##ovr" .. i, 65, 0) then
-                    if currentPulses and currentSteps and currentRotation then
-                        globals.Presets.overrideEuclideanPattern(dataObj, pattern.name, currentPulses, currentSteps, currentRotation)
+                    if #currentLayers > 0 then
+                        globals.Presets.overrideEuclideanPattern(dataObj, pattern.name, currentLayers)
                     end
                 end
                 if imgui.IsItemHovered(globals.ctx) then
