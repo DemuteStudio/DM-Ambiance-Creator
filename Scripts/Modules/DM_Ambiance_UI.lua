@@ -326,33 +326,24 @@ local function drawSliderWithVariation(params)
         imgui.PushItemWidth(globals.ctx, -1)  -- Fill column width
     end
 
-    local rv, newValue, wasReset = globals.SliderEnhanced.SliderDouble({
+    globals.SliderEnhanced.SliderDouble({
         id = sliderId,
         value = sliderValue,
         min = sliderMin,
         max = sliderMax,
         defaultValue = defaultValue,
-        format = sliderFormat
-    })
-
-    -- Auto-regen tracking (skip if this was a reset)
-    if not wasReset then
-        if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[trackingKey] then
-            globals.autoRegenTracking[trackingKey] = sliderValue
-        end
-    end
-
-    if rv and callbacks.setValue then callbacks.setValue(newValue) end
-
-    -- Only check auto-regen if NOT a reset
-    if not wasReset then
-        if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[trackingKey] then
-            if checkAutoRegen then
-                checkAutoRegen(trackingKey, globals.autoRegenTracking[trackingKey], sliderValue)
+        format = sliderFormat,
+        onChange = function(newValue, wasReset)
+            if callbacks.setValue then
+                callbacks.setValue(newValue)
             end
-            globals.autoRegenTracking[trackingKey] = nil
+        end,
+        onChangeComplete = function(oldValue, newValue)
+            if checkAutoRegen then
+                checkAutoRegen(trackingKey, oldValue, newValue)
+            end
         end
-    end
+    })
 
     imgui.PopItemWidth(globals.ctx)
 
@@ -429,9 +420,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
     imgui.Text(globals.ctx, titlePrefix .. "Generation Settings")
 
     -- Initialize auto-regen tracking if not exists and callback provided
-    if autoRegenCallback and not globals.autoRegenTracking then
-        globals.autoRegenTracking = {}
-    end
 
     -- Create unique tracking key for this function call
     local trackingKey = tostring(dataObj) .. "_" .. (titlePrefix or "")
@@ -797,27 +785,21 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Frequency slider
         do
             imgui.BeginGroup(globals.ctx)
-            local freqKey = trackingKey .. "_noiseFrequency"
-            local rv, newFreq = globals.SliderEnhanced.SliderDouble({
+            globals.SliderEnhanced.SliderDouble({
                 id = "##NoiseFrequency",
                 value = dataObj.noiseFrequency,
                 min = 0.01,
                 max = 10.0,
                 defaultValue = globals.Constants.DEFAULTS.NOISE_FREQUENCY,
                 format = "%.2f Hz",
-                width = controlWidth
+                width = controlWidth,
+                onChange = function(newValue)
+                    callbacks.setNoiseFrequency(newValue)
+                end,
+                onChangeComplete = function(oldValue, newValue)
+                    checkAutoRegen("noiseFrequency", oldValue, newValue)
+                end
             })
-
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[freqKey] then
-                globals.autoRegenTracking[freqKey] = dataObj.noiseFrequency
-            end
-
-            if rv then callbacks.setNoiseFrequency(newFreq) end
-
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[freqKey] then
-                checkAutoRegen("noiseFrequency", freqKey, globals.autoRegenTracking[freqKey], dataObj.noiseFrequency)
-                globals.autoRegenTracking[freqKey] = nil
-            end
 
             imgui.EndGroup(globals.ctx)
 
@@ -837,27 +819,21 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Amplitude slider
         do
             imgui.BeginGroup(globals.ctx)
-            local ampKey = trackingKey .. "_noiseAmplitude"
-            local rv, newAmp = globals.SliderEnhanced.SliderDouble({
+            globals.SliderEnhanced.SliderDouble({
                 id = "##NoiseAmplitude",
                 value = dataObj.noiseAmplitude,
                 min = 0.0,
                 max = 100.0,
                 defaultValue = globals.Constants.DEFAULTS.NOISE_AMPLITUDE,
                 format = "%.1f%%",
-                width = controlWidth
+                width = controlWidth,
+                onChange = function(newValue)
+                    callbacks.setNoiseAmplitude(newValue)
+                end,
+                onChangeComplete = function(oldValue, newValue)
+                    checkAutoRegen("noiseAmplitude", oldValue, newValue)
+                end
             })
-
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[ampKey] then
-                globals.autoRegenTracking[ampKey] = dataObj.noiseAmplitude
-            end
-
-            if rv then callbacks.setNoiseAmplitude(newAmp) end
-
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[ampKey] then
-                checkAutoRegen("noiseAmplitude", ampKey, globals.autoRegenTracking[ampKey], dataObj.noiseAmplitude)
-                globals.autoRegenTracking[ampKey] = nil
-            end
 
             imgui.EndGroup(globals.ctx)
 
@@ -870,27 +846,21 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Octaves slider
         do
             imgui.BeginGroup(globals.ctx)
-            local octKey = trackingKey .. "_noiseOctaves"
-            local rv, newOct = globals.SliderEnhanced.SliderInt({
+            globals.SliderEnhanced.SliderInt({
                 id = "##NoiseOctaves",
                 value = dataObj.noiseOctaves,
                 min = 1,
                 max = 6,
                 defaultValue = globals.Constants.DEFAULTS.NOISE_OCTAVES,
                 format = "%d",
-                width = controlWidth
+                width = controlWidth,
+                onChange = function(newValue)
+                    callbacks.setNoiseOctaves(newValue)
+                end,
+                onChangeComplete = function(oldValue, newValue)
+                    checkAutoRegen("noiseOctaves", oldValue, newValue)
+                end
             })
-
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[octKey] then
-                globals.autoRegenTracking[octKey] = dataObj.noiseOctaves
-            end
-
-            if rv then callbacks.setNoiseOctaves(newOct) end
-
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[octKey] then
-                checkAutoRegen("noiseOctaves", octKey, globals.autoRegenTracking[octKey], dataObj.noiseOctaves)
-                globals.autoRegenTracking[octKey] = nil
-            end
 
             imgui.EndGroup(globals.ctx)
 
@@ -903,27 +873,21 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Persistence slider
         do
             imgui.BeginGroup(globals.ctx)
-            local persKey = trackingKey .. "_noisePersistence"
-            local rv, newPers = globals.SliderEnhanced.SliderDouble({
+            globals.SliderEnhanced.SliderDouble({
                 id = "##NoisePersistence",
                 value = dataObj.noisePersistence,
                 min = 0.1,
                 max = 1.0,
                 defaultValue = globals.Constants.DEFAULTS.NOISE_PERSISTENCE,
                 format = "%.2f",
-                width = controlWidth
+                width = controlWidth,
+                onChange = function(newValue)
+                    callbacks.setNoisePersistence(newValue)
+                end,
+                onChangeComplete = function(oldValue, newValue)
+                    checkAutoRegen("noisePersistence", oldValue, newValue)
+                end
             })
-
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[persKey] then
-                globals.autoRegenTracking[persKey] = dataObj.noisePersistence
-            end
-
-            if rv then callbacks.setNoisePersistence(newPers) end
-
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[persKey] then
-                checkAutoRegen("noisePersistence", persKey, globals.autoRegenTracking[persKey], dataObj.noisePersistence)
-                globals.autoRegenTracking[persKey] = nil
-            end
 
             imgui.EndGroup(globals.ctx)
 
@@ -936,27 +900,21 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Noise Lacunarity slider
         do
             imgui.BeginGroup(globals.ctx)
-            local lacKey = trackingKey .. "_noiseLacunarity"
-            local rv, newLac = globals.SliderEnhanced.SliderDouble({
+            globals.SliderEnhanced.SliderDouble({
                 id = "##NoiseLacunarity",
                 value = dataObj.noiseLacunarity,
                 min = 1.5,
                 max = 4.0,
                 defaultValue = globals.Constants.DEFAULTS.NOISE_LACUNARITY,
                 format = "%.2f",
-                width = controlWidth
+                width = controlWidth,
+                onChange = function(newValue)
+                    callbacks.setNoiseLacunarity(newValue)
+                end,
+                onChangeComplete = function(oldValue, newValue)
+                    checkAutoRegen("noiseLacunarity", oldValue, newValue)
+                end
             })
-
-            if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[lacKey] then
-                globals.autoRegenTracking[lacKey] = dataObj.noiseLacunarity
-            end
-
-            if rv then callbacks.setNoiseLacunarity(newLac) end
-
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[lacKey] then
-                checkAutoRegen("noiseLacunarity", lacKey, globals.autoRegenTracking[lacKey], dataObj.noiseLacunarity)
-                globals.autoRegenTracking[lacKey] = nil
-            end
 
             imgui.EndGroup(globals.ctx)
 
@@ -1102,6 +1060,17 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             local container = group.containers[containerIndex]
             if container and container.overrideParent and container.intervalMode == 5 and group.euclideanAutoBindContainers then
                 isChildOfAutobindGroup = true
+            end
+        end
+
+        -- Helper function for auto-regeneration (simplified)
+        local function checkAutoRegen()
+            if globals.timeSelectionValid then
+                if isGroup then
+                    globals.Generation.generateSingleGroup(groupIndex)
+                else
+                    globals.Generation.generateSingleContainer(groupIndex, containerIndex)
+                end
             end
         end
 
@@ -1385,27 +1354,21 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     if isChildOfAutobindGroup then
                         imgui.BeginDisabled(globals.ctx)
                     end
-                    local tempoKey = trackingKey .. "_euclideanTempo"
-                    local rv, newTempo = globals.SliderEnhanced.SliderDouble({
+                    globals.SliderEnhanced.SliderDouble({
                         id = "##EuclideanTempo",
                         value = dataObj.euclideanTempo or 120,
                         min = 20,
                         max = 300,
                         defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_TEMPO,
                         format = "%.0f BPM",
-                        width = controlWidth
+                        width = controlWidth,
+                        onChange = function(newValue)
+                            callbacks.setEuclideanTempo(newValue)
+                        end,
+                        onChangeComplete = function(oldValue, newValue)
+                            checkAutoRegen("euclideanTempo", oldValue, newValue)
+                        end
                     })
-
-                    if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[tempoKey] then
-                        globals.autoRegenTracking[tempoKey] = dataObj.euclideanTempo
-                    end
-
-                    if rv then callbacks.setEuclideanTempo(newTempo) end
-
-                    if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[tempoKey] then
-                        checkAutoRegen("euclideanTempo", tempoKey, globals.autoRegenTracking[tempoKey], dataObj.euclideanTempo)
-                        globals.autoRegenTracking[tempoKey] = nil
-                    end
                     if isChildOfAutobindGroup then
                         imgui.EndDisabled(globals.ctx)
                     end
@@ -1490,10 +1453,6 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
     local titlePrefix = isGroup and "Default " or ""
     local inheritText = isGroup and "These settings will be inherited by containers unless overridden" or ""
 
-    -- Initialize auto-regen tracking if not exists
-    if not globals.autoRegenTracking then
-        globals.autoRegenTracking = {}
-    end
 
     -- Create a safe tracking key
     local trackingKey = objId or ""

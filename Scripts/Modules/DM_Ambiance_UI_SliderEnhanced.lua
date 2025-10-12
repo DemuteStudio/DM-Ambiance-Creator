@@ -6,6 +6,8 @@
 -- - Right-click: Reset to default value
 -- - CTRL+Drag: Preserved for LinkedSliders (no conflict)
 -- - Automatic undo/redo integration
+-- - onChange callback: Called during drag (immediate value updates)
+-- - onChangeComplete callback: Called when slider released (auto-regeneration)
 
 local SliderEnhanced = {}
 local globals = {}
@@ -13,6 +15,11 @@ local globals = {}
 --- Initialize module with globals table
 function SliderEnhanced.initModule(g)
     globals = g
+
+    -- Initialize tracking table for auto-regeneration
+    if not globals.sliderTracking then
+        globals.sliderTracking = {}
+    end
 end
 
 --- Helper: Check if right-click to reset to default
@@ -30,8 +37,39 @@ local function shouldResetToDefault()
     return false
 end
 
+--- Helper: Handle auto-regeneration tracking and callbacks
+--- Similar to LinkedSliders.handleAutoRegenTracking()
+local function handleAutoRegenTracking(config, rv, newValue, wasReset)
+    local ctx = globals.ctx
+    local imgui = globals.imgui
+    local trackingKey = config.id
+
+    -- Store original value when slider becomes active
+    if imgui.IsItemActive(ctx) and not globals.sliderTracking[trackingKey] then
+        globals.sliderTracking[trackingKey] = config.value
+    end
+
+    -- Call onChange callback during drag (immediate updates)
+    if rv and config.onChange then
+        config.onChange(newValue, wasReset)
+    end
+
+    -- Call onChangeComplete when slider is released AND value changed
+    if imgui.IsItemDeactivatedAfterEdit(ctx) and globals.sliderTracking[trackingKey] then
+        local originalValue = globals.sliderTracking[trackingKey]
+        local valueChanged = math.abs(originalValue - newValue) > 0.0001
+
+        if valueChanged and config.onChangeComplete then
+            config.onChangeComplete(originalValue, newValue)
+        end
+
+        -- Cleanup tracking
+        globals.sliderTracking[trackingKey] = nil
+    end
+end
+
 --- Enhanced SliderDouble with shortcuts
--- @param config table {id, value, min, max, defaultValue, format, onChange, width}
+-- @param config table {id, value, min, max, defaultValue, format, width, onChange, onChangeComplete}
 -- @return changed boolean, newValue number, wasReset boolean
 function SliderEnhanced.SliderDouble(config)
     local ctx = globals.ctx
@@ -64,11 +102,14 @@ function SliderEnhanced.SliderDouble(config)
         wasReset = true
     end
 
+    -- Handle auto-regeneration tracking and callbacks
+    handleAutoRegenTracking(config, rv, newValue, wasReset)
+
     return rv, newValue, wasReset
 end
 
 --- Enhanced SliderInt with shortcuts
--- @param config table {id, value, min, max, defaultValue, format, onChange, width}
+-- @param config table {id, value, min, max, defaultValue, format, width, onChange, onChangeComplete}
 -- @return changed boolean, newValue integer, wasReset boolean
 function SliderEnhanced.SliderInt(config)
     local ctx = globals.ctx
@@ -101,11 +142,14 @@ function SliderEnhanced.SliderInt(config)
         wasReset = true
     end
 
+    -- Handle auto-regeneration tracking and callbacks
+    handleAutoRegenTracking(config, rv, newValue, wasReset)
+
     return rv, newValue, wasReset
 end
 
 --- Enhanced DragDouble with shortcuts
--- @param config table {id, value, speed, min, max, defaultValue, format, onChange, width}
+-- @param config table {id, value, speed, min, max, defaultValue, format, width, onChange, onChangeComplete}
 -- @return changed boolean, newValue number, wasReset boolean
 function SliderEnhanced.DragDouble(config)
     local ctx = globals.ctx
@@ -139,11 +183,14 @@ function SliderEnhanced.DragDouble(config)
         wasReset = true
     end
 
+    -- Handle auto-regeneration tracking and callbacks
+    handleAutoRegenTracking(config, rv, newValue, wasReset)
+
     return rv, newValue, wasReset
 end
 
 --- Enhanced DragInt with shortcuts
--- @param config table {id, value, speed, min, max, defaultValue, format, onChange, width}
+-- @param config table {id, value, speed, min, max, defaultValue, format, width, onChange, onChangeComplete}
 -- @return changed boolean, newValue integer, wasReset boolean
 function SliderEnhanced.DragInt(config)
     local ctx = globals.ctx
@@ -176,6 +223,9 @@ function SliderEnhanced.DragInt(config)
         rv = true
         wasReset = true
     end
+
+    -- Handle auto-regeneration tracking and callbacks
+    handleAutoRegenTracking(config, rv, newValue, wasReset)
 
     return rv, newValue, wasReset
 end

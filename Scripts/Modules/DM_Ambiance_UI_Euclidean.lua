@@ -95,102 +95,78 @@ function EuclideanUI.renderLayerColumn(config)
     globals.imgui.Spacing(ctx)
 
     -- Pulses slider
-    local pulsesKey = trackingKey .. "_euclideanPulses_" .. idPrefix .. "_layer_" .. layerIdx
-    local rv, newPulses = globals.SliderEnhanced.SliderDouble({
+    globals.SliderEnhanced.SliderDouble({
         id = "##Pulses_" .. idPrefix .. "Layer" .. layerIdx,
         value = currentPulses,
         min = 1,
         max = 64,
         defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
         format = "%.0f",
-        width = sliderWidth
+        width = sliderWidth,
+        onChange = function(newValue)
+            callbacks.setPulses(layerIdx, math.floor(newValue))
+        end,
+        onChangeComplete = function(oldValue, newValue)
+            if checkAutoRegen then
+                checkAutoRegen()
+            end
+        end
     })
+
     globals.imgui.SameLine(ctx, 0, 5)
     globals.imgui.AlignTextToFramePadding(ctx)
     globals.imgui.Text(ctx, "Pulses")
 
-    if globals.imgui.IsItemActive(ctx) and not globals.autoRegenTracking[pulsesKey] then
-        globals.autoRegenTracking[pulsesKey] = currentPulses
-    end
-
-    if rv then
-        callbacks.setPulses(layerIdx, math.floor(newPulses))
-    end
-
-    if globals.imgui.IsItemDeactivatedAfterEdit(ctx) and globals.autoRegenTracking[pulsesKey] then
-        if checkAutoRegen then
-            local finalValue = math.floor(newPulses)
-            checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], finalValue)
-        end
-        globals.autoRegenTracking[pulsesKey] = nil
-    end
-
     globals.imgui.Spacing(ctx)
 
     -- Steps slider
-    local stepsKey = trackingKey .. "_euclideanSteps_" .. idPrefix .. "_layer_" .. layerIdx
-    local rv, newSteps = globals.SliderEnhanced.SliderDouble({
+    globals.SliderEnhanced.SliderDouble({
         id = "##Steps_" .. idPrefix .. "Layer" .. layerIdx,
         value = currentSteps,
         min = 1,
         max = 64,
         defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
         format = "%.0f",
-        width = sliderWidth
+        width = sliderWidth,
+        onChange = function(newValue)
+            callbacks.setSteps(layerIdx, math.floor(newValue))
+        end,
+        onChangeComplete = function(oldValue, newValue)
+            if checkAutoRegen then
+                checkAutoRegen()
+            end
+        end
     })
+
     globals.imgui.SameLine(ctx, 0, 5)
     globals.imgui.AlignTextToFramePadding(ctx)
     globals.imgui.Text(ctx, "Steps")
 
-    if globals.imgui.IsItemActive(ctx) and not globals.autoRegenTracking[stepsKey] then
-        globals.autoRegenTracking[stepsKey] = currentSteps
-    end
-
-    if rv then
-        callbacks.setSteps(layerIdx, math.floor(newSteps))
-    end
-
-    if globals.imgui.IsItemDeactivatedAfterEdit(ctx) and globals.autoRegenTracking[stepsKey] then
-        if checkAutoRegen then
-            local finalValue = math.floor(newSteps)
-            checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], finalValue)
-        end
-        globals.autoRegenTracking[stepsKey] = nil
-    end
-
     globals.imgui.Spacing(ctx)
 
     -- Rotation slider
-    local rotationKey = trackingKey .. "_euclideanRotation_" .. idPrefix .. "_layer_" .. layerIdx
     local maxRotation = currentSteps - 1
-    local rv, newRotation = globals.SliderEnhanced.SliderDouble({
+    globals.SliderEnhanced.SliderDouble({
         id = "##Rotation_" .. idPrefix .. "Layer" .. layerIdx,
         value = currentRotation,
         min = 0,
         max = maxRotation,
         defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
         format = "%.0f",
-        width = sliderWidth
+        width = sliderWidth,
+        onChange = function(newValue)
+            callbacks.setRotation(layerIdx, math.floor(newValue))
+        end,
+        onChangeComplete = function(oldValue, newValue)
+            if checkAutoRegen then
+                checkAutoRegen()
+            end
+        end
     })
+
     globals.imgui.SameLine(ctx, 0, 5)
     globals.imgui.AlignTextToFramePadding(ctx)
     globals.imgui.Text(ctx, "Rotation")
-
-    if globals.imgui.IsItemActive(ctx) and not globals.autoRegenTracking[rotationKey] then
-        globals.autoRegenTracking[rotationKey] = currentRotation
-    end
-
-    if rv then
-        callbacks.setRotation(layerIdx, math.floor(newRotation))
-    end
-
-    if globals.imgui.IsItemDeactivatedAfterEdit(ctx) and globals.autoRegenTracking[rotationKey] then
-        if checkAutoRegen then
-            local finalValue = math.floor(newRotation)
-            checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], finalValue)
-        end
-        globals.autoRegenTracking[rotationKey] = nil
-    end
 
     -- End column
     globals.imgui.EndChild(ctx)
