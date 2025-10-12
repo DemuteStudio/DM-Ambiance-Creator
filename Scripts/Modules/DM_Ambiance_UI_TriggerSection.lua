@@ -1183,9 +1183,10 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
         -- BeginChild with WindowFlags_HorizontalScrollbar
         -- Parameters: ctx, id, width, height, child_flags, window_flags
         local windowFlags = imgui.WindowFlags_HorizontalScrollbar
-        imgui.BeginChild(globals.ctx, "EuclideanLayersScroll_" .. trackingKey, availWidth, contentHeight, 0, windowFlags)
+        local visible = imgui.BeginChild(globals.ctx, "EuclideanLayersScroll_" .. trackingKey, availWidth, contentHeight, 0, windowFlags)
 
-        if not isAutoBind then
+        if visible then
+            if not isAutoBind then
             -- MANUAL MODE: Use modular Euclidean UI
             local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
             globals.EuclideanUI.renderLayerColumns(
@@ -1224,8 +1225,10 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
                 "bind" .. selectedBindingIndex .. "_",
                 contentHeight
             )
-        end
+            end  -- Close if not isAutoBind
+        end  -- Close if visible
 
+        -- CRITICAL: Always call EndChild after BeginChild, regardless of visibility
         imgui.EndChild(globals.ctx)
     end
 

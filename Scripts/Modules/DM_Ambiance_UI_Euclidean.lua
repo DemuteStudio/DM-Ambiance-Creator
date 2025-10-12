@@ -87,9 +87,10 @@ function EuclideanUI.renderLayerColumn(config)
     if columnHeight == 0 then
         childFlags = childFlags | globals.imgui.ChildFlags_AutoResizeY
     end
-    globals.imgui.BeginChild(ctx, idPrefix .. "EucLayer" .. layerIdx, columnWidth, columnHeight, childFlags)
+    local visible = globals.imgui.BeginChild(ctx, idPrefix .. "EucLayer" .. layerIdx, columnWidth, columnHeight, childFlags)
 
-    -- Header with color indicator and Load Preset button on same line
+    if visible then
+        -- Header with color indicator and Load Preset button on same line
     local layerColor = getLayerColor(layerIdx)
     globals.imgui.ColorButton(ctx, "##layerColorHeader" .. idPrefix .. layerIdx,
         layerColor, globals.imgui.ColorEditFlags_NoTooltip, 16, 16)
@@ -188,8 +189,9 @@ function EuclideanUI.renderLayerColumn(config)
     globals.imgui.SameLine(ctx, 0, 5)
     globals.imgui.AlignTextToFramePadding(ctx)
     globals.imgui.Text(ctx, "Rotation")
+    end  -- Close if visible block
 
-    -- End child
+    -- End child (CRITICAL: Always call EndChild after BeginChild, regardless of visibility)
     globals.imgui.EndChild(ctx)
 end
 
