@@ -23,29 +23,27 @@ end
 --- Get color for a specific layer index
 --- @param layerIndex number The layer index (1-based)
 --- @param alpha number Optional alpha value (0-1)
---- @return number RGBA color value
+--- @return number RGBA color value in 0xRRGGBBAA format
 local function getLayerColor(layerIndex, alpha)
-    alpha = alpha or 1.0
+    -- Colors matching original UI (0xRRGGBBAA format)
     local colors = {
-        {r = 0.2, g = 0.8, b = 0.9},  -- Cyan
-        {r = 0.9, g = 0.6, b = 0.2},  -- Orange
-        {r = 0.6, g = 0.9, b = 0.3},  -- Green
-        {r = 0.9, g = 0.3, b = 0.6},  -- Pink
-        {r = 0.8, g = 0.8, b = 0.2},  -- Yellow
-        {r = 0.5, g = 0.5, b = 0.9},  -- Purple
-        {r = 0.9, g = 0.5, b = 0.5},  -- Red
-        {r = 0.3, g = 0.9, b = 0.9},  -- Light blue
+        0x4A90E2FF,  -- Bleu (layer 1)
+        0xE67E22FF,  -- Orange (layer 2)
+        0x9B59B6FF,  -- Violet (layer 3)
+        0x1ABC9CFF,  -- Cyan (layer 4)
+        0xF39C12FF,  -- Jaune (layer 5)
+        0xE74C3CFF,  -- Rouge (layer 6)
     }
 
     local colorIndex = ((layerIndex - 1) % #colors) + 1
     local color = colors[colorIndex]
 
-    local r = math.floor(color.r * 255)
-    local g = math.floor(color.g * 255)
-    local b = math.floor(color.b * 255)
-    local a = math.floor(alpha * 255)
+    -- Apply alpha if specified
+    if alpha then
+        color = (color & 0xFFFFFF00) | math.floor(alpha * 255)
+    end
 
-    return (r << 24) | (g << 16) | (b << 8) | a
+    return color
 end
 
 -- ====================================================================
@@ -121,7 +119,8 @@ function EuclideanUI.renderLayerColumn(config)
 
     if globals.imgui.IsItemDeactivatedAfterEdit(ctx) and globals.autoRegenTracking[pulsesKey] then
         if checkAutoRegen then
-            checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], currentPulses)
+            local finalValue = math.floor(newPulses)
+            checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], finalValue)
         end
         globals.autoRegenTracking[pulsesKey] = nil
     end
@@ -153,7 +152,8 @@ function EuclideanUI.renderLayerColumn(config)
 
     if globals.imgui.IsItemDeactivatedAfterEdit(ctx) and globals.autoRegenTracking[stepsKey] then
         if checkAutoRegen then
-            checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], currentSteps)
+            local finalValue = math.floor(newSteps)
+            checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], finalValue)
         end
         globals.autoRegenTracking[stepsKey] = nil
     end
@@ -186,7 +186,8 @@ function EuclideanUI.renderLayerColumn(config)
 
     if globals.imgui.IsItemDeactivatedAfterEdit(ctx) and globals.autoRegenTracking[rotationKey] then
         if checkAutoRegen then
-            checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], currentRotation)
+            local finalValue = math.floor(newRotation)
+            checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], finalValue)
         end
         globals.autoRegenTracking[rotationKey] = nil
     end
