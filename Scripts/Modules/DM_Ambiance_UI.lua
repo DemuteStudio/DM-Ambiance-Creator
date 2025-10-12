@@ -3019,17 +3019,25 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         end
         selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
     else
-        -- MANUAL MODE: Use layers (each layer is a single pattern)
-        -- Wrap each layer in an array for consistency
+        -- MANUAL MODE: Combine all layers into a single circle (like Auto-Bind mode)
         layers = {}
         local sourceLayers = dataObj.euclideanLayers
         if not sourceLayers or #sourceLayers == 0 then
             sourceLayers = {{pulses = 8, steps = 16, rotation = 0}}
         end
+
+        -- Combine all layers into a single array (same as Auto-Bind containers)
+        local combinedLayers = {}
         for _, layer in ipairs(sourceLayers) do
-            table.insert(layers, {layer})  -- Wrap single layer in array
+            table.insert(combinedLayers, {
+                pulses = layer.pulses,
+                steps = layer.steps,
+                rotation = layer.rotation,
+            })
         end
-        selectedIndex = dataObj.euclideanSelectedLayer or 1
+        table.insert(layers, combinedLayers)  -- Single circle with all layers combined
+
+        selectedIndex = 1  -- Only one circle to select
     end
 
     local layerCount = #layers
@@ -3057,11 +3065,12 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
     local selectedGuideColor = 0x777777FF
 
     -- Draw layers
-    -- Auto-Bind mode: concentric circles (largest to smallest, outer to inner)
-    -- Manual mode: single circle with color overlay (reverse order for z-order)
-    local drawOrder = isAutoBind and 1 or layerCount
-    local drawStep = isAutoBind and 1 or -1
-    local drawEnd = isAutoBind and layerCount or 1
+    -- Both modes now use the same structure: each element in 'layers' is a circle with combined patterns
+    -- Auto-Bind mode: concentric circles (one per container, largest to smallest, outer to inner)
+    -- Manual mode: single circle with all layers combined
+    local drawOrder = 1
+    local drawStep = 1
+    local drawEnd = layerCount
 
     for layerIdx = drawOrder, drawEnd, drawStep do
         -- Each element in 'layers' is now an array of patterns to combine
@@ -3074,7 +3083,7 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
             local radiusRatio = 1.0 - ((layerIdx - 1) * 0.16)  -- Each layer 16% smaller
             currentRadius = maxRadius * radiusRatio
         else
-            -- Manual: Single radius for all layers (superposition)
+            -- Manual: Single circle at full radius (all layers combined)
             currentRadius = maxRadius
         end
 
@@ -3082,7 +3091,7 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         local combinedPattern, circleSteps = globals.Utils.combineEuclideanLayers(layerPatterns)
 
         -- For drawing, we need to know the step count
-        -- Use the combined pattern's step count
+        -- Use the combined LCM steps for the grid
         local steps = circleSteps
 
         -- Draw circle guide segments (avoiding dots)
