@@ -1451,7 +1451,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     imgui.SameLine(globals.ctx)
                 end
 
-                imgui.BeginChild(globals.ctx, "EucLayer" .. layerIdx, columnWidth, 200, imgui.ChildFlags_Border)
+                imgui.BeginChild(globals.ctx, "EucLayer" .. layerIdx, columnWidth, 0, imgui.ChildFlags_Border | imgui.ChildFlags_AutoResizeY)
 
                 -- Header with color indicator
                 local layerColor = getEuclideanLayerColor(layerIdx)
@@ -1467,8 +1467,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 local currentSteps = layer.steps or 16
                 local currentRotation = layer.rotation or 0
 
+                -- Fixed label width for alignment
+                local labelWidth = 60
+                local sliderWidth = columnWidth - labelWidth - 20
+
                 -- Pulses slider
-                imgui.Text(globals.ctx, "Pulses")
                 local pulsesKey = trackingKey .. "_euclideanPulses_layer_" .. layerIdx
                 local rv, newPulses = globals.SliderEnhanced.SliderDouble({
                     id = "##Pulses_Layer" .. layerIdx,
@@ -1477,8 +1480,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     max = 64,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
                     format = "%.0f",
-                    width = columnWidth - 20
+                    width = sliderWidth
                 })
+                imgui.SameLine(globals.ctx, 0, 5)
+                imgui.AlignTextToFramePadding(globals.ctx)
+                imgui.Text(globals.ctx, "Pulses")
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
                     globals.autoRegenTracking[pulsesKey] = currentPulses
@@ -1496,7 +1502,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 imgui.Spacing(globals.ctx)
 
                 -- Steps slider
-                imgui.Text(globals.ctx, "Steps")
                 local stepsKey = trackingKey .. "_euclideanSteps_layer_" .. layerIdx
                 local rv, newSteps = globals.SliderEnhanced.SliderDouble({
                     id = "##Steps_Layer" .. layerIdx,
@@ -1505,8 +1510,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     max = 64,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
                     format = "%.0f",
-                    width = columnWidth - 20
+                    width = sliderWidth
                 })
+                imgui.SameLine(globals.ctx, 0, 5)
+                imgui.AlignTextToFramePadding(globals.ctx)
+                imgui.Text(globals.ctx, "Steps")
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
                     globals.autoRegenTracking[stepsKey] = currentSteps
@@ -1524,7 +1532,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 imgui.Spacing(globals.ctx)
 
                 -- Rotation slider
-                imgui.Text(globals.ctx, "Rotation")
                 local rotationKey = trackingKey .. "_euclideanRotation_layer_" .. layerIdx
                 local maxRotation = currentSteps - 1
                 local rv, newRotation = globals.SliderEnhanced.SliderDouble({
@@ -1534,8 +1541,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     max = maxRotation,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
                     format = "%.0f",
-                    width = columnWidth - 20
+                    width = sliderWidth
                 })
+                imgui.SameLine(globals.ctx, 0, 5)
+                imgui.AlignTextToFramePadding(globals.ctx)
+                imgui.Text(globals.ctx, "Rotation")
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
                     globals.autoRegenTracking[rotationKey] = currentRotation
@@ -1579,7 +1589,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     imgui.SameLine(globals.ctx)
                 end
 
-                imgui.BeginChild(globals.ctx, "EucBindingLayer" .. selectedBindingIndex .. "_" .. layerIdx, columnWidth, 200, imgui.ChildFlags_Border)
+                imgui.BeginChild(globals.ctx, "EucBindingLayer" .. selectedBindingIndex .. "_" .. layerIdx, columnWidth, 0, imgui.ChildFlags_Border | imgui.ChildFlags_AutoResizeY)
 
                 -- Header with color indicator
                 local layerColor = getEuclideanLayerColor(layerIdx)
@@ -1595,8 +1605,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 local currentSteps = layer.steps or 16
                 local currentRotation = layer.rotation or 0
 
+                -- Fixed label width for alignment
+                local labelWidth = 60
+                local sliderWidth = columnWidth - labelWidth - 20
+
                 -- Pulses slider
-                imgui.Text(globals.ctx, "Pulses")
                 local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
                 local pulsesKey = trackingKey .. "_euclideanPulses_" .. itemIdentifier .. "_layer_" .. layerIdx
                 local rv, newPulses = globals.SliderEnhanced.SliderDouble({
@@ -1606,8 +1619,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     max = 64,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
                     format = "%.0f",
-                    width = columnWidth - 20
+                    width = sliderWidth
                 })
+                imgui.SameLine(globals.ctx, 0, 5)
+                imgui.AlignTextToFramePadding(globals.ctx)
+                imgui.Text(globals.ctx, "Pulses")
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
                     globals.autoRegenTracking[pulsesKey] = currentPulses
@@ -1625,7 +1641,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 imgui.Spacing(globals.ctx)
 
                 -- Steps slider
-                imgui.Text(globals.ctx, "Steps")
                 local stepsKey = trackingKey .. "_euclideanSteps_" .. itemIdentifier .. "_layer_" .. layerIdx
                 local rv, newSteps = globals.SliderEnhanced.SliderDouble({
                     id = "##Steps_Binding" .. selectedBindingIndex .. "_Layer" .. layerIdx,
@@ -1634,8 +1649,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     max = 64,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
                     format = "%.0f",
-                    width = columnWidth - 20
+                    width = sliderWidth
                 })
+                imgui.SameLine(globals.ctx, 0, 5)
+                imgui.AlignTextToFramePadding(globals.ctx)
+                imgui.Text(globals.ctx, "Steps")
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
                     globals.autoRegenTracking[stepsKey] = currentSteps
@@ -1653,7 +1671,6 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 imgui.Spacing(globals.ctx)
 
                 -- Rotation slider
-                imgui.Text(globals.ctx, "Rotation")
                 local rotationKey = trackingKey .. "_euclideanRotation_" .. itemIdentifier .. "_layer_" .. layerIdx
                 local maxRotation = currentSteps - 1
                 local rv, newRotation = globals.SliderEnhanced.SliderDouble({
@@ -1663,8 +1680,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     max = maxRotation,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
                     format = "%.0f",
-                    width = columnWidth - 20
+                    width = sliderWidth
                 })
+                imgui.SameLine(globals.ctx, 0, 5)
+                imgui.AlignTextToFramePadding(globals.ctx)
+                imgui.Text(globals.ctx, "Rotation")
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
                     globals.autoRegenTracking[rotationKey] = currentRotation
