@@ -46,6 +46,7 @@ local SliderEnhanced = dofile(script_path .. "Modules/DM_Ambiance_UI_SliderEnhan
 local Knob = dofile(script_path .. "Modules/DM_Ambiance_UI_Knob.lua")
 local FadeWidget = dofile(script_path .. "Modules/DM_Ambiance_UI_FadeWidget.lua")
 local EuclideanUI = dofile(script_path .. "Modules/DM_Ambiance_UI_Euclidean.lua")
+local RegenManager = dofile(script_path .. "Modules/DM_Ambiance_RegenManager.lua")
 
 -- New modular UI components
 local UI_Core = dofile(script_path .. "Modules/DM_Ambiance_UI_Core.lua")
@@ -116,6 +117,9 @@ local function loop()
     if globals.Waveform and globals.Waveform.processGateDetectionDebounce then
         globals.Waveform.processGateDetectionDebounce()
     end
+
+    -- Check for objects that need regeneration and regenerate them
+    RegenManager.checkAndRegenerate()
 
     -- Render the main window; returns 'open' (true if window is open)
     local open = UI.ShowMainWindow(true)
@@ -197,6 +201,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.Knob = Knob
     globals.FadeWidget = FadeWidget
     globals.EuclideanUI = EuclideanUI
+    globals.RegenManager = RegenManager
 
     -- New modular UI components
     globals.UI_Core = UI_Core
@@ -227,6 +232,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     Knob.initModule(globals)
     FadeWidget.initModule(globals)
     EuclideanUI.initModule(globals)
+    RegenManager.initModule(globals)
 
     -- Initialize new modular UI components
     UI_Core.initModule(globals)

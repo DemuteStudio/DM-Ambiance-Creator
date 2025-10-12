@@ -1230,15 +1230,10 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
     end
 
     -- Helper function for auto-regeneration
+    -- Simply marks the object as needing regeneration - the RegenManager will handle it
     local function checkAutoRegen(paramName, oldValue, newValue)
-        if oldValue ~= newValue and globals.timeSelectionValid then
-            -- Value changed and time selection is valid, trigger auto-regeneration
-            if isGroup then
-                globals.Generation.generateSingleGroup(groupIndex)
-            else
-                globals.Generation.generateSingleContainer(groupIndex, containerIndex)
-            end
-        end
+        -- No-op: regeneration is now handled by RegenManager based on needsRegeneration flags
+        -- This function is kept for compatibility but does nothing
     end
 
     -- Inheritance info
@@ -1733,7 +1728,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                     end
                 end
 
-                obj.needsRegeneration = true
+                -- Don't mark group for regeneration - only the container needs it
             end,
         },
         width,
