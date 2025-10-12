@@ -454,9 +454,10 @@ function EuclideanSection.drawEuclideanPatternPresetBrowser()
         if imgui.Button(globals.ctx, "Close", 120, 0) then
             globals.euclideanPatternBrowserOpen = false
         end
-
-        imgui.End(globals.ctx)
     end
+
+    -- CRITICAL: Always call End() after Begin(), regardless of visibility
+    imgui.End(globals.ctx)
 
     -- Handle window close via X button
     if not open then
