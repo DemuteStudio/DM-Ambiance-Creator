@@ -3123,28 +3123,12 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         end
 
         -- Draw dots around the circle
-        -- NEW: Draw each individual layer with its own color to show contributions
+        -- NEW: Draw all positions that belong to at least one layer (hits AND silences)
         local dotRadius = math.min(5.5, maxRadius / 8)
 
-        -- First pass: draw empty dots (background)
-        for i = 1, steps do
-            local angle = (2 * math.pi * (i - 1) / steps) - (math.pi / 2)
-            local x = centerX + currentRadius * math.cos(angle)
-            local y = centerY + currentRadius * math.sin(angle)
+        -- Build a map of which positions exist in which layers and whether they're hits
+        local gridPositions = {}  -- {[gridPos] = {[layerIdx] = isHit}}
 
-            -- Draw empty dot background
-            local layerBgColor = bgColor
-            local layerEmptyColor = emptyColor
-            if not isLayerSelected then
-                layerBgColor = (bgColor & 0xFFFFFF00) | 0x66
-                layerEmptyColor = (emptyColor & 0xFFFFFF00) | 0x66
-            end
-
-            imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerBgColor)
-            imgui.DrawList_AddCircle(drawList, x, y, dotRadius, layerEmptyColor, 0, 1.5)
-        end
-
-        -- Second pass: draw each layer's contribution with its own color
         for subLayerIdx, layer in ipairs(layerPatterns) do
             -- Generate pattern for this individual layer
             local layerPattern = globals.Utils.euclideanRhythm(layer.pulses, layer.steps)
@@ -3159,27 +3143,48 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
                 layerPattern = rotatedPattern
             end
 
-            -- Map this layer's pattern to the LCM grid
+            -- Map ALL positions of this layer to the LCM grid (both hits and silences)
             local layerSteps = layer.steps
             for stepIdx = 1, layerSteps do
-                if layerPattern[stepIdx] then
-                    -- Calculate position on LCM grid
-                    local gridPos = (layer.rotation or 0) + ((stepIdx - 1) * (circleSteps / layerSteps))
-                    gridPos = math.floor(gridPos + 0.5) % circleSteps
-                    if gridPos == 0 then gridPos = circleSteps end
+                -- Calculate position on LCM grid
+                local gridPos = (layer.rotation or 0) + ((stepIdx - 1) * (circleSteps / layerSteps))
+                gridPos = math.floor(gridPos + 0.5) % circleSteps
+                if gridPos == 0 then gridPos = circleSteps end
 
-                    -- Draw colored dot for this layer's hit
-                    local angle = (2 * math.pi * (gridPos - 1) / steps) - (math.pi / 2)
-                    local x = centerX + currentRadius * math.cos(angle)
-                    local y = centerY + currentRadius * math.sin(angle)
+                -- Record this position for this layer (hit or silence)
+                if not gridPositions[gridPos] then
+                    gridPositions[gridPos] = {}
+                end
+                gridPositions[gridPos][subLayerIdx] = layerPattern[stepIdx] or false
+            end
+        end
 
-                    -- Get color for this sub-layer (cycle through colors)
+        -- Draw dots at all positions that belong to at least one layer
+        for gridPos, layerStates in pairs(gridPositions) do
+            local angle = (2 * math.pi * (gridPos - 1) / steps) - (math.pi / 2)
+            local x = centerX + currentRadius * math.cos(angle)
+            local y = centerY + currentRadius * math.sin(angle)
+
+            -- Draw background dot (empty style)
+            local layerBgColor = bgColor
+            local layerEmptyColor = emptyColor
+            if not isLayerSelected then
+                layerBgColor = (bgColor & 0xFFFFFF00) | 0x66
+                layerEmptyColor = (emptyColor & 0xFFFFFF00) | 0x66
+            end
+            imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerBgColor)
+            imgui.DrawList_AddCircle(drawList, x, y, dotRadius, layerEmptyColor, 0, 1.5)
+
+            -- Draw colored dots for each layer that has a HIT at this position
+            for subLayerIdx, isHit in pairs(layerStates) do
+                if isHit then
+                    -- Get color for this sub-layer
                     local subLayerColor = getEuclideanLayerColor(subLayerIdx)
                     if not isLayerSelected then
                         subLayerColor = getEuclideanLayerColor(subLayerIdx, 0.4)
                     end
 
-                    -- Draw smaller dot on top with layer-specific color
+                    -- Draw colored dot on top with layer-specific color
                     local colorDotRadius = dotRadius * 0.7
                     imgui.DrawList_AddCircleFilled(drawList, x, y, colorDotRadius, subLayerColor)
                 end
