@@ -2891,7 +2891,6 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
                     end
 
                     -- Build combined layer list for this container
-                    -- This should match exactly the logic in getEffectiveContainerParams()
                     local containerLayers = {}
 
                     -- Start with parent binding layers (now an array)
@@ -2906,16 +2905,10 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
                         end
                     end
 
-                    -- Add container's own euclidean layers (if in Override mode)
-                    if container and container.overrideParent and container.euclideanLayers then
-                        for _, layer in ipairs(container.euclideanLayers) do
-                            table.insert(containerLayers, {
-                                pulses = layer.pulses,
-                                steps = layer.steps,
-                                rotation = layer.rotation,
-                            })
-                        end
-                    end
+                    -- NOTE: Do NOT add container.euclideanLayers here even if in Override mode
+                    -- When a container is in Override + Euclidean, its layers are synchronized
+                    -- with the parent binding layers (see setEuclideanLayer* callbacks).
+                    -- So the parent binding already contains the container's layers.
 
                     -- Store as array of layers (each circle = multiple layers combined)
                     table.insert(layers, containerLayers)
