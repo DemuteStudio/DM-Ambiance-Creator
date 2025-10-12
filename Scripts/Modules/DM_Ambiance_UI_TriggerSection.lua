@@ -797,13 +797,33 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
         end
 
         -- Helper function for auto-regeneration (simplified)
+        -- Marks objects for regeneration - RegenManager will handle execution
         local function checkAutoRegen()
-            if globals.timeSelectionValid then
-                if isGroup then
-                    globals.Generation.generateSingleGroup(groupIndex)
-                else
-                    globals.Generation.generateSingleContainer(groupIndex, containerIndex)
+            if not globals.timeSelectionValid then
+                return
+            end
+
+            if isGroup then
+                -- For groups in Euclidean AutoBind mode, mark only the selected container
+                if dataObj.euclideanAutoBindContainers then
+                    local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
+                    local bindingOrder = dataObj.euclideanBindingOrder or {}
+                    local selectedUUID = bindingOrder[selectedBindingIndex]
+
+                    if selectedUUID and groupIndex then
+                        for _, container in ipairs(globals.groups[groupIndex].containers) do
+                            if container.id == selectedUUID then
+                                container.needsRegeneration = true
+                                return  -- Don't mark group
+                            end
+                        end
+                    end
                 end
+                -- Default: mark group (if not in AutoBind mode)
+                dataObj.needsRegeneration = true
+            else
+                -- Mark container
+                dataObj.needsRegeneration = true
             end
         end
 
@@ -1230,10 +1250,36 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
     end
 
     -- Helper function for auto-regeneration
-    -- Simply marks the object as needing regeneration - the RegenManager will handle it
+    -- Marks the object as needing regeneration when slider is released (onChangeComplete)
+    -- The RegenManager will handle the actual regeneration
     local function checkAutoRegen(paramName, oldValue, newValue)
-        -- No-op: regeneration is now handled by RegenManager based on needsRegeneration flags
-        -- This function is kept for compatibility but does nothing
+        if not globals.timeSelectionValid then
+            return
+        end
+
+        -- Mark the appropriate object for regeneration
+        if isGroup then
+            -- For groups in Euclidean AutoBind mode, mark only the selected container
+            if obj.euclideanAutoBindContainers then
+                local selectedBindingIndex = obj.euclideanSelectedBindingIndex or 1
+                local bindingOrder = obj.euclideanBindingOrder or {}
+                local selectedUUID = bindingOrder[selectedBindingIndex]
+
+                if selectedUUID and groupIndex then
+                    for _, container in ipairs(globals.groups[groupIndex].containers) do
+                        if container.id == selectedUUID then
+                            container.needsRegeneration = true
+                            return  -- Don't mark group
+                        end
+                    end
+                end
+            end
+            -- Default: mark group (if not in AutoBind mode)
+            obj.needsRegeneration = true
+        else
+            -- Mark container
+            obj.needsRegeneration = true
+        end
     end
 
     -- Inheritance info
@@ -1567,14 +1613,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
 
                 obj.euclideanLayerBindings[uuid][layerIdx].pulses = v
 
-                -- Mark the container for regeneration and sync if it's in override mode
+                -- Sync if container is in override mode (but don't mark for regeneration yet)
                 if isGroup and groupIndex then
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid then
-                            -- Always mark container for regeneration
-                            container.needsRegeneration = true
-
                             -- Sync layers if container is in override mode with Euclidean
                             if container.overrideParent and container.intervalMode == 5 then
                             -- Ensure container has euclideanLayers array
@@ -1614,7 +1657,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                     end
                 end
 
-                -- Don't mark group for regeneration - only the container needs it
+                -- Don't mark for regeneration here - let checkAutoRegen() handle it on slider release
             end,
             setEuclideanBindingSteps = function(bindingIdx, layerIdx, v)
                 if not obj.euclideanBindingOrder or not obj.euclideanBindingOrder[bindingIdx] then return end
@@ -1624,14 +1667,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
 
                 obj.euclideanLayerBindings[uuid][layerIdx].steps = v
 
-                -- Mark the container for regeneration and sync if it's in override mode
+                -- Sync if container is in override mode (but don't mark for regeneration yet)
                 if isGroup and groupIndex then
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid then
-                            -- Always mark container for regeneration
-                            container.needsRegeneration = true
-
                             -- Sync layers if container is in override mode with Euclidean
                             if container.overrideParent and container.intervalMode == 5 then
                             -- Ensure container has euclideanLayers array
@@ -1671,7 +1711,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                     end
                 end
 
-                -- Don't mark group for regeneration - only the container needs it
+                -- Don't mark for regeneration here - let checkAutoRegen() handle it on slider release
             end,
             setEuclideanBindingRotation = function(bindingIdx, layerIdx, v)
                 if not obj.euclideanBindingOrder or not obj.euclideanBindingOrder[bindingIdx] then return end
@@ -1681,14 +1721,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
 
                 obj.euclideanLayerBindings[uuid][layerIdx].rotation = v
 
-                -- Mark the container for regeneration and sync if it's in override mode
+                -- Sync if container is in override mode (but don't mark for regeneration yet)
                 if isGroup and groupIndex then
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid then
-                            -- Always mark container for regeneration
-                            container.needsRegeneration = true
-
                             -- Sync layers if container is in override mode with Euclidean
                             if container.overrideParent and container.intervalMode == 5 then
                             -- Ensure container has euclideanLayers array
@@ -1728,7 +1765,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                     end
                 end
 
-                -- Don't mark group for regeneration - only the container needs it
+                -- Don't mark for regeneration here - let checkAutoRegen() handle it on slider release
             end,
         },
         width,
