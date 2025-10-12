@@ -1592,7 +1592,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                             table.insert(group.euclideanLayerBindings[container.id], {pulses = 8, steps = 16, rotation = 0})
                             -- Sync selected layer index
                             group.euclideanSelectedLayerPerBinding[container.id] = #group.euclideanLayerBindings[container.id]
-                            group.needsRegeneration = true
+                            -- Don't mark group for regeneration - only the container needs regen
                         end
                     end
                 end
@@ -1619,7 +1619,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                                 if selectedLayerIdx > #group.euclideanLayerBindings[container.id] then
                                     group.euclideanSelectedLayerPerBinding[container.id] = #group.euclideanLayerBindings[container.id]
                                 end
-                                group.needsRegeneration = true
+                                -- Don't mark group for regeneration - only the container needs regen
                             end
                         end
                     end
@@ -1650,7 +1650,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
 
                             -- Sync the changed value
                             group.euclideanLayerBindings[container.id][layerIdx].pulses = v
-                            group.needsRegeneration = true
+                            -- Don't mark group for regeneration - only the container needs regen
                         end
                     end
                 end
@@ -1680,7 +1680,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
 
                             -- Sync the changed value
                             group.euclideanLayerBindings[container.id][layerIdx].steps = v
-                            group.needsRegeneration = true
+                            -- Don't mark group for regeneration - only the container needs regen
                         end
                     end
                 end
@@ -1710,7 +1710,7 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
 
                             -- Sync the changed value
                             group.euclideanLayerBindings[container.id][layerIdx].rotation = v
-                            group.needsRegeneration = true
+                            -- Don't mark group for regeneration - only the container needs regen
                         end
                     end
                 end
