@@ -47,6 +47,16 @@ local Knob = dofile(script_path .. "Modules/DM_Ambiance_UI_Knob.lua")
 local FadeWidget = dofile(script_path .. "Modules/DM_Ambiance_UI_FadeWidget.lua")
 local EuclideanUI = dofile(script_path .. "Modules/DM_Ambiance_UI_Euclidean.lua")
 
+-- New modular UI components
+local UI_Core = dofile(script_path .. "Modules/DM_Ambiance_UI_Core.lua")
+local UI_MainWindow = dofile(script_path .. "Modules/DM_Ambiance_UI_MainWindow.lua")
+local UI_LeftPanel = dofile(script_path .. "Modules/DM_Ambiance_UI_LeftPanel.lua")
+local UI_RightPanel = dofile(script_path .. "Modules/DM_Ambiance_UI_RightPanel.lua")
+local UI_TriggerSection = dofile(script_path .. "Modules/DM_Ambiance_UI_TriggerSection.lua")
+local UI_FadeSection = dofile(script_path .. "Modules/DM_Ambiance_UI_FadeSection.lua")
+local UI_EuclideanSection = dofile(script_path .. "Modules/DM_Ambiance_UI_EuclideanSection.lua")
+local UI_NoisePreview = dofile(script_path .. "Modules/DM_Ambiance_UI_NoisePreview.lua")
+
 -- Global state shared across modules and UI
 local globals = {
     groups = {},                      -- Stores all defined groups
@@ -188,6 +198,16 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.FadeWidget = FadeWidget
     globals.EuclideanUI = EuclideanUI
 
+    -- New modular UI components
+    globals.UI_Core = UI_Core
+    globals.UI_MainWindow = UI_MainWindow
+    globals.UI_LeftPanel = UI_LeftPanel
+    globals.UI_RightPanel = UI_RightPanel
+    globals.UI_TriggerSection = UI_TriggerSection
+    globals.UI_FadeSection = UI_FadeSection
+    globals.UI_EuclideanSection = UI_EuclideanSection
+    globals.UI_NoisePreview = UI_NoisePreview
+
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
     Structures.initModule(globals)
@@ -207,6 +227,16 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     Knob.initModule(globals)
     FadeWidget.initModule(globals)
     EuclideanUI.initModule(globals)
+
+    -- Initialize new modular UI components
+    UI_Core.initModule(globals)
+    UI_MainWindow.initModule(globals)
+    UI_LeftPanel.initModule(globals)
+    UI_RightPanel.initModule(globals)
+    UI_TriggerSection.initModule(globals)
+    UI_FadeSection.initModule(globals)
+    UI_EuclideanSection.initModule(globals)
+    UI_NoisePreview.initModule(globals)
 
     -- Initialize backward compatibility for container volumes
     Utils.initializeContainerVolumes()

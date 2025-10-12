@@ -1805,9 +1805,9 @@ function RoutingValidator.renderModal()
 
                 imgui.EndTabBar(ctx)
             end
-
-            imgui.EndChild(ctx)
         end
+        -- CRITICAL: Always call EndChild after BeginChild, regardless of visibility
+        imgui.EndChild(ctx)
 
         -- Footer with buttons
         RoutingValidator.renderFooter(ctx, imgui)

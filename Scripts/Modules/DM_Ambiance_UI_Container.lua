@@ -307,9 +307,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                     imgui.PopID(globals.ctx)
                 end
-
-                imgui.EndChild(globals.ctx)
             end
+            -- CRITICAL: Always call EndChild after BeginChild, regardless of visibility
+            imgui.EndChild(globals.ctx)
 
             -- Remove the item if the delete button was pressed
             if itemToDelete then
