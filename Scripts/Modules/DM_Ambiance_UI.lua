@@ -3062,7 +3062,8 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
             local layerSteps = layer.steps
             for stepIdx = 1, layerSteps do
                 -- Calculate position on LCM grid
-                local gridPos = (layer.rotation or 0) + ((stepIdx - 1) * (circleSteps / layerSteps))
+                -- Note: rotation already applied to layerPattern above, so don't add it here
+                local gridPos = ((stepIdx - 1) * (circleSteps / layerSteps)) + 1  -- +1 for 1-based indexing
                 gridPos = math.floor(gridPos + 0.5) % circleSteps
                 if gridPos == 0 then gridPos = circleSteps end
 

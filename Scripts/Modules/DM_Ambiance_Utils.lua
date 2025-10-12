@@ -2652,10 +2652,10 @@ function Utils.combineEuclideanLayers(layers)
 
         -- Apply rotation (shift pattern)
         if rotation ~= 0 then
-            rotation = rotation % steps
+            local normalizedRotation = rotation % steps
             local rotated = {}
             for i = 1, steps do
-                local sourceIndex = ((i - 1 - rotation) % steps) + 1
+                local sourceIndex = ((i - 1 - normalizedRotation) % steps) + 1
                 rotated[i] = pattern[sourceIndex]
             end
             pattern = rotated
@@ -2669,9 +2669,8 @@ function Utils.combineEuclideanLayers(layers)
             end
         end
 
-        -- Map pulses to LCM grid using polyrhythmic formula:
-        -- gridPos = (stepIndex - 1) * (lcmSteps / layerSteps)
-        -- Note: rotation already applied to pattern above, don't apply again here
+        -- Map pulses to LCM grid
+        -- Rotation already applied to pattern above, so just map step indices to grid
         local stepSize = lcmSteps / steps  -- How many LCM positions per layer step
 
         for _, stepIndex in ipairs(pulseSteps) do
