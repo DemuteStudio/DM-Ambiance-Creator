@@ -1995,9 +1995,9 @@ function Utils.applyRandomizationToItem(item, take, itemData, effectiveParams, m
     -- Apply pan randomization
     if modifiedParam == "pan" or modifiedParam == nil then
         if effectiveParams.randomizePan then
-            local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+            local randomPan = itemData.originalPan - Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
             randomPan = math.max(-1, math.min(1, randomPan))
-            
+
             -- The envelope should already exist from batch creation, just update values
             if panEnv then
                 -- Update existing envelope (preserves all points, just changes values)

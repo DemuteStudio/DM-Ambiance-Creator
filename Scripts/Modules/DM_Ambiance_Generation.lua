@@ -1098,7 +1098,7 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
                 end
 
                 if effectiveParams.randomizePan and canUsePan then
-                    local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+                    local randomPan = itemData.originalPan - Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
                     randomPan = math.max(-1, math.min(1, randomPan))
                     -- Use envelope instead of directly modifying the property
                     Items.createTakePanEnvelope(newTake, randomPan)
@@ -1926,7 +1926,7 @@ function Generation.generateItemsInTimeRange(effectiveParams, containerGroup, ra
 
         -- Apply pan randomization only for stereo containers (channelMode = 0 or nil)
         if effectiveParams.randomizePan and (not effectiveParams.channelMode or effectiveParams.channelMode == 0) then
-            local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+            local randomPan = itemData.originalPan - Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
             randomPan = math.max(-1, math.min(1, randomPan))
             -- Use envelope instead of directly modifying the property
             require("DM_Ambiance_Items").createTakePanEnvelope(newTake, randomPan)
@@ -2898,7 +2898,7 @@ function Generation.applyRandomization(newItem, newTake, effectiveParams, itemDa
     end
 
     if effectiveParams.randomizePan and canUsePan then
-        local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+        local randomPan = itemData.originalPan - Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
         randomPan = math.max(-1, math.min(1, randomPan))
         -- Use envelope instead of directly modifying the property
         Items.createTakePanEnvelope(newTake, randomPan)
@@ -3947,7 +3947,7 @@ function Generation.placeItemsNoiseMode(effectiveParams, track, channelTracks, c
                 end
 
                 if effectiveParams.randomizePan and canUsePan then
-                    local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+                    local randomPan = itemData.originalPan - Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
                     randomPan = math.max(-1, math.min(1, randomPan))
                     Items.createTakePanEnvelope(newTake, randomPan)
                 end
@@ -4135,7 +4135,7 @@ function Generation.placeItemsEuclideanMode(effectiveParams, track, channelTrack
                     end
 
                     if effectiveParams.randomizePan and canUsePan then
-                        local randomPan = itemData.originalPan + Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
+                        local randomPan = itemData.originalPan - Utils.randomInRange(effectiveParams.panRange.min, effectiveParams.panRange.max) / 100
                         randomPan = math.max(-1, math.min(1, randomPan))
                         Items.createTakePanEnvelope(newTake, randomPan)
                     end
