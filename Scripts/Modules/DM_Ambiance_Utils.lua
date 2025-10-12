@@ -2670,11 +2670,12 @@ function Utils.combineEuclideanLayers(layers)
         end
 
         -- Map pulses to LCM grid using polyrhythmic formula:
-        -- gridPos = rotation + (stepIndex - 1) * (lcmSteps / layerSteps)
+        -- gridPos = (stepIndex - 1) * (lcmSteps / layerSteps)
+        -- Note: rotation already applied to pattern above, don't apply again here
         local stepSize = lcmSteps / steps  -- How many LCM positions per layer step
 
         for _, stepIndex in ipairs(pulseSteps) do
-            local gridPos = rotation + (stepIndex - 1) * stepSize
+            local gridPos = (stepIndex - 1) * stepSize + 1  -- +1 for 1-based indexing
 
             -- Round to nearest integer and clamp
             gridPos = math.floor(gridPos + 0.5)
