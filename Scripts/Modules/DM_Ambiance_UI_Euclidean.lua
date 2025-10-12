@@ -67,6 +67,7 @@ function EuclideanUI.renderLayerColumn(config)
     local layerIdx = config.layerIdx
     local layer = config.layerData
     local columnWidth = config.columnWidth
+    local columnHeight = config.columnHeight or 0  -- Optional fixed height
     local trackingKey = config.trackingKey
     local callbacks = config.callbacks
     local checkAutoRegen = config.checkAutoRegen
@@ -81,9 +82,12 @@ function EuclideanUI.renderLayerColumn(config)
     local labelWidth = 60
     local sliderWidth = columnWidth - labelWidth - 20
 
-    -- Start column
-    globals.imgui.BeginChild(ctx, idPrefix .. "EucLayer" .. layerIdx, columnWidth, 0,
-        globals.imgui.ChildFlags_Border | globals.imgui.ChildFlags_AutoResizeY)
+    -- Start column (use fixed height if provided, otherwise auto-resize)
+    local childFlags = globals.imgui.ChildFlags_Border
+    if columnHeight == 0 then
+        childFlags = childFlags | globals.imgui.ChildFlags_AutoResizeY
+    end
+    globals.imgui.BeginChild(ctx, idPrefix .. "EucLayer" .. layerIdx, columnWidth, columnHeight, childFlags)
 
     -- Header with color indicator
     local layerColor = getLayerColor(layerIdx)
@@ -178,7 +182,8 @@ end
 --- @param callbacks table Callbacks {setPulses, setSteps, setRotation}
 --- @param checkAutoRegen function Auto-regeneration check function
 --- @param idPrefix string Prefix for widget IDs
-function EuclideanUI.renderLayerColumns(layers, trackingKey, callbacks, checkAutoRegen, idPrefix)
+--- @param columnHeight number Optional fixed height for columns
+function EuclideanUI.renderLayerColumns(layers, trackingKey, callbacks, checkAutoRegen, idPrefix, columnHeight)
     local ctx = globals.ctx
     local numLayers = #layers
     local availableWidth = globals.imgui.GetContentRegionAvail(ctx)
@@ -193,6 +198,7 @@ function EuclideanUI.renderLayerColumns(layers, trackingKey, callbacks, checkAut
             layerIdx = layerIdx,
             layerData = layers[layerIdx],
             columnWidth = columnWidth,
+            columnHeight = columnHeight,
             trackingKey = trackingKey,
             callbacks = callbacks,
             checkAutoRegen = checkAutoRegen,

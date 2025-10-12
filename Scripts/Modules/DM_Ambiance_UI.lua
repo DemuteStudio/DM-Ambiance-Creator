@@ -1390,7 +1390,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         -- Euclidean parameters: Multi-column layout for Manual mode, single column for Auto-bind
         local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
 
-        local previewSize = UI.scaleSize(154)  -- Circle diameter (140 * 1.1 = 154, increased by 10%)
+        local previewSize = UI.scaleSize(154)  -- Circle diameter
 
         -- Use table layout for preview + layers side-by-side
         if imgui.BeginTable(globals.ctx, "EuclideanLayoutTable" .. trackingKey, 2, imgui.TableFlags_None) then
@@ -1404,8 +1404,9 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             imgui.TableSetColumnIndex(globals.ctx, 0)
             UI.drawEuclideanPreview(dataObj, previewSize, isGroup)
 
-            -- Column 2: Layers
+            -- Column 2: Layers (with fixed height to match preview)
             imgui.TableSetColumnIndex(globals.ctx, 1)
+            local layerHeight = previewSize  -- Match preview height exactly
             if not isAutoBind then
                 -- MANUAL MODE: Use modular Euclidean UI
                 local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
@@ -1414,7 +1415,8 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     trackingKey,
                     adaptedCallbacks,
                     checkAutoRegen,
-                    "manual_"
+                    "manual_",
+                    layerHeight
                 )
             else
                 -- AUTO-BIND MODE: Use modular Euclidean UI
@@ -1441,16 +1443,13 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     trackingKey .. "_" .. itemIdentifier,
                     adaptedCallbacks,
                     checkAutoRegen,
-                    "bind" .. selectedBindingIndex .. "_"
+                    "bind" .. selectedBindingIndex .. "_",
+                    layerHeight
                 )
             end
 
             imgui.EndTable(globals.ctx)
         end
-
-        -- Saved patterns list BELOW the table
-        imgui.Spacing(globals.ctx)
-        UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupIndex, containerIndex, previewSize)
     end
 
     -- Fade in/out controls are commented out but can be enabled if needed
