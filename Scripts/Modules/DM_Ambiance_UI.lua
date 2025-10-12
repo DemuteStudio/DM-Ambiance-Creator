@@ -1840,6 +1840,21 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                 if not obj.euclideanLayers then obj.euclideanLayers = {} end
                 table.insert(obj.euclideanLayers, {pulses = 8, steps = 16, rotation = 0})
                 obj.euclideanSelectedLayer = #obj.euclideanLayers
+
+                -- If this is a container in override mode with Euclidean, sync to parent binding
+                if not isGroup and containerIndex and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    local container = group.containers[containerIndex]
+                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                            table.insert(group.euclideanLayerBindings[container.id], {pulses = 8, steps = 16, rotation = 0})
+                            -- Sync selected layer index
+                            group.euclideanSelectedLayerPerBinding[container.id] = #group.euclideanLayerBindings[container.id]
+                            group.needsRegeneration = true
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             removeEuclideanLayer = function(layerIdx)
@@ -1848,6 +1863,26 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                 if obj.euclideanSelectedLayer > #obj.euclideanLayers then
                     obj.euclideanSelectedLayer = #obj.euclideanLayers
                 end
+
+                -- If this is a container in override mode with Euclidean, sync to parent binding
+                if not isGroup and containerIndex and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    local container = group.containers[containerIndex]
+                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                            if #group.euclideanLayerBindings[container.id] > 1 then
+                                table.remove(group.euclideanLayerBindings[container.id], layerIdx)
+                                -- Sync selected layer index
+                                local selectedLayerIdx = group.euclideanSelectedLayerPerBinding[container.id] or 1
+                                if selectedLayerIdx > #group.euclideanLayerBindings[container.id] then
+                                    group.euclideanSelectedLayerPerBinding[container.id] = #group.euclideanLayerBindings[container.id]
+                                end
+                                group.needsRegeneration = true
+                            end
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             setEuclideanLayerPulses = function(layerIdx, v)
@@ -1860,11 +1895,20 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local container = group.containers[containerIndex]
                     if container and container.overrideParent and container.intervalMode == 5 and container.id then
                         if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            -- Sync to corresponding layer in parent binding (array)
-                            if group.euclideanLayerBindings[container.id][layerIdx] then
-                                group.euclideanLayerBindings[container.id][layerIdx].pulses = v
-                                group.needsRegeneration = true
+                            -- Ensure parent binding has enough layers by copying from container
+                            while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
+                                local missingIdx = #group.euclideanLayerBindings[container.id] + 1
+                                local containerLayer = container.euclideanLayers[missingIdx]
+                                table.insert(group.euclideanLayerBindings[container.id], {
+                                    pulses = containerLayer.pulses,
+                                    steps = containerLayer.steps,
+                                    rotation = containerLayer.rotation
+                                })
                             end
+
+                            -- Sync the changed value
+                            group.euclideanLayerBindings[container.id][layerIdx].pulses = v
+                            group.needsRegeneration = true
                         end
                     end
                 end
@@ -1881,11 +1925,20 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local container = group.containers[containerIndex]
                     if container and container.overrideParent and container.intervalMode == 5 and container.id then
                         if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            -- Sync to corresponding layer in parent binding (array)
-                            if group.euclideanLayerBindings[container.id][layerIdx] then
-                                group.euclideanLayerBindings[container.id][layerIdx].steps = v
-                                group.needsRegeneration = true
+                            -- Ensure parent binding has enough layers by copying from container
+                            while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
+                                local missingIdx = #group.euclideanLayerBindings[container.id] + 1
+                                local containerLayer = container.euclideanLayers[missingIdx]
+                                table.insert(group.euclideanLayerBindings[container.id], {
+                                    pulses = containerLayer.pulses,
+                                    steps = containerLayer.steps,
+                                    rotation = containerLayer.rotation
+                                })
                             end
+
+                            -- Sync the changed value
+                            group.euclideanLayerBindings[container.id][layerIdx].steps = v
+                            group.needsRegeneration = true
                         end
                     end
                 end
@@ -1902,11 +1955,20 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local container = group.containers[containerIndex]
                     if container and container.overrideParent and container.intervalMode == 5 and container.id then
                         if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            -- Sync to corresponding layer in parent binding (array)
-                            if group.euclideanLayerBindings[container.id][layerIdx] then
-                                group.euclideanLayerBindings[container.id][layerIdx].rotation = v
-                                group.needsRegeneration = true
+                            -- Ensure parent binding has enough layers by copying from container
+                            while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
+                                local missingIdx = #group.euclideanLayerBindings[container.id] + 1
+                                local containerLayer = container.euclideanLayers[missingIdx]
+                                table.insert(group.euclideanLayerBindings[container.id], {
+                                    pulses = containerLayer.pulses,
+                                    steps = containerLayer.steps,
+                                    rotation = containerLayer.rotation
+                                })
                             end
+
+                            -- Sync the changed value
+                            group.euclideanLayerBindings[container.id][layerIdx].rotation = v
+                            group.needsRegeneration = true
                         end
                     end
                 end
@@ -1939,6 +2001,22 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                 if not obj.euclideanSelectedLayerPerBinding then obj.euclideanSelectedLayerPerBinding = {} end
                 obj.euclideanSelectedLayerPerBinding[uuid] = #obj.euclideanLayerBindings[uuid]
 
+                -- Sync with container if it's in override mode with Euclidean
+                if isGroup and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                            if not container.euclideanLayers then
+                                container.euclideanLayers = {}
+                            end
+                            table.insert(container.euclideanLayers, {pulses = 8, steps = 16, rotation = 0})
+                            container.euclideanSelectedLayer = #container.euclideanLayers
+                            container.needsRegeneration = true
+                            break
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             removeEuclideanBindingLayer = function(bindingIdx)
@@ -1956,6 +2034,23 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     obj.euclideanSelectedLayerPerBinding[uuid] = #obj.euclideanLayerBindings[uuid]
                 end
 
+                -- Sync with container if it's in override mode with Euclidean
+                if isGroup and groupIndex then
+                    local group = globals.groups[groupIndex]
+                    for _, container in ipairs(group.containers) do
+                        if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                            if container.euclideanLayers and #container.euclideanLayers > 1 then
+                                table.remove(container.euclideanLayers, selectedLayer)
+                                if container.euclideanSelectedLayer > #container.euclideanLayers then
+                                    container.euclideanSelectedLayer = #container.euclideanLayers
+                                end
+                                container.needsRegeneration = true
+                            end
+                            break
+                        end
+                    end
+                end
+
                 obj.needsRegeneration = true
             end,
             setEuclideanBindingPulses = function(bindingIdx, layerIdx, v)
@@ -1971,16 +2066,39 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                            -- Ensure container has euclideanLayers array
                             if not container.euclideanLayers then
                                 container.euclideanLayers = {}
-                                for i = 1, #obj.euclideanLayerBindings[uuid] do
-                                    container.euclideanLayers[i] = {pulses = 8, steps = 16, rotation = 0}
+                            end
+
+                            -- Sync ALL layers from parent binding to container
+                            local parentBinding = obj.euclideanLayerBindings[uuid]
+                            for i, bindingLayer in ipairs(parentBinding) do
+                                if not container.euclideanLayers[i] then
+                                    -- Create missing layer by copying from parent binding
+                                    container.euclideanLayers[i] = {
+                                        pulses = bindingLayer.pulses,
+                                        steps = bindingLayer.steps,
+                                        rotation = bindingLayer.rotation
+                                    }
+                                else
+                                    -- Update existing layer with current change
+                                    if i == layerIdx then
+                                        container.euclideanLayers[i].pulses = v
+                                    else
+                                        -- Sync other parameters to stay in sync
+                                        container.euclideanLayers[i].pulses = bindingLayer.pulses
+                                        container.euclideanLayers[i].steps = bindingLayer.steps
+                                        container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                    end
                                 end
                             end
-                            -- Sync specific layer
-                            if container.euclideanLayers[layerIdx] then
-                                container.euclideanLayers[layerIdx].pulses = v
+
+                            -- Remove extra layers if container has more than parent
+                            while #container.euclideanLayers > #parentBinding do
+                                table.remove(container.euclideanLayers)
                             end
+
                             container.needsRegeneration = true
                         end
                     end
@@ -2001,16 +2119,39 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                            -- Ensure container has euclideanLayers array
                             if not container.euclideanLayers then
                                 container.euclideanLayers = {}
-                                for i = 1, #obj.euclideanLayerBindings[uuid] do
-                                    container.euclideanLayers[i] = {pulses = 8, steps = 16, rotation = 0}
+                            end
+
+                            -- Sync ALL layers from parent binding to container
+                            local parentBinding = obj.euclideanLayerBindings[uuid]
+                            for i, bindingLayer in ipairs(parentBinding) do
+                                if not container.euclideanLayers[i] then
+                                    -- Create missing layer by copying from parent binding
+                                    container.euclideanLayers[i] = {
+                                        pulses = bindingLayer.pulses,
+                                        steps = bindingLayer.steps,
+                                        rotation = bindingLayer.rotation
+                                    }
+                                else
+                                    -- Update existing layer with current change
+                                    if i == layerIdx then
+                                        container.euclideanLayers[i].steps = v
+                                    else
+                                        -- Sync other parameters to stay in sync
+                                        container.euclideanLayers[i].pulses = bindingLayer.pulses
+                                        container.euclideanLayers[i].steps = bindingLayer.steps
+                                        container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                    end
                                 end
                             end
-                            -- Sync specific layer
-                            if container.euclideanLayers[layerIdx] then
-                                container.euclideanLayers[layerIdx].steps = v
+
+                            -- Remove extra layers if container has more than parent
+                            while #container.euclideanLayers > #parentBinding do
+                                table.remove(container.euclideanLayers)
                             end
+
                             container.needsRegeneration = true
                         end
                     end
@@ -2031,16 +2172,39 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                            -- Ensure container has euclideanLayers array
                             if not container.euclideanLayers then
                                 container.euclideanLayers = {}
-                                for i = 1, #obj.euclideanLayerBindings[uuid] do
-                                    container.euclideanLayers[i] = {pulses = 8, steps = 16, rotation = 0}
+                            end
+
+                            -- Sync ALL layers from parent binding to container
+                            local parentBinding = obj.euclideanLayerBindings[uuid]
+                            for i, bindingLayer in ipairs(parentBinding) do
+                                if not container.euclideanLayers[i] then
+                                    -- Create missing layer by copying from parent binding
+                                    container.euclideanLayers[i] = {
+                                        pulses = bindingLayer.pulses,
+                                        steps = bindingLayer.steps,
+                                        rotation = bindingLayer.rotation
+                                    }
+                                else
+                                    -- Update existing layer with current change
+                                    if i == layerIdx then
+                                        container.euclideanLayers[i].rotation = v
+                                    else
+                                        -- Sync other parameters to stay in sync
+                                        container.euclideanLayers[i].pulses = bindingLayer.pulses
+                                        container.euclideanLayers[i].steps = bindingLayer.steps
+                                        container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                    end
                                 end
                             end
-                            -- Sync specific layer
-                            if container.euclideanLayers[layerIdx] then
-                                container.euclideanLayers[layerIdx].rotation = v
+
+                            -- Remove extra layers if container has more than parent
+                            while #container.euclideanLayers > #parentBinding do
+                                table.remove(container.euclideanLayers)
                             end
+
                             container.needsRegeneration = true
                         end
                     end
