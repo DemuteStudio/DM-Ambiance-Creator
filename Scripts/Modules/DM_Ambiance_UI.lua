@@ -1392,64 +1392,88 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
 
         local previewSize = UI.scaleSize(154)  -- Circle diameter
 
-        -- Use table layout for preview + layers side-by-side
-        if imgui.BeginTable(globals.ctx, "EuclideanLayoutTable" .. trackingKey, 2, imgui.TableFlags_None) then
-            -- Set column widths: Preview first (fixed), then Layers (stretch)
-            imgui.TableSetupColumn(globals.ctx, "Preview", imgui.TableColumnFlags_WidthFixed, previewSize + 20)
-            imgui.TableSetupColumn(globals.ctx, "Layers", imgui.TableColumnFlags_WidthStretch)
+        -- Two-column layout without table: Preview on left (fixed), Layers on right (scrollable)
+        local previewWidth = previewSize + 20
+        local contentHeight = previewSize
 
-            imgui.TableNextRow(globals.ctx)
+        -- Left side: Preview
+        UI.drawEuclideanPreview(dataObj, previewSize, isGroup)
 
-            -- Column 1: Preview
-            imgui.TableSetColumnIndex(globals.ctx, 0)
-            UI.drawEuclideanPreview(dataObj, previewSize, isGroup)
+        -- Put layers on the same line (right side)
+        imgui.SameLine(globals.ctx)
 
-            -- Column 2: Layers (with fixed height to match preview)
-            imgui.TableSetColumnIndex(globals.ctx, 1)
-            local layerHeight = previewSize  -- Match preview height exactly
-            if not isAutoBind then
-                -- MANUAL MODE: Use modular Euclidean UI
-                local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
-                globals.EuclideanUI.renderLayerColumns(
-                    dataObj.euclideanLayers,
-                    trackingKey,
-                    adaptedCallbacks,
-                    checkAutoRegen,
-                    "manual_",
-                    layerHeight
-                )
-            else
-                -- AUTO-BIND MODE: Use modular Euclidean UI
-                local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
-                local bindingOrder = dataObj.euclideanBindingOrder or {}
-                local uuid = bindingOrder[selectedBindingIndex]
+        -- Right side: Scrollable container for layers with horizontal scrollbar
+        local availWidth = imgui.GetContentRegionAvail(globals.ctx)
 
-                -- Get binding layers for selected container
-                local bindingLayers = {}
-                if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
-                    bindingLayers = dataObj.euclideanLayerBindings[uuid]
-                end
+        -- Calculate total content width for all layers
+        local layerCount
+        if not isAutoBind then
+            layerCount = #dataObj.euclideanLayers
+        else
+            local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
+            local bindingOrder = dataObj.euclideanBindingOrder or {}
+            local uuid = bindingOrder[selectedBindingIndex]
+            local bindingLayers = {}
+            if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
+                bindingLayers = dataObj.euclideanLayerBindings[uuid]
+            end
+            layerCount = math.max(#bindingLayers, 1)
+        end
 
-                local numLayers = #bindingLayers
-                if numLayers == 0 then
-                    -- Fallback: create default layer
-                    bindingLayers = {{pulses = 8, steps = 16, rotation = 0}}
-                end
+        local layerWidth = 180
+        local spacing = imgui.GetStyleVar(globals.ctx, imgui.StyleVar_ItemSpacing)
+        local totalWidth = (layerWidth * layerCount) + (spacing * math.max(0, layerCount - 1))
 
-                local adaptedCallbacks = globals.EuclideanUI.createAutoBindModeCallbacks(callbacks, selectedBindingIndex)
-                local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
-                globals.EuclideanUI.renderLayerColumns(
-                    bindingLayers,
-                    trackingKey .. "_" .. itemIdentifier,
-                    adaptedCallbacks,
-                    checkAutoRegen,
-                    "bind" .. selectedBindingIndex .. "_",
-                    layerHeight
-                )
+        -- Set content size BEFORE BeginChild to enable horizontal scrolling
+        imgui.SetNextWindowContentSize(globals.ctx, totalWidth, 0)
+
+        -- BeginChild with WindowFlags_HorizontalScrollbar
+        -- Parameters: ctx, id, width, height, child_flags, window_flags
+        local windowFlags = imgui.WindowFlags_HorizontalScrollbar
+        imgui.BeginChild(globals.ctx, "EuclideanLayersScroll_" .. trackingKey, availWidth, contentHeight, 0, windowFlags)
+
+        if not isAutoBind then
+            -- MANUAL MODE: Use modular Euclidean UI
+            local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
+            globals.EuclideanUI.renderLayerColumns(
+                dataObj.euclideanLayers,
+                trackingKey,
+                adaptedCallbacks,
+                checkAutoRegen,
+                "manual_",
+                contentHeight
+            )
+        else
+            -- AUTO-BIND MODE: Use modular Euclidean UI
+            local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
+            local bindingOrder = dataObj.euclideanBindingOrder or {}
+            local uuid = bindingOrder[selectedBindingIndex]
+
+            -- Get binding layers for selected container
+            local bindingLayers = {}
+            if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
+                bindingLayers = dataObj.euclideanLayerBindings[uuid]
             end
 
-            imgui.EndTable(globals.ctx)
+            local numLayers = #bindingLayers
+            if numLayers == 0 then
+                -- Fallback: create default layer
+                bindingLayers = {{pulses = 8, steps = 16, rotation = 0}}
+            end
+
+            local adaptedCallbacks = globals.EuclideanUI.createAutoBindModeCallbacks(callbacks, selectedBindingIndex)
+            local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
+            globals.EuclideanUI.renderLayerColumns(
+                bindingLayers,
+                trackingKey .. "_" .. itemIdentifier,
+                adaptedCallbacks,
+                checkAutoRegen,
+                "bind" .. selectedBindingIndex .. "_",
+                contentHeight
+            )
         end
+
+        imgui.EndChild(globals.ctx)
     end
 
     -- Fade in/out controls are commented out but can be enabled if needed

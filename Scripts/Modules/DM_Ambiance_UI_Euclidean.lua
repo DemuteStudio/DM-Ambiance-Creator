@@ -82,7 +82,7 @@ function EuclideanUI.renderLayerColumn(config)
     local labelWidth = 60
     local sliderWidth = columnWidth - labelWidth - 20
 
-    -- Start column (use fixed height if provided, otherwise auto-resize)
+    -- Use BeginChild with border for each layer
     local childFlags = globals.imgui.ChildFlags_Border
     if columnHeight == 0 then
         childFlags = childFlags | globals.imgui.ChildFlags_AutoResizeY
@@ -189,7 +189,7 @@ function EuclideanUI.renderLayerColumn(config)
     globals.imgui.AlignTextToFramePadding(ctx)
     globals.imgui.Text(ctx, "Rotation")
 
-    -- End column
+    -- End child
     globals.imgui.EndChild(ctx)
 end
 
@@ -202,13 +202,16 @@ end
 --- @param columnHeight number Optional fixed height for columns
 function EuclideanUI.renderLayerColumns(layers, trackingKey, callbacks, checkAutoRegen, idPrefix, columnHeight)
     local ctx = globals.ctx
+    local imgui = globals.imgui
     local numLayers = #layers
-    local availableWidth = globals.imgui.GetContentRegionAvail(ctx)
-    local columnWidth = math.max(180, availableWidth / math.min(numLayers, 4))
 
+    -- Fixed column width for consistency
+    local columnWidth = 180
+
+    -- Render layers side by side
     for layerIdx = 1, numLayers do
         if layerIdx > 1 then
-            globals.imgui.SameLine(ctx)
+            imgui.SameLine(ctx)
         end
 
         EuclideanUI.renderLayerColumn({
