@@ -3075,28 +3075,76 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
             local x = centerX + currentRadius * math.cos(angle)
             local y = centerY + currentRadius * math.sin(angle)
 
-            -- Draw background dot (empty style)
-            local layerBgColor = bgColor
-            local layerEmptyColor = emptyColor
-            if not isLayerSelected then
-                layerBgColor = (bgColor & 0xFFFFFF00) | 0x66
-                layerEmptyColor = (emptyColor & 0xFFFFFF00) | 0x66
-            end
-            imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerBgColor)
-            imgui.DrawList_AddCircle(drawList, x, y, dotRadius, layerEmptyColor, 0, 1.5)
-
-            -- Draw colored dots for each layer that has a HIT at this position
+            -- Separate layers into hits and silences
+            local hitLayers = {}
+            local silenceLayers = {}
             for subLayerIdx, isHit in pairs(layerStates) do
                 if isHit then
-                    -- Get color for this sub-layer
-                    local subLayerColor = getEuclideanLayerColor(subLayerIdx)
-                    if not isLayerSelected then
-                        subLayerColor = getEuclideanLayerColor(subLayerIdx, 0.4)
-                    end
+                    table.insert(hitLayers, subLayerIdx)
+                else
+                    table.insert(silenceLayers, subLayerIdx)
+                end
+            end
 
-                    -- Draw colored dot on top with layer-specific color
-                    local colorDotRadius = dotRadius * 0.7
-                    imgui.DrawList_AddCircleFilled(drawList, x, y, colorDotRadius, subLayerColor)
+            -- Draw background
+            local layerBgColor = bgColor
+            if not isLayerSelected then
+                layerBgColor = (bgColor & 0xFFFFFF00) | 0x66
+            end
+            imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, layerBgColor)
+
+            -- Draw hits FIRST (filled circles)
+            if #hitLayers > 0 then
+                if #hitLayers == 1 then
+                    -- Single hit: full colored circle
+                    local subLayerColor = getEuclideanLayerColor(hitLayers[1])
+                    if not isLayerSelected then
+                        subLayerColor = getEuclideanLayerColor(hitLayers[1], 0.4)
+                    end
+                    imgui.DrawList_AddCircleFilled(drawList, x, y, dotRadius, subLayerColor)
+                else
+                    -- Multiple hits: divide into pie segments
+                    local segmentAngle = (2 * math.pi) / #hitLayers
+                    for i, subLayerIdx in ipairs(hitLayers) do
+                        local subLayerColor = getEuclideanLayerColor(subLayerIdx)
+                        if not isLayerSelected then
+                            subLayerColor = getEuclideanLayerColor(subLayerIdx, 0.4)
+                        end
+                        local startAngle = (i - 1) * segmentAngle - (math.pi / 2)
+                        local endAngle = i * segmentAngle - (math.pi / 2)
+
+                        -- Draw pie segment
+                        imgui.DrawList_PathArcTo(drawList, x, y, dotRadius, startAngle, endAngle, 16)
+                        imgui.DrawList_PathLineTo(drawList, x, y)
+                        imgui.DrawList_PathFillConvex(drawList, subLayerColor)
+                    end
+                end
+            end
+
+            -- Draw silences ON TOP (outlines visible over fills)
+            if #silenceLayers > 0 then
+                if #silenceLayers == 1 then
+                    -- Single silence: full colored outline
+                    local subLayerColor = getEuclideanLayerColor(silenceLayers[1])
+                    if not isLayerSelected then
+                        subLayerColor = getEuclideanLayerColor(silenceLayers[1], 0.4)
+                    end
+                    imgui.DrawList_AddCircle(drawList, x, y, dotRadius, subLayerColor, 0, 2.0)
+                else
+                    -- Multiple silences: divide outline into colored arcs
+                    local segmentAngle = (2 * math.pi) / #silenceLayers
+                    for i, subLayerIdx in ipairs(silenceLayers) do
+                        local subLayerColor = getEuclideanLayerColor(subLayerIdx)
+                        if not isLayerSelected then
+                            subLayerColor = getEuclideanLayerColor(subLayerIdx, 0.4)
+                        end
+                        local startAngle = (i - 1) * segmentAngle - (math.pi / 2)
+                        local endAngle = i * segmentAngle - (math.pi / 2)
+
+                        -- Draw colored arc segment
+                        imgui.DrawList_PathArcTo(drawList, x, y, dotRadius, startAngle, endAngle, 16)
+                        imgui.DrawList_PathStroke(drawList, subLayerColor, 0, 2.0)
+                    end
                 end
             end
         end
