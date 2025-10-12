@@ -68,25 +68,12 @@ function UI.scaleSize(size)
     return size * uiScale
 end
 
--- Get color for a specific euclidean layer index
+-- Get color for a specific euclidean layer index (delegates to EuclideanUI module)
 -- @param layerIndex number: Layer index (1-based)
 -- @param alpha number: Optional alpha value (0.0-1.0), if nil uses color's original alpha
 -- @return number: Color in 0xRRGGBBAA format
 local function getEuclideanLayerColor(layerIndex, alpha)
-    local colors = {
-        0x4A90E2FF,  -- Bleu (layer 1)
-        0xE67E22FF,  -- Orange (layer 2)
-        0x9B59B6FF,  -- Violet (layer 3)
-        0x1ABC9CFF,  -- Cyan (layer 4)
-        0xF39C12FF,  -- Jaune (layer 5)
-        0xE74C3CFF,  -- Rouge (layer 6)
-    }
-
-    local color = colors[((layerIndex - 1) % #colors) + 1]
-    if alpha then
-        color = (color & 0xFFFFFF00) | math.floor(alpha * 255)
-    end
-    return color
+    return globals.EuclideanUI.getLayerColor(layerIndex, alpha)
 end
 
 -- Wrapper for Button with automatic scaling
@@ -1441,129 +1428,17 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         local isAutoBind = isGroup and (dataObj.euclideanAutoBindContainers or false)
 
         if not isAutoBind then
-            -- MANUAL MODE: Multi-column sliders for each layer
-            local numLayers = #dataObj.euclideanLayers
-            local availableWidth = imgui.GetContentRegionAvail(globals.ctx)
-            local columnWidth = math.max(180, availableWidth / math.min(numLayers, 4))
-
-            for layerIdx = 1, numLayers do
-                if layerIdx > 1 then
-                    imgui.SameLine(globals.ctx)
-                end
-
-                imgui.BeginChild(globals.ctx, "EucLayer" .. layerIdx, columnWidth, 0, imgui.ChildFlags_Border | imgui.ChildFlags_AutoResizeY)
-
-                -- Header with color indicator
-                local layerColor = getEuclideanLayerColor(layerIdx)
-                imgui.ColorButton(globals.ctx, "##layerColorHeader" .. layerIdx, layerColor, imgui.ColorEditFlags_NoTooltip, 16, 16)
-                imgui.SameLine(globals.ctx)
-                imgui.Text(globals.ctx, "Layer " .. layerIdx)
-
-                imgui.Spacing(globals.ctx)
-
-                -- Get layer data
-                local layer = dataObj.euclideanLayers[layerIdx]
-                local currentPulses = layer.pulses or 8
-                local currentSteps = layer.steps or 16
-                local currentRotation = layer.rotation or 0
-
-                -- Fixed label width for alignment
-                local labelWidth = 60
-                local sliderWidth = columnWidth - labelWidth - 20
-
-                -- Pulses slider
-                local pulsesKey = trackingKey .. "_euclideanPulses_layer_" .. layerIdx
-                local rv, newPulses = globals.SliderEnhanced.SliderDouble({
-                    id = "##Pulses_Layer" .. layerIdx,
-                    value = currentPulses,
-                    min = 1,
-                    max = 64,
-                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
-                    format = "%.0f",
-                    width = sliderWidth
-                })
-                imgui.SameLine(globals.ctx, 0, 5)
-                imgui.AlignTextToFramePadding(globals.ctx)
-                imgui.Text(globals.ctx, "Pulses")
-
-                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
-                    globals.autoRegenTracking[pulsesKey] = currentPulses
-                end
-
-                if rv then
-                    callbacks.setEuclideanLayerPulses(layerIdx, math.floor(newPulses))
-                end
-
-                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
-                    checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], currentPulses)
-                    globals.autoRegenTracking[pulsesKey] = nil
-                end
-
-                imgui.Spacing(globals.ctx)
-
-                -- Steps slider
-                local stepsKey = trackingKey .. "_euclideanSteps_layer_" .. layerIdx
-                local rv, newSteps = globals.SliderEnhanced.SliderDouble({
-                    id = "##Steps_Layer" .. layerIdx,
-                    value = currentSteps,
-                    min = 1,
-                    max = 64,
-                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
-                    format = "%.0f",
-                    width = sliderWidth
-                })
-                imgui.SameLine(globals.ctx, 0, 5)
-                imgui.AlignTextToFramePadding(globals.ctx)
-                imgui.Text(globals.ctx, "Steps")
-
-                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
-                    globals.autoRegenTracking[stepsKey] = currentSteps
-                end
-
-                if rv then
-                    callbacks.setEuclideanLayerSteps(layerIdx, math.floor(newSteps))
-                end
-
-                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
-                    checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], currentSteps)
-                    globals.autoRegenTracking[stepsKey] = nil
-                end
-
-                imgui.Spacing(globals.ctx)
-
-                -- Rotation slider
-                local rotationKey = trackingKey .. "_euclideanRotation_layer_" .. layerIdx
-                local maxRotation = currentSteps - 1
-                local rv, newRotation = globals.SliderEnhanced.SliderDouble({
-                    id = "##Rotation_Layer" .. layerIdx,
-                    value = currentRotation,
-                    min = 0,
-                    max = maxRotation,
-                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
-                    format = "%.0f",
-                    width = sliderWidth
-                })
-                imgui.SameLine(globals.ctx, 0, 5)
-                imgui.AlignTextToFramePadding(globals.ctx)
-                imgui.Text(globals.ctx, "Rotation")
-
-                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
-                    globals.autoRegenTracking[rotationKey] = currentRotation
-                end
-
-                if rv then
-                    callbacks.setEuclideanLayerRotation(layerIdx, math.floor(newRotation))
-                end
-
-                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
-                    checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], currentRotation)
-                    globals.autoRegenTracking[rotationKey] = nil
-                end
-
-                imgui.EndChild(globals.ctx)
-            end
+            -- MANUAL MODE: Use modular Euclidean UI
+            local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
+            globals.EuclideanUI.renderLayerColumns(
+                dataObj.euclideanLayers,
+                trackingKey,
+                adaptedCallbacks,
+                checkAutoRegen,
+                "manual_"
+            )
         else
-            -- AUTO-BIND MODE: Multi-column layout (similar to manual mode)
+            -- AUTO-BIND MODE: Use modular Euclidean UI
             local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
             local bindingOrder = dataObj.euclideanBindingOrder or {}
             local uuid = bindingOrder[selectedBindingIndex]
@@ -1578,129 +1453,17 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
             if numLayers == 0 then
                 -- Fallback: create default layer
                 bindingLayers = {{pulses = 8, steps = 16, rotation = 0}}
-                numLayers = 1
             end
 
-            local availableWidth = imgui.GetContentRegionAvail(globals.ctx)
-            local columnWidth = math.max(180, availableWidth / math.min(numLayers, 4))
-
-            for layerIdx = 1, numLayers do
-                if layerIdx > 1 then
-                    imgui.SameLine(globals.ctx)
-                end
-
-                imgui.BeginChild(globals.ctx, "EucBindingLayer" .. selectedBindingIndex .. "_" .. layerIdx, columnWidth, 0, imgui.ChildFlags_Border | imgui.ChildFlags_AutoResizeY)
-
-                -- Header with color indicator
-                local layerColor = getEuclideanLayerColor(layerIdx)
-                imgui.ColorButton(globals.ctx, "##layerColorHeaderBinding" .. layerIdx, layerColor, imgui.ColorEditFlags_NoTooltip, 16, 16)
-                imgui.SameLine(globals.ctx)
-                imgui.Text(globals.ctx, "Layer " .. layerIdx)
-
-                imgui.Spacing(globals.ctx)
-
-                -- Get layer data
-                local layer = bindingLayers[layerIdx]
-                local currentPulses = layer.pulses or 8
-                local currentSteps = layer.steps or 16
-                local currentRotation = layer.rotation or 0
-
-                -- Fixed label width for alignment
-                local labelWidth = 60
-                local sliderWidth = columnWidth - labelWidth - 20
-
-                -- Pulses slider
-                local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
-                local pulsesKey = trackingKey .. "_euclideanPulses_" .. itemIdentifier .. "_layer_" .. layerIdx
-                local rv, newPulses = globals.SliderEnhanced.SliderDouble({
-                    id = "##Pulses_Binding" .. selectedBindingIndex .. "_Layer" .. layerIdx,
-                    value = currentPulses,
-                    min = 1,
-                    max = 64,
-                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
-                    format = "%.0f",
-                    width = sliderWidth
-                })
-                imgui.SameLine(globals.ctx, 0, 5)
-                imgui.AlignTextToFramePadding(globals.ctx)
-                imgui.Text(globals.ctx, "Pulses")
-
-                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
-                    globals.autoRegenTracking[pulsesKey] = currentPulses
-                end
-
-                if rv then
-                    callbacks.setEuclideanBindingPulses(selectedBindingIndex, layerIdx, math.floor(newPulses))
-                end
-
-                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
-                    checkAutoRegen("euclideanPulses", pulsesKey, globals.autoRegenTracking[pulsesKey], currentPulses)
-                    globals.autoRegenTracking[pulsesKey] = nil
-                end
-
-                imgui.Spacing(globals.ctx)
-
-                -- Steps slider
-                local stepsKey = trackingKey .. "_euclideanSteps_" .. itemIdentifier .. "_layer_" .. layerIdx
-                local rv, newSteps = globals.SliderEnhanced.SliderDouble({
-                    id = "##Steps_Binding" .. selectedBindingIndex .. "_Layer" .. layerIdx,
-                    value = currentSteps,
-                    min = 1,
-                    max = 64,
-                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
-                    format = "%.0f",
-                    width = sliderWidth
-                })
-                imgui.SameLine(globals.ctx, 0, 5)
-                imgui.AlignTextToFramePadding(globals.ctx)
-                imgui.Text(globals.ctx, "Steps")
-
-                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
-                    globals.autoRegenTracking[stepsKey] = currentSteps
-                end
-
-                if rv then
-                    callbacks.setEuclideanBindingSteps(selectedBindingIndex, layerIdx, math.floor(newSteps))
-                end
-
-                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
-                    checkAutoRegen("euclideanSteps", stepsKey, globals.autoRegenTracking[stepsKey], currentSteps)
-                    globals.autoRegenTracking[stepsKey] = nil
-                end
-
-                imgui.Spacing(globals.ctx)
-
-                -- Rotation slider
-                local rotationKey = trackingKey .. "_euclideanRotation_" .. itemIdentifier .. "_layer_" .. layerIdx
-                local maxRotation = currentSteps - 1
-                local rv, newRotation = globals.SliderEnhanced.SliderDouble({
-                    id = "##Rotation_Binding" .. selectedBindingIndex .. "_Layer" .. layerIdx,
-                    value = currentRotation,
-                    min = 0,
-                    max = maxRotation,
-                    defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
-                    format = "%.0f",
-                    width = sliderWidth
-                })
-                imgui.SameLine(globals.ctx, 0, 5)
-                imgui.AlignTextToFramePadding(globals.ctx)
-                imgui.Text(globals.ctx, "Rotation")
-
-                if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
-                    globals.autoRegenTracking[rotationKey] = currentRotation
-                end
-
-                if rv then
-                    callbacks.setEuclideanBindingRotation(selectedBindingIndex, layerIdx, math.floor(newRotation))
-                end
-
-                if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
-                    checkAutoRegen("euclideanRotation", rotationKey, globals.autoRegenTracking[rotationKey], currentRotation)
-                    globals.autoRegenTracking[rotationKey] = nil
-                end
-
-                imgui.EndChild(globals.ctx)
-            end
+            local adaptedCallbacks = globals.EuclideanUI.createAutoBindModeCallbacks(callbacks, selectedBindingIndex)
+            local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
+            globals.EuclideanUI.renderLayerColumns(
+                bindingLayers,
+                trackingKey .. "_" .. itemIdentifier,
+                adaptedCallbacks,
+                checkAutoRegen,
+                "bind" .. selectedBindingIndex .. "_"
+            )
         end
 
         -- Euclidean Pattern Visualization and Saved Patterns
