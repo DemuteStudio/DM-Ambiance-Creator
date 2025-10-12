@@ -206,6 +206,73 @@ Constants.DEFAULTS = {
     EUCLIDEAN_ROTATION = 1,             -- Default rotation offset
     EUCLIDEAN_SELECTED_LAYER = 1,       -- Default selected layer index
     EUCLIDEAN_SELECTED_BINDING_INDEX = 1, -- Default selected binding index (auto-bind mode)
+}
+
+-- Euclidean Rhythm Pattern Presets
+Constants.EUCLIDEAN_PATTERNS = {
+    {
+        category = "Major Rhythmic Patterns",
+        patterns = {
+            {name = "Tresillo / Habanera", pulses = 3, steps = 8, description = "Cuba, USA, West Africa, Ghana"},
+            {name = "Cinquillo", pulses = 5, steps = 8, description = "Cuban music, jazz, rockabilly"},
+            {name = "Bembé", pulses = 5, steps = 12, description = "West Africa, equivalent to major diatonic scale"},
+            {name = "Bossa-Nova", pulses = 5, steps = 16, description = "Brazil. Pattern: {0,3,6,10,13}₁₆ - E(5,16) rotated"},
+            {name = "Son (Clave Son)", pulses = 5, steps = 16, description = "Cuba. Pattern: {0,3,6,10,12}₁₆ - Sequence (3,3,4,2,4)"},
+            {name = "Rumba", pulses = 5, steps = 8, description = "Africa and Latin America"},
+            {name = "Shiko", pulses = 7, steps = 12, description = "African pattern"},
+            {name = "Soukous", pulses = 5, steps = 16, description = "African pattern"},
+            {name = "Gahu", pulses = 7, steps = 12, description = "African pattern"},
+            {name = "Tambu", pulses = 5, steps = 12, description = "Curaçao. Bembé E(5,12) rotated 7 positions (ρ⁷)"},
+        }
+    },
+    {
+        category = "Aksak Rhythms - Authentic (n prime)",
+        patterns = {
+            {name = "E(2,5)", pulses = 2, steps = 5, description = "Greece, Macedonia, Persia"},
+            {name = "E(3,7)", pulses = 3, steps = 7, description = "Bulgaria, Greece, Sudan"},
+            {name = "E(4,11)", pulses = 4, steps = 11, description = "South India, Serbia"},
+            {name = "E(5,11)", pulses = 5, steps = 11, description = "Bulgaria, North India"},
+            {name = "E(5,13)", pulses = 5, steps = 13, description = "Macedonia"},
+            {name = "E(6,13)", pulses = 6, steps = 13, description = "Macedonia"},
+            {name = "E(7,17)", pulses = 7, steps = 17, description = "Macedonia"},
+            {name = "E(8,17)", pulses = 8, steps = 17, description = "Bulgaria"},
+            {name = "E(8,19)", pulses = 8, steps = 19, description = "Bulgaria"},
+            {name = "E(9,23)", pulses = 9, steps = 23, description = "Bulgaria"},
+        }
+    },
+    {
+        category = "Quasi-Aksak (n odd non-prime)",
+        patterns = {
+            {name = "E(4,9)", pulses = 4, steps = 9, description = "Greece, Macedonia, Turkey"},
+            {name = "E(7,15)", pulses = 7, steps = 15, description = "Bulgaria"},
+        }
+    },
+    {
+        category = "Pseudo-Aksak (n even)",
+        patterns = {
+            {name = "E(5,12)", pulses = 5, steps = 12, description = "Macedonia, South Africa"},
+            {name = "E(7,16)", pulses = 7, steps = 16, description = "Brazil, Macedonia, West Africa"},
+            {name = "E(7,18)", pulses = 7, steps = 18, description = "Bulgaria"},
+            {name = "E(9,22)", pulses = 9, steps = 22, description = "Bulgaria"},
+            {name = "E(11,24)", pulses = 11, steps = 24, description = "Central Africa, Bulgaria"},
+            {name = "E(15,34)", pulses = 15, steps = 34, description = "Bulgaria"},
+        }
+    },
+    {
+        category = "Other Notable Patterns",
+        patterns = {
+            {name = "Fandango", pulses = 4, steps = 12, description = "Flamenco from Southern Spain"},
+            {name = "E(2,3)", pulses = 2, steps = 3, description = "Classical, Arabic, Greek music"},
+            {name = "E(3,4)", pulses = 3, steps = 4, description = "Classical, Arabic, Greek music"},
+            {name = "E(4,5)", pulses = 4, steps = 5, description = "Classical, Arabic, Greek music"},
+            {name = "E(5,6)", pulses = 5, steps = 6, description = "Classical, Arabic, Greek music"},
+            {name = "E(6,7)", pulses = 6, steps = 7, description = "Classical, Arabic, Greek music"},
+            {name = "E(7,8)", pulses = 7, steps = 8, description = "Classical, Arabic, Greek music"},
+        }
+    },
+}
+
+Constants.GENERATION_DEFAULTS = {
     -- Fade defaults
     FADE_IN_ENABLED = true,             -- Default fade in state
     FADE_OUT_ENABLED = true,            -- Default fade out state

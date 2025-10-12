@@ -89,12 +89,29 @@ function EuclideanUI.renderLayerColumn(config)
     end
     globals.imgui.BeginChild(ctx, idPrefix .. "EucLayer" .. layerIdx, columnWidth, columnHeight, childFlags)
 
-    -- Header with color indicator
+    -- Header with color indicator and Load Preset button on same line
     local layerColor = getLayerColor(layerIdx)
     globals.imgui.ColorButton(ctx, "##layerColorHeader" .. idPrefix .. layerIdx,
         layerColor, globals.imgui.ColorEditFlags_NoTooltip, 16, 16)
     globals.imgui.SameLine(ctx)
     globals.imgui.Text(ctx, "Layer " .. layerIdx)
+
+    -- Load Preset button on the same line, aligned to the right
+    globals.imgui.SameLine(ctx)
+    local cursorX = globals.imgui.GetCursorPosX(ctx)
+    local availWidth = columnWidth - cursorX + 10
+    globals.imgui.SetCursorPosX(ctx, columnWidth - 80)
+    if globals.imgui.Button(ctx, "Preset##" .. idPrefix .. "preset" .. layerIdx, 70, 0) then
+        -- Store context for the modal callback
+        globals.euclideanPatternModalContext = {
+            layerIdx = layerIdx,
+            callbacks = callbacks
+        }
+        globals.euclideanPatternModalOpen = true
+    end
+    if globals.imgui.IsItemHovered(ctx) then
+        globals.imgui.SetTooltip(ctx, "Load a rhythmic pattern preset")
+    end
 
     globals.imgui.Spacing(ctx)
 

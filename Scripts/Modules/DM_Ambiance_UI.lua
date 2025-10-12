@@ -3156,6 +3156,122 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
     imgui.Dummy(globals.ctx, size, size)
 end
 
+-- Draw Euclidean Pattern Preset Browser Modal
+function UI.drawEuclideanPatternPresetBrowser()
+    -- Check if modal should be opened (button was clicked)
+    if globals.euclideanPatternModalOpen then
+        -- Center on main window on first open
+        local modalWidth, modalHeight = 750, 550
+        if globals.mainWindowPos and globals.mainWindowSize then
+            local mainWinX, mainWinY = globals.mainWindowPos[1], globals.mainWindowPos[2]
+            local mainWinWidth, mainWinHeight = globals.mainWindowSize[1], globals.mainWindowSize[2]
+            local centerX = mainWinX + (mainWinWidth - modalWidth) * 0.5
+            local centerY = mainWinY + (mainWinHeight - modalHeight) * 0.5
+            imgui.SetNextWindowPos(globals.ctx, centerX, centerY, imgui.Cond_Appearing)
+        end
+        -- Set minimum size, window will auto-resize to content
+        imgui.SetNextWindowSize(globals.ctx, 750, 550, imgui.Cond_Appearing)
+        globals.euclideanPatternModalOpen = false
+        globals.euclideanPatternBrowserOpen = true
+    end
+
+    -- Only render if flag is set
+    if not globals.euclideanPatternBrowserOpen then
+        return
+    end
+
+    -- Window flags (non-modal, always on top, auto-resize to content)
+    local windowFlags = imgui.WindowFlags_NoCollapse | imgui.WindowFlags_TopMost | imgui.WindowFlags_AlwaysAutoResize
+
+    local visible, open = imgui.Begin(globals.ctx, "Euclidean Pattern Presets", true, windowFlags)
+    if visible then
+        imgui.Text(globals.ctx, "Select a rhythmic pattern to apply to the current layer")
+        imgui.Separator(globals.ctx)
+        imgui.Spacing(globals.ctx)
+
+        -- Table with columns: Name, Pattern, Description
+        local tableFlags = imgui.TableFlags_Borders |
+                          imgui.TableFlags_RowBg |
+                          imgui.TableFlags_ScrollY |
+                          imgui.TableFlags_SizingFixedFit
+
+        if imgui.BeginTable(globals.ctx, "##eucPatternTable", 3, tableFlags, 0, 450) then
+            -- Setup columns
+            imgui.TableSetupColumn(globals.ctx, "Name", imgui.TableColumnFlags_WidthFixed, 180)
+            imgui.TableSetupColumn(globals.ctx, "Pattern", imgui.TableColumnFlags_WidthFixed, 100)
+            imgui.TableSetupColumn(globals.ctx, "Description", imgui.TableColumnFlags_WidthStretch)
+            imgui.TableSetupScrollFreeze(globals.ctx, 0, 1)  -- Freeze header row
+            imgui.TableHeadersRow(globals.ctx)
+
+            -- Iterate through categories and patterns
+            for _, category in ipairs(globals.Constants.EUCLIDEAN_PATTERNS) do
+                -- Category header
+                imgui.TableNextRow(globals.ctx)
+                imgui.TableSetColumnIndex(globals.ctx, 0)
+                imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFFFFAA00)  -- Yellow/orange
+                imgui.Text(globals.ctx, category.category)
+                imgui.PopStyleColor(globals.ctx)
+
+                -- Patterns in category
+                for idx, pattern in ipairs(category.patterns) do
+                    imgui.TableNextRow(globals.ctx)
+
+                    -- Column 1: Name (clickable)
+                    imgui.TableSetColumnIndex(globals.ctx, 0)
+                    local isSelected = false
+                    if imgui.Selectable(globals.ctx, pattern.name .. "##pat" .. category.category .. idx, isSelected, imgui.SelectableFlags_SpanAllColumns) then
+                        -- Pattern selected, apply to layer using stored context
+                        if globals.euclideanPatternModalContext then
+                            local ctx = globals.euclideanPatternModalContext
+                            local callbacks = ctx.callbacks
+                            local layerIdx = ctx.layerIdx
+
+                            -- Apply pattern parameters
+                            if callbacks.setPulses then
+                                callbacks.setPulses(layerIdx, pattern.pulses)
+                            end
+                            if callbacks.setSteps then
+                                callbacks.setSteps(layerIdx, pattern.steps)
+                            end
+                            -- Reset rotation to 0 when loading preset
+                            if callbacks.setRotation then
+                                callbacks.setRotation(layerIdx, 0)
+                            end
+                        end
+                        -- Close window after selection
+                        globals.euclideanPatternBrowserOpen = false
+                    end
+
+                    -- Column 2: Pattern notation
+                    imgui.TableSetColumnIndex(globals.ctx, 1)
+                    imgui.TextDisabled(globals.ctx, "E(" .. pattern.pulses .. "," .. pattern.steps .. ")")
+
+                    -- Column 3: Description
+                    imgui.TableSetColumnIndex(globals.ctx, 2)
+                    imgui.TextWrapped(globals.ctx, pattern.description)
+                end
+            end
+
+            imgui.EndTable(globals.ctx)
+        end
+
+        imgui.Spacing(globals.ctx)
+        imgui.Separator(globals.ctx)
+
+        -- Close button
+        if imgui.Button(globals.ctx, "Close", 120, 0) then
+            globals.euclideanPatternBrowserOpen = false
+        end
+
+        imgui.End(globals.ctx)
+    end
+
+    -- Handle window close via X button
+    if not open then
+        globals.euclideanPatternBrowserOpen = false
+    end
+end
+
 -- Draw saved euclidean patterns list with Save/Override buttons
 function UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupIndex, containerIndex, height)
     if not dataObj then return end
@@ -3321,6 +3437,9 @@ function UI.ShowMainWindow(open)
 
     -- CRITICAL: Only call End() if Begin() returned true (visible)
     if visible then
+        -- Store main window position and size for modal centering
+        globals.mainWindowPos = {imgui.GetWindowPos(globals.ctx)}
+        globals.mainWindowSize = {imgui.GetWindowSize(globals.ctx)}
 
         -- Initialize deferred widget drawing list for animated widgets
         if not globals.deferredWidgetDraws then
@@ -3539,6 +3658,9 @@ function UI.ShowMainWindow(open)
         -- CRITICAL: Only call End() if Begin() returned true
         globals.imgui.End(globals.ctx)
     end
+
+    -- Render Euclidean pattern preset browser modal (must be outside main window)
+    UI.drawEuclideanPatternPresetBrowser()
 
     -- Handle settings window with the same pattern
     if globals.showSettingsWindow then
