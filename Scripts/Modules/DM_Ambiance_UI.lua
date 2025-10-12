@@ -1433,7 +1433,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
         imgui.Spacing(globals.ctx)
         imgui.Text(globals.ctx, "Pattern Preview:")
 
-        local previewSize = UI.scaleSize(140)  -- Circle diameter
+        local previewSize = UI.scaleSize(154)  -- Circle diameter (140 * 1.1 = 154, increased by 10%)
 
         -- Layout: Preview on left, saved patterns list on right
         imgui.BeginGroup(globals.ctx)
