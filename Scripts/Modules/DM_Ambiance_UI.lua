@@ -1283,8 +1283,11 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 imgui.SameLine(globals.ctx)
             end
 
-            -- "+" and "-" buttons only in manual mode (not auto-bind)
+            -- "+" and "-" buttons for layer management
+            -- In manual mode: manage layers in euclideanLayers array
+            -- In auto-bind mode: manage layers for selected container binding
             if not isAutoBind then
+                -- MANUAL MODE: Add/remove layers
                 if imgui.Button(globals.ctx, "+##eucAddLayer", 30, 0) then
                     callbacks.addEuclideanLayer()
                 end
@@ -1300,6 +1303,34 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     end
                     if imgui.IsItemHovered(globals.ctx) then
                         imgui.SetTooltip(globals.ctx, "Remove current layer")
+                    end
+                end
+            else
+                -- AUTO-BIND MODE: Add/remove layers for selected container binding
+                if imgui.Button(globals.ctx, "+##eucAddBindingLayer", 30, 0) then
+                    callbacks.addEuclideanBindingLayer(selectedIndex)
+                end
+                if imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetTooltip(globals.ctx, "Add layer to selected container")
+                end
+
+                -- Get layer count for selected binding
+                local bindingLayerCount = 0
+                if dataObj.euclideanBindingOrder and dataObj.euclideanBindingOrder[selectedIndex] then
+                    local uuid = dataObj.euclideanBindingOrder[selectedIndex]
+                    if dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
+                        bindingLayerCount = #dataObj.euclideanLayerBindings[uuid]
+                    end
+                end
+
+                -- "-" button to remove layer (only if more than 1 layer)
+                if bindingLayerCount > 1 then
+                    imgui.SameLine(globals.ctx)
+                    if imgui.Button(globals.ctx, "-##eucRemoveBindingLayer", 30, 0) then
+                        callbacks.removeEuclideanBindingLayer(selectedIndex)
+                    end
+                    if imgui.IsItemHovered(globals.ctx) then
+                        imgui.SetTooltip(globals.ctx, "Remove selected layer from container")
                     end
                 end
             end
@@ -1522,30 +1553,60 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 imgui.EndChild(globals.ctx)
             end
         else
-            -- AUTO-BIND MODE: Single column layout (original code)
-            local selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
+            -- AUTO-BIND MODE: Multi-column layout (similar to manual mode)
+            local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
             local bindingOrder = dataObj.euclideanBindingOrder or {}
-            local uuid = bindingOrder[selectedIndex]
+            local uuid = bindingOrder[selectedBindingIndex]
 
-            -- Pulses slider
-            do
-                local currentPulses = 8
-                local itemIdentifier = uuid or ("binding_" .. selectedIndex)
+            -- Get binding layers for selected container
+            local bindingLayers = {}
+            if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
+                bindingLayers = dataObj.euclideanLayerBindings[uuid]
+            end
 
-                if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
-                    currentPulses = dataObj.euclideanLayerBindings[uuid].pulses or 8
+            local numLayers = #bindingLayers
+            if numLayers == 0 then
+                -- Fallback: create default layer
+                bindingLayers = {{pulses = 8, steps = 16, rotation = 0}}
+                numLayers = 1
+            end
+
+            local availableWidth = imgui.GetContentRegionAvail(globals.ctx)
+            local columnWidth = math.max(180, availableWidth / math.min(numLayers, 4))
+
+            for layerIdx = 1, numLayers do
+                if layerIdx > 1 then
+                    imgui.SameLine(globals.ctx)
                 end
 
-                imgui.BeginGroup(globals.ctx)
-                local pulsesKey = trackingKey .. "_euclideanPulses_" .. itemIdentifier
+                imgui.BeginChild(globals.ctx, "EucBindingLayer" .. selectedBindingIndex .. "_" .. layerIdx, columnWidth, 200, imgui.ChildFlags_Border)
+
+                -- Header with color indicator
+                local layerColor = getEuclideanLayerColor(layerIdx)
+                imgui.ColorButton(globals.ctx, "##layerColorHeaderBinding" .. layerIdx, layerColor, imgui.ColorEditFlags_NoTooltip, 16, 16)
+                imgui.SameLine(globals.ctx)
+                imgui.Text(globals.ctx, "Layer " .. layerIdx)
+
+                imgui.Spacing(globals.ctx)
+
+                -- Get layer data
+                local layer = bindingLayers[layerIdx]
+                local currentPulses = layer.pulses or 8
+                local currentSteps = layer.steps or 16
+                local currentRotation = layer.rotation or 0
+
+                -- Pulses slider
+                imgui.Text(globals.ctx, "Pulses")
+                local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
+                local pulsesKey = trackingKey .. "_euclideanPulses_" .. itemIdentifier .. "_layer_" .. layerIdx
                 local rv, newPulses = globals.SliderEnhanced.SliderDouble({
-                    id = "##EuclideanPulses",
+                    id = "##Pulses_Binding" .. selectedBindingIndex .. "_Layer" .. layerIdx,
                     value = currentPulses,
                     min = 1,
                     max = 64,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
                     format = "%.0f",
-                    width = controlWidth
+                    width = columnWidth - 20
                 })
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[pulsesKey] then
@@ -1553,7 +1614,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 end
 
                 if rv then
-                    callbacks.setEuclideanBindingPulses(selectedIndex, math.floor(newPulses))
+                    callbacks.setEuclideanBindingPulses(selectedBindingIndex, layerIdx, math.floor(newPulses))
                 end
 
                 if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[pulsesKey] then
@@ -1561,33 +1622,19 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     globals.autoRegenTracking[pulsesKey] = nil
                 end
 
-                imgui.EndGroup(globals.ctx)
+                imgui.Spacing(globals.ctx)
 
-                imgui.SameLine(globals.ctx, controlWidth + padding)
-                imgui.Text(globals.ctx, "Pulses")
-                imgui.SameLine(globals.ctx)
-                globals.Utils.HelpMarker("Number of hits to distribute (k)")
-            end
-
-            -- Steps slider
-            do
-                local currentSteps = 16
-                local itemIdentifier = uuid or ("binding_" .. selectedIndex)
-
-                if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
-                    currentSteps = dataObj.euclideanLayerBindings[uuid].steps or 16
-                end
-
-                imgui.BeginGroup(globals.ctx)
-                local stepsKey = trackingKey .. "_euclideanSteps_" .. itemIdentifier
+                -- Steps slider
+                imgui.Text(globals.ctx, "Steps")
+                local stepsKey = trackingKey .. "_euclideanSteps_" .. itemIdentifier .. "_layer_" .. layerIdx
                 local rv, newSteps = globals.SliderEnhanced.SliderDouble({
-                    id = "##EuclideanSteps",
+                    id = "##Steps_Binding" .. selectedBindingIndex .. "_Layer" .. layerIdx,
                     value = currentSteps,
                     min = 1,
                     max = 64,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
                     format = "%.0f",
-                    width = controlWidth
+                    width = columnWidth - 20
                 })
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[stepsKey] then
@@ -1595,7 +1642,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 end
 
                 if rv then
-                    callbacks.setEuclideanBindingSteps(selectedIndex, math.floor(newSteps))
+                    callbacks.setEuclideanBindingSteps(selectedBindingIndex, layerIdx, math.floor(newSteps))
                 end
 
                 if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[stepsKey] then
@@ -1603,36 +1650,20 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     globals.autoRegenTracking[stepsKey] = nil
                 end
 
-                imgui.EndGroup(globals.ctx)
+                imgui.Spacing(globals.ctx)
 
-                imgui.SameLine(globals.ctx, controlWidth + padding)
-                imgui.Text(globals.ctx, "Steps")
-                imgui.SameLine(globals.ctx)
-                globals.Utils.HelpMarker("Total number of subdivisions (n)")
-            end
-
-            -- Rotation slider
-            do
-                local currentRotation = 0
-                local currentSteps = 16
-                local itemIdentifier = uuid or ("binding_" .. selectedIndex)
-
-                if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
-                    currentRotation = dataObj.euclideanLayerBindings[uuid].rotation or 0
-                    currentSteps = dataObj.euclideanLayerBindings[uuid].steps or 16
-                end
-
-                imgui.BeginGroup(globals.ctx)
-                local rotationKey = trackingKey .. "_euclideanRotation_" .. itemIdentifier
+                -- Rotation slider
+                imgui.Text(globals.ctx, "Rotation")
+                local rotationKey = trackingKey .. "_euclideanRotation_" .. itemIdentifier .. "_layer_" .. layerIdx
                 local maxRotation = currentSteps - 1
                 local rv, newRotation = globals.SliderEnhanced.SliderDouble({
-                    id = "##EuclideanRotation",
+                    id = "##Rotation_Binding" .. selectedBindingIndex .. "_Layer" .. layerIdx,
                     value = currentRotation,
                     min = 0,
                     max = maxRotation,
                     defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
                     format = "%.0f",
-                    width = controlWidth
+                    width = columnWidth - 20
                 })
 
                 if imgui.IsItemActive(globals.ctx) and not globals.autoRegenTracking[rotationKey] then
@@ -1640,7 +1671,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                 end
 
                 if rv then
-                    callbacks.setEuclideanBindingRotation(selectedIndex, math.floor(newRotation))
+                    callbacks.setEuclideanBindingRotation(selectedBindingIndex, layerIdx, math.floor(newRotation))
                 end
 
                 if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[rotationKey] then
@@ -1648,12 +1679,7 @@ function UI.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, a
                     globals.autoRegenTracking[rotationKey] = nil
                 end
 
-                imgui.EndGroup(globals.ctx)
-
-                imgui.SameLine(globals.ctx, controlWidth + padding)
-                imgui.Text(globals.ctx, "Rotation")
-                imgui.SameLine(globals.ctx)
-                globals.Utils.HelpMarker("Rotate the pattern (0 to steps-1)")
+                imgui.EndChild(globals.ctx)
             end
         end
 
@@ -1834,8 +1860,11 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local container = group.containers[containerIndex]
                     if container and container.overrideParent and container.intervalMode == 5 and container.id then
                         if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            group.euclideanLayerBindings[container.id].pulses = v
-                            group.needsRegeneration = true
+                            -- Sync to corresponding layer in parent binding (array)
+                            if group.euclideanLayerBindings[container.id][layerIdx] then
+                                group.euclideanLayerBindings[container.id][layerIdx].pulses = v
+                                group.needsRegeneration = true
+                            end
                         end
                     end
                 end
@@ -1852,8 +1881,11 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local container = group.containers[containerIndex]
                     if container and container.overrideParent and container.intervalMode == 5 and container.id then
                         if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            group.euclideanLayerBindings[container.id].steps = v
-                            group.needsRegeneration = true
+                            -- Sync to corresponding layer in parent binding (array)
+                            if group.euclideanLayerBindings[container.id][layerIdx] then
+                                group.euclideanLayerBindings[container.id][layerIdx].steps = v
+                                group.needsRegeneration = true
+                            end
                         end
                     end
                 end
@@ -1870,8 +1902,11 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                     local container = group.containers[containerIndex]
                     if container and container.overrideParent and container.intervalMode == 5 and container.id then
                         if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            group.euclideanLayerBindings[container.id].rotation = v
-                            group.needsRegeneration = true
+                            -- Sync to corresponding layer in parent binding (array)
+                            if group.euclideanLayerBindings[container.id][layerIdx] then
+                                group.euclideanLayerBindings[container.id][layerIdx].rotation = v
+                                group.needsRegeneration = true
+                            end
                         end
                     end
                 end
@@ -1893,19 +1928,59 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
                 globals.highlightedContainerUUID = uuid
                 globals.highlightStartTime = reaper.time_precise()  -- Start highlight timer
             end,
-            setEuclideanBindingPulses = function(bindingIdx, v)
+            addEuclideanBindingLayer = function(bindingIdx)
                 if not obj.euclideanBindingOrder or not obj.euclideanBindingOrder[bindingIdx] then return end
                 local uuid = obj.euclideanBindingOrder[bindingIdx]
                 if not obj.euclideanLayerBindings or not obj.euclideanLayerBindings[uuid] then return end
-                obj.euclideanLayerBindings[uuid].pulses = v
 
-                -- Sync with container if it's in override mode with Euclidean
+                table.insert(obj.euclideanLayerBindings[uuid], {pulses = 8, steps = 16, rotation = 0})
+
+                -- Update selected layer for this binding
+                if not obj.euclideanSelectedLayerPerBinding then obj.euclideanSelectedLayerPerBinding = {} end
+                obj.euclideanSelectedLayerPerBinding[uuid] = #obj.euclideanLayerBindings[uuid]
+
+                obj.needsRegeneration = true
+            end,
+            removeEuclideanBindingLayer = function(bindingIdx)
+                if not obj.euclideanBindingOrder or not obj.euclideanBindingOrder[bindingIdx] then return end
+                local uuid = obj.euclideanBindingOrder[bindingIdx]
+                if not obj.euclideanLayerBindings or not obj.euclideanLayerBindings[uuid] then return end
+                if #obj.euclideanLayerBindings[uuid] <= 1 then return end  -- Keep at least one layer
+
+                local selectedLayer = (obj.euclideanSelectedLayerPerBinding and obj.euclideanSelectedLayerPerBinding[uuid]) or 1
+                table.remove(obj.euclideanLayerBindings[uuid], selectedLayer)
+
+                -- Adjust selected layer index
+                if not obj.euclideanSelectedLayerPerBinding then obj.euclideanSelectedLayerPerBinding = {} end
+                if obj.euclideanSelectedLayerPerBinding[uuid] > #obj.euclideanLayerBindings[uuid] then
+                    obj.euclideanSelectedLayerPerBinding[uuid] = #obj.euclideanLayerBindings[uuid]
+                end
+
+                obj.needsRegeneration = true
+            end,
+            setEuclideanBindingPulses = function(bindingIdx, layerIdx, v)
+                if not obj.euclideanBindingOrder or not obj.euclideanBindingOrder[bindingIdx] then return end
+                local uuid = obj.euclideanBindingOrder[bindingIdx]
+                if not obj.euclideanLayerBindings or not obj.euclideanLayerBindings[uuid] then return end
+                if not obj.euclideanLayerBindings[uuid][layerIdx] then return end
+
+                obj.euclideanLayerBindings[uuid][layerIdx].pulses = v
+
+                -- Sync with container if it's in override mode with Euclidean (sync ALL layers)
                 if isGroup and groupIndex then
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
-                            if not container.euclideanLayers then container.euclideanLayers = {{pulses = 8, steps = 16, rotation = 1}} end
-                            container.euclideanLayers[1].pulses = v
+                            if not container.euclideanLayers then
+                                container.euclideanLayers = {}
+                                for i = 1, #obj.euclideanLayerBindings[uuid] do
+                                    container.euclideanLayers[i] = {pulses = 8, steps = 16, rotation = 0}
+                                end
+                            end
+                            -- Sync specific layer
+                            if container.euclideanLayers[layerIdx] then
+                                container.euclideanLayers[layerIdx].pulses = v
+                            end
                             container.needsRegeneration = true
                         end
                     end
@@ -1913,19 +1988,29 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
 
                 obj.needsRegeneration = true
             end,
-            setEuclideanBindingSteps = function(bindingIdx, v)
+            setEuclideanBindingSteps = function(bindingIdx, layerIdx, v)
                 if not obj.euclideanBindingOrder or not obj.euclideanBindingOrder[bindingIdx] then return end
                 local uuid = obj.euclideanBindingOrder[bindingIdx]
                 if not obj.euclideanLayerBindings or not obj.euclideanLayerBindings[uuid] then return end
-                obj.euclideanLayerBindings[uuid].steps = v
+                if not obj.euclideanLayerBindings[uuid][layerIdx] then return end
 
-                -- Sync with container if it's in override mode with Euclidean
+                obj.euclideanLayerBindings[uuid][layerIdx].steps = v
+
+                -- Sync with container if it's in override mode with Euclidean (sync ALL layers)
                 if isGroup and groupIndex then
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
-                            if not container.euclideanLayers then container.euclideanLayers = {{pulses = 8, steps = 16, rotation = 1}} end
-                            container.euclideanLayers[1].steps = v
+                            if not container.euclideanLayers then
+                                container.euclideanLayers = {}
+                                for i = 1, #obj.euclideanLayerBindings[uuid] do
+                                    container.euclideanLayers[i] = {pulses = 8, steps = 16, rotation = 0}
+                                end
+                            end
+                            -- Sync specific layer
+                            if container.euclideanLayers[layerIdx] then
+                                container.euclideanLayers[layerIdx].steps = v
+                            end
                             container.needsRegeneration = true
                         end
                     end
@@ -1933,19 +2018,29 @@ function UI.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, conta
 
                 obj.needsRegeneration = true
             end,
-            setEuclideanBindingRotation = function(bindingIdx, v)
+            setEuclideanBindingRotation = function(bindingIdx, layerIdx, v)
                 if not obj.euclideanBindingOrder or not obj.euclideanBindingOrder[bindingIdx] then return end
                 local uuid = obj.euclideanBindingOrder[bindingIdx]
                 if not obj.euclideanLayerBindings or not obj.euclideanLayerBindings[uuid] then return end
-                obj.euclideanLayerBindings[uuid].rotation = v
+                if not obj.euclideanLayerBindings[uuid][layerIdx] then return end
 
-                -- Sync with container if it's in override mode with Euclidean
+                obj.euclideanLayerBindings[uuid][layerIdx].rotation = v
+
+                -- Sync with container if it's in override mode with Euclidean (sync ALL layers)
                 if isGroup and groupIndex then
                     local group = globals.groups[groupIndex]
                     for _, container in ipairs(group.containers) do
                         if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
-                            if not container.euclideanLayers then container.euclideanLayers = {{pulses = 8, steps = 16, rotation = 1}} end
-                            container.euclideanLayers[1].rotation = v
+                            if not container.euclideanLayers then
+                                container.euclideanLayers = {}
+                                for i = 1, #obj.euclideanLayerBindings[uuid] do
+                                    container.euclideanLayers[i] = {pulses = 8, steps = 16, rotation = 0}
+                                end
+                            end
+                            -- Sync specific layer
+                            if container.euclideanLayers[layerIdx] then
+                                container.euclideanLayers[layerIdx].rotation = v
+                            end
                             container.needsRegeneration = true
                         end
                     end
@@ -3080,11 +3175,14 @@ function UI.drawEuclideanSavedPatternsList(dataObj, callbacks, isGroup, groupInd
         local selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
         if dataObj.euclideanBindingOrder and dataObj.euclideanBindingOrder[selectedIndex] then
             local uuid = dataObj.euclideanBindingOrder[selectedIndex]
-            local binding = dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid]
-            if binding then
-                currentPulses = binding.pulses or 8
-                currentSteps = binding.steps or 16
-                currentRotation = binding.rotation or 0
+            local bindingLayers = dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid]
+            if bindingLayers and #bindingLayers > 0 then
+                -- Get selected layer for this binding
+                local selectedLayerIdx = (dataObj.euclideanSelectedLayerPerBinding and dataObj.euclideanSelectedLayerPerBinding[uuid]) or 1
+                local layer = bindingLayers[selectedLayerIdx] or bindingLayers[1]
+                currentPulses = layer.pulses or 8
+                currentSteps = layer.steps or 16
+                currentRotation = layer.rotation or 0
             end
         end
     else

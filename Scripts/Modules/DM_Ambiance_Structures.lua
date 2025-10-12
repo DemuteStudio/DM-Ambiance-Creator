@@ -68,9 +68,10 @@ function Structures.createGroup(name)
         },
         -- Euclidean Layer Bindings (for groups only)
         euclideanAutoBindContainers = false,  -- If true, bind layers to child containers by UUID
-        euclideanLayerBindings = {},  -- {[containerUUID] = {pulses, steps, rotation}}
+        euclideanLayerBindings = {},  -- {[containerUUID] = {{pulses, steps, rotation}, {pulses, steps, rotation}, ...}}
         euclideanBindingOrder = {},  -- Array of containerUUIDs in display order
         euclideanSelectedBindingIndex = Constants.DEFAULTS.EUCLIDEAN_SELECTED_BINDING_INDEX,  -- Selected binding index (auto-bind mode)
+        euclideanSelectedLayerPerBinding = {},  -- {[containerUUID] = layerIndex} - Track selected layer per binding
         -- Euclidean Saved Patterns (for both groups and containers)
         euclideanSavedPatterns = {},  -- Array of {name, pulses, steps, rotation}
         -- Fade parameters
@@ -313,17 +314,19 @@ function Structures.getEffectiveContainerParams(group, container)
     if group.euclideanAutoBindContainers and container.id then
         -- Container has UUID and group is in auto-bind mode
         if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-            -- Combine parent binding + container's own layers
+            -- Combine parent binding layers + container's own layers
             useBinding = true
+            local combinedLayers = {}
 
-            -- Start with parent binding as first layer
-            local combinedLayers = {
-                {
-                    pulses = group.euclideanLayerBindings[container.id].pulses,
-                    steps = group.euclideanLayerBindings[container.id].steps,
-                    rotation = group.euclideanLayerBindings[container.id].rotation,
-                }
-            }
+            -- Add all parent binding layers (now an array)
+            local parentBindingLayers = group.euclideanLayerBindings[container.id]
+            for _, bindingLayer in ipairs(parentBindingLayers) do
+                table.insert(combinedLayers, {
+                    pulses = bindingLayer.pulses,
+                    steps = bindingLayer.steps,
+                    rotation = bindingLayer.rotation,
+                })
+            end
 
             -- Add container's own euclidean layers (if in Override mode)
             if container.overrideParent and container.euclideanLayers then
@@ -407,12 +410,13 @@ function Structures.syncEuclideanBindings(group)
             -- Container is eligible if:
             -- 1. It doesn't override parent (inherits euclidean settings), OR
             -- 2. It overrides AND uses euclidean trigger mode
+            -- EXCLUDE: Containers that override and are NOT euclidean
             local isEligible = false
             if not container.overrideParent then
                 -- Inherits from parent - eligible if parent is euclidean
                 isEligible = (group.intervalMode == 5)  -- TRIGGER_MODES.EUCLIDEAN
             else
-                -- Overrides parent - eligible if container itself is euclidean
+                -- Overrides parent - ONLY eligible if container itself is euclidean
                 isEligible = (container.intervalMode == 5)
             end
 
@@ -425,20 +429,41 @@ function Structures.syncEuclideanBindings(group)
     -- Create new bindings and binding order
     local newBindings = {}
     local newBindingOrder = {}
+    local newSelectedLayers = {}
 
     for _, container in ipairs(eligibleContainers) do
         local uuid = container.id
 
         -- Preserve existing binding if it exists
         if group.euclideanLayerBindings[uuid] then
-            newBindings[uuid] = group.euclideanLayerBindings[uuid]
+            local existingBinding = group.euclideanLayerBindings[uuid]
+
+            -- MIGRATION: Convert old single-object binding to array format
+            if existingBinding.pulses and existingBinding.steps then
+                -- Old format: {pulses, steps, rotation} - convert to array
+                newBindings[uuid] = {{
+                    pulses = existingBinding.pulses,
+                    steps = existingBinding.steps,
+                    rotation = existingBinding.rotation or globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION
+                }}
+            else
+                -- Already array format - preserve it
+                newBindings[uuid] = existingBinding
+            end
         else
-            -- Create new binding with default values
-            newBindings[uuid] = {
+            -- Create new binding array with default values (single layer initially)
+            newBindings[uuid] = {{
                 pulses = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
                 steps = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
                 rotation = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION
-            }
+            }}
+        end
+
+        -- Preserve selected layer index for this binding
+        if group.euclideanSelectedLayerPerBinding and group.euclideanSelectedLayerPerBinding[uuid] then
+            newSelectedLayers[uuid] = group.euclideanSelectedLayerPerBinding[uuid]
+        else
+            newSelectedLayers[uuid] = 1  -- Default to first layer
         end
 
         table.insert(newBindingOrder, uuid)
@@ -447,6 +472,7 @@ function Structures.syncEuclideanBindings(group)
     -- Update group's binding structures
     group.euclideanLayerBindings = newBindings
     group.euclideanBindingOrder = newBindingOrder
+    group.euclideanSelectedLayerPerBinding = newSelectedLayers
 end
 
 return Structures
