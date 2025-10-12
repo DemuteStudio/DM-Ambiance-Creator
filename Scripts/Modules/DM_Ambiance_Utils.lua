@@ -2586,6 +2586,30 @@ function Utils.euclideanRhythm(pulses, steps)
     return pattern
 end
 
+--- Generate euclidean rhythm pattern with rotation applied
+--- This is the single source of truth for euclidean pattern generation
+--- @param pulses number Number of hits in the pattern
+--- @param steps number Total number of steps
+--- @param rotation number Rotation offset (0-based)
+--- @return table Boolean array representing the pattern (true = hit, false = silence)
+function Utils.euclideanRhythmWithRotation(pulses, steps, rotation)
+    -- Generate base pattern
+    local pattern = Utils.euclideanRhythm(pulses, steps)
+
+    -- Apply rotation if needed
+    if rotation and rotation ~= 0 then
+        local normalizedRotation = rotation % steps
+        local rotated = {}
+        for i = 1, steps do
+            local sourceIndex = ((i - 1 - normalizedRotation) % steps) + 1
+            rotated[i] = pattern[sourceIndex]
+        end
+        pattern = rotated
+    end
+
+    return pattern
+end
+
 -- Calculate GCD (Greatest Common Divisor) using Euclidean algorithm
 -- @param a number: First number
 -- @param b number: Second number
@@ -2647,19 +2671,8 @@ function Utils.combineEuclideanLayers(layers)
         local steps = layer.steps or 16
         local rotation = layer.rotation or 0
 
-        -- Generate euclidean pattern
-        local pattern = Utils.euclideanRhythm(pulses, steps)
-
-        -- Apply rotation (shift pattern)
-        if rotation ~= 0 then
-            local normalizedRotation = rotation % steps
-            local rotated = {}
-            for i = 1, steps do
-                local sourceIndex = ((i - 1 - normalizedRotation) % steps) + 1
-                rotated[i] = pattern[sourceIndex]
-            end
-            pattern = rotated
-        end
+        -- Generate euclidean pattern with rotation (single source of truth)
+        local pattern = Utils.euclideanRhythmWithRotation(pulses, steps, rotation)
 
         -- Extract pulse steps
         local pulseSteps = {}

@@ -3045,18 +3045,12 @@ function UI.drawEuclideanPreview(dataObj, size, isGroup)
         local gridPositions = {}  -- {[gridPos] = {[layerIdx] = isHit}}
 
         for subLayerIdx, layer in ipairs(layerPatterns) do
-            -- Generate pattern for this individual layer
-            local layerPattern = globals.Utils.euclideanRhythm(layer.pulses, layer.steps)
-
-            -- Apply rotation
-            if layer.rotation and layer.rotation > 0 then
-                local rotatedPattern = {}
-                for i = 1, #layerPattern do
-                    local newIdx = ((i - 1 - layer.rotation) % #layerPattern) + 1
-                    rotatedPattern[i] = layerPattern[newIdx]
-                end
-                layerPattern = rotatedPattern
-            end
+            -- Generate pattern with rotation (single source of truth)
+            local layerPattern = globals.Utils.euclideanRhythmWithRotation(
+                layer.pulses,
+                layer.steps,
+                layer.rotation
+            )
 
             -- Map ALL positions of this layer to the LCM grid (both hits and silences)
             local layerSteps = layer.steps
