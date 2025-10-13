@@ -442,6 +442,56 @@ function RoutingValidator.analyzeSendsAndReceives(trackInfo)
     end
 end
 
+-- Calculate folder depth for a track (0 = top-level, higher = deeper in hierarchy)
+-- This is used for bottom-up validation to ensure parents are validated after children
+local function calculateTrackDepth(trackInfo, projectTree)
+    local depth = 0
+    local current = trackInfo
+    local visited = {}  -- Prevent infinite loops
+
+    while current and current.parent do
+        -- Find parent's trackInfo
+        local parentInfo = nil
+        for _, info in pairs(projectTree.allTracks) do
+            if info and info.track == current.parent then
+                parentInfo = info
+                break
+            end
+        end
+
+        if not parentInfo or visited[parentInfo.track] then
+            break  -- Reached top or detected cycle
+        end
+
+        visited[parentInfo.track] = true
+        depth = depth + 1
+        current = parentInfo
+    end
+
+    return depth
+end
+
+-- Sort tracks by depth (deepest first) and group by depth level
+-- Returns: tracksByDepth table and maxDepth number
+local function groupTracksByDepth(projectTree)
+    local tracksByDepth = {}
+    local maxDepth = 0
+
+    for _, trackInfo in pairs(projectTree.allTracks) do
+        if trackInfo then
+            local depth = calculateTrackDepth(trackInfo, projectTree)
+            maxDepth = math.max(maxDepth, depth)
+
+            if not tracksByDepth[depth] then
+                tracksByDepth[depth] = {}
+            end
+            table.insert(tracksByDepth[depth], trackInfo)
+        end
+    end
+
+    return tracksByDepth, maxDepth
+end
+
 -- Validate channel consistency across the entire project
 function RoutingValidator.validateChannelConsistency(projectTree)
     -- Check master track has sufficient channels
@@ -475,10 +525,85 @@ function RoutingValidator.validateChannelConsistency(projectTree)
         end
     end
 
-    -- Validate each track's channel requirements
-    for _, trackInfo in pairs(projectTree.allTracks) do
-        if trackInfo and #trackInfo.children > 0 then
-            RoutingValidator.validateParentChannelRequirements(trackInfo)
+    -- BOTTOM-UP VALIDATION: Validate by folder depth (deepest to shallowest)
+    -- This ensures each parent is validated exactly once, in the correct order
+    -- Children are always processed before their parents
+    local tracksByDepth, maxDepth = groupTracksByDepth(projectTree)
+
+    -- Validate from deepest level to top level (bottom-up)
+    for depth = maxDepth, 1, -1 do
+        local tracksAtDepth = tracksByDepth[depth] or {}
+
+        -- Group tracks at this depth by their parent
+        local childrenByParent = {}
+        for _, trackInfo in ipairs(tracksAtDepth) do
+            if trackInfo.parent then
+                if not childrenByParent[trackInfo.parent] then
+                    childrenByParent[trackInfo.parent] = {}
+                end
+                table.insert(childrenByParent[trackInfo.parent], trackInfo)
+            end
+        end
+
+        -- Validate each parent based on its children's requirements
+        for parentTrack, children in pairs(childrenByParent) do
+            -- Find parent's trackInfo
+            local parentInfo = nil
+            for _, info in pairs(projectTree.allTracks) do
+                if info and info.track == parentTrack then
+                    parentInfo = info
+                    break
+                end
+            end
+
+            if parentInfo then
+                -- Calculate max required channels from all children
+                local maxRequired = 0
+
+                for _, child in ipairs(children) do
+                    -- Check implicit folder routing (B_MAINSEND = parent send)
+                    local parentSend = reaper.GetMediaTrackInfo_Value(child.track, "B_MAINSEND")
+                    if parentSend == 1 then
+                        maxRequired = math.max(maxRequired, child.channelCount)
+                    end
+
+                    -- Check explicit sends
+                    for _, send in ipairs(child.sends) do
+                        if send.destTrack == parentTrack then
+                            local channelNum = RoutingValidator.parseDstChannel(send.dstChannel)
+                            maxRequired = math.max(maxRequired, channelNum)
+                        end
+                    end
+                end
+
+                -- Add issue if parent needs more channels
+                if maxRequired > parentInfo.channelCount then
+                    table.insert(parentInfo.issues, {
+                        type = ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS,
+                        severity = SEVERITY.ERROR,
+                        description = string.format("Track '%s' has %d channels but children require up to channel %d",
+                            parentInfo.name, parentInfo.channelCount, maxRequired),
+                        suggestedFix = {
+                            action = "set_channel_count",
+                            track = parentInfo.track,
+                            channels = maxRequired
+                        }
+                    })
+                elseif maxRequired > 0 and maxRequired < parentInfo.channelCount then
+                    -- Parent has excessive channels
+                    table.insert(parentInfo.issues, {
+                        type = ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS,
+                        severity = SEVERITY.WARNING,
+                        description = string.format("Track '%s' has %d channels but only needs %d (children use channels 1-%d)",
+                            parentInfo.name, parentInfo.channelCount, maxRequired, maxRequired),
+                        suggestedFix = {
+                            action = "set_channel_count",
+                            track = parentInfo.track,
+                            channels = maxRequired
+                        }
+                    })
+                end
+            end
         end
     end
 end
@@ -1935,14 +2060,14 @@ local function getFixDescription(issue)
         return "Realign routing to match master format"
     elseif issue.type == ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS then
         if issue.suggestedFix and issue.suggestedFix.channels then
-            return string.format("Increase parent track to %d channels", issue.suggestedFix.channels)
+            return string.format("Increase track to %d channels", issue.suggestedFix.channels)
         end
-        return "Increase parent track channel count"
+        return "Increase track channel count"
     elseif issue.type == ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS then
         if issue.suggestedFix and issue.suggestedFix.channels then
-            return string.format("Reduce parent track to %d channels", issue.suggestedFix.channels)
+            return string.format("Reduce track to %d channels", issue.suggestedFix.channels)
         end
-        return "Reduce parent track channel count"
+        return "Reduce track channel count"
     elseif issue.type == ISSUE_TYPES.ORPHAN_SEND then
         if issue.sendData then
             local channelNum = RoutingValidator.parseDstChannel(issue.sendData.dstChannel)
