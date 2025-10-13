@@ -43,8 +43,13 @@ function FadeSection.drawFadeSettingsSection(obj, objId, width, titlePrefix, gro
     obj.fadeOutShape = obj.fadeOutShape or Constants.GENERATION_DEFAULTS.FADE_OUT_SHAPE
     obj.fadeInCurve = obj.fadeInCurve or Constants.GENERATION_DEFAULTS.FADE_IN_CURVE
     obj.fadeOutCurve = obj.fadeOutCurve or Constants.GENERATION_DEFAULTS.FADE_OUT_CURVE
-    obj.fadeInUsePercentage = obj.fadeInUsePercentage or Constants.GENERATION_DEFAULTS.FADE_IN_USE_PERCENTAGE
-    obj.fadeOutUsePercentage = obj.fadeOutUsePercentage or Constants.GENERATION_DEFAULTS.FADE_OUT_USE_PERCENTAGE
+    -- Use == nil check for boolean values to allow false values
+    if obj.fadeInUsePercentage == nil then
+        obj.fadeInUsePercentage = Constants.GENERATION_DEFAULTS.FADE_IN_USE_PERCENTAGE
+    end
+    if obj.fadeOutUsePercentage == nil then
+        obj.fadeOutUsePercentage = Constants.GENERATION_DEFAULTS.FADE_OUT_USE_PERCENTAGE
+    end
     obj.fadeInDuration = obj.fadeInDuration or Constants.GENERATION_DEFAULTS.FADE_IN_DURATION
     obj.fadeOutDuration = obj.fadeOutDuration or Constants.GENERATION_DEFAULTS.FADE_OUT_DURATION
 
@@ -85,7 +90,7 @@ function FadeSection.drawFadeSettingsSection(obj, objId, width, titlePrefix, gro
     local durationSliderWidth = totalControlWidth - unitButtonWidth - shapeDropdownWidth - curveSliderWidth - shapeLabelWidth - curveLabelWidth - (spacing * 6)
 
     -- Helper function to draw fade controls with column-based alignment
-    local function drawFadeControls(fadeType, enabled, usePercentage, duration, shape, curve)
+    local function drawFadeControls(fadeType, enabled, duration, shape, curve)
         local suffix = fadeType .. objId
         local isIn = fadeType == "In"
 
@@ -114,9 +119,16 @@ function FadeSection.drawFadeSettingsSection(obj, objId, width, titlePrefix, gro
         globals.imgui.Dummy(globals.ctx, 0, 0)  -- Invisible spacer to maintain width
         globals.imgui.EndGroup(globals.ctx)
 
-        -- Unit button
+        -- Unit button (read current value from obj directly)
         globals.imgui.SameLine(globals.ctx)
         globals.imgui.BeginDisabled(globals.ctx, not enabled)
+        -- Use explicit if to handle boolean false correctly (can't use 'or' operator with booleans)
+        local usePercentage
+        if isIn then
+            usePercentage = obj.fadeInUsePercentage
+        else
+            usePercentage = obj.fadeOutUsePercentage
+        end
         local unitText = usePercentage and "%" or "sec"
         if globals.imgui.Button(globals.ctx, unitText .. "##Unit" .. suffix, unitButtonWidth, 0) then
             if isIn then obj.fadeInUsePercentage = not obj.fadeInUsePercentage
@@ -225,7 +237,6 @@ function FadeSection.drawFadeSettingsSection(obj, objId, width, titlePrefix, gro
     -- Draw Fade In controls
     drawFadeControls("In",
         obj.fadeInEnabled,
-        obj.fadeInUsePercentage,
         obj.fadeInDuration,
         obj.fadeInShape,
         obj.fadeInCurve)
@@ -233,7 +244,6 @@ function FadeSection.drawFadeSettingsSection(obj, objId, width, titlePrefix, gro
     -- Draw Fade Out controls
     drawFadeControls("Out",
         obj.fadeOutEnabled,
-        obj.fadeOutUsePercentage,
         obj.fadeOutDuration,
         obj.fadeOutShape,
         obj.fadeOutCurve)
