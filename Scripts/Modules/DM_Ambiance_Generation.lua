@@ -3157,12 +3157,27 @@ function Generation.applyChannelSelection(item, container, itemChannels, channel
         -- Used for multi-channel containers with stereo pair distribution
         -- trackIdx (1-based) determines which stereo pair to extract
 
-        local pairIndex = trackIdx - 1  -- Convert to 0-based index
+        local pairIndex
 
-        -- UPSAMPLING: If items don't have enough stereo pairs, randomly select from available
-        if trackStructure and trackStructure.upsampling and pairIndex >= trackStructure.availableStereoPairs then
-            -- Random selection from available pairs for missing tracks
-            pairIndex = math.random(0, trackStructure.availableStereoPairs - 1)
+        -- NEW: Check if container has stereoPairMapping (per-track pair selection)
+        if container.stereoPairMapping and container.stereoPairMapping[trackIdx] then
+            local mappedPair = container.stereoPairMapping[trackIdx]
+
+            if mappedPair == "random" then
+                -- Random mode: select random pair from available
+                local numPairs = math.floor(itemChannels / 2)
+                pairIndex = math.random(0, numPairs - 1)
+            else
+                pairIndex = mappedPair  -- Use user-selected pair for this track
+            end
+        else
+            -- FALLBACK: Old behavior (default mapping)
+            pairIndex = trackIdx - 1  -- Track 1 → pair 0, Track 2 → pair 1, etc.
+
+            -- UPSAMPLING: If items don't have enough stereo pairs, randomly select from available
+            if trackStructure and trackStructure.upsampling and pairIndex >= trackStructure.availableStereoPairs then
+                pairIndex = math.random(0, trackStructure.availableStereoPairs - 1)
+            end
         end
 
         -- Apply stereo pair extraction based on pair index

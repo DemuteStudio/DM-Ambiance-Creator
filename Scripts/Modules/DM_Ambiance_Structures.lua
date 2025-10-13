@@ -129,7 +129,8 @@ function Structures.createContainer(name)
         -- Item routing and distribution
         itemDistributionMode = 0,  -- 0=Round-robin, 1=Random, 2=All tracks (for mono items)
         channelSelectionMode = "none",  -- "none" (auto), "stereo" (stereo pairs), "mono" (mono split)
-        stereoPairSelection = 0,  -- Which stereo pair to select (0=Ch1-2, 1=Ch3-4, etc.)
+        stereoPairSelection = 0,  -- DEPRECATED: Use stereoPairMapping instead
+        stereoPairMapping = nil,  -- NEW: Per-track stereo pair selection: {[trackIdx] = pairIdx or "random"}
         monoChannelSelection = 0,  -- Which mono channel to select (0=Ch1, 1=Ch2, ..., or index>=itemChannels for Random)
         customItemRouting = {},  -- Custom routing per item: {[itemIndex] = {routingMatrix = {[srcCh]=destCh}, isAutoRouting = true}}
         -- Legacy support (will be migrated)
@@ -187,6 +188,33 @@ function Structures.createContainer(name)
         -- Regeneration tracking
         needsRegeneration = false
     }
+end
+
+-- Generate default stereo pair mapping for a container
+-- @param numTracks number: Number of stereo tracks to create
+-- @return table: Default mapping {[trackIdx] = pairIdx}
+function Structures.getDefaultStereoPairMapping(numTracks)
+    local mapping = {}
+    for i = 1, numTracks do
+        mapping[i] = i - 1  -- Track 1 → pair 0 (Ch1-2), Track 2 → pair 1 (Ch3-4), etc.
+    end
+    return mapping
+end
+
+-- Initialize stereoPairMapping if needed
+-- @param container table: Container to initialize
+-- @param numTracks number: Number of stereo tracks
+function Structures.ensureStereoPairMapping(container, numTracks)
+    if not container.stereoPairMapping or type(container.stereoPairMapping) ~= "table" then
+        container.stereoPairMapping = Structures.getDefaultStereoPairMapping(numTracks)
+    else
+        -- Ensure all track indices exist with valid defaults
+        for i = 1, numTracks do
+            if container.stereoPairMapping[i] == nil then
+                container.stereoPairMapping[i] = i - 1  -- Default to logical pair
+            end
+        end
+    end
 end
 
 -- Function to get effective container parameters, considering parent inheritance

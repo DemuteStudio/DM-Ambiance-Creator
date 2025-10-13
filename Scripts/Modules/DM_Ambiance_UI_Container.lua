@@ -1261,29 +1261,116 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             end
         end
 
+        -- Calculate number of stereo tracks based on output format
+        local outputChannels = globals.Generation.getOutputChannelCount(container.channelMode)
+        local numTracks = 0
+        if outputChannels == 2 then
+            numTracks = 1  -- Single stereo track
+        elseif outputChannels >= 4 then
+            -- Multi-channel: calculate number of stereo pairs
+            if outputChannels % 2 == 0 then
+                numTracks = outputChannels / 2  -- Even formats (4.0)
+            else
+                numTracks = (outputChannels - 1) / 2  -- Odd formats (5.0, 7.0) - skip center
+            end
+        end
+
         -- Only show if items have enough channels for stereo pairs
         if maxItemChannels >= 2 and maxItemChannels % 2 == 0 then
-            imgui.Text(globals.ctx, "Stereo Pair:")
-            imgui.SameLine(globals.ctx, labelWidth)
+            local numPairs = math.floor(maxItemChannels / 2)
 
-            local numPairs = maxItemChannels / 2
-            local stereoPairOptions = ""
-            for i = 0, numPairs - 1 do
-                local ch1 = i * 2 + 1
-                local ch2 = i * 2 + 2
-                stereoPairOptions = stereoPairOptions .. "Ch " .. ch1 .. "-" .. ch2 .. "\0"
-            end
+            -- Initialize stereoPairMapping if needed
+            globals.Structures.ensureStereoPairMapping(container, numTracks)
 
-            imgui.PushItemWidth(globals.ctx, comboWidth)
-            local pairChanged, newPair = globals.UndoWrappers.Combo(globals.ctx, "##StereoPair_" .. containerId, container.stereoPairSelection, stereoPairOptions)
-            if imgui.IsItemHovered(globals.ctx) then
-                imgui.SetTooltip(globals.ctx, "Select which stereo pair to extract from multichannel items.\n\nCh 1-2: Front L/R (most common)\nCh 3-4: Rear LS/RS\nCh 5-6: Additional channels\n\nOnly the selected pair will be used.")
+            -- If only 1 track (stereo output), show single dropdown (legacy behavior)
+            if numTracks == 1 then
+                imgui.Text(globals.ctx, "Stereo Pair:")
+                imgui.SameLine(globals.ctx, labelWidth)
+
+                local stereoPairOptions = ""
+                for i = 0, numPairs - 1 do
+                    local ch1 = i * 2 + 1
+                    local ch2 = i * 2 + 2
+                    stereoPairOptions = stereoPairOptions .. "Ch " .. ch1 .. "-" .. ch2 .. "\0"
+                end
+
+                -- Use stereoPairMapping[1] or fallback to old stereoPairSelection
+                local currentPair = container.stereoPairMapping[1] or container.stereoPairSelection or 0
+
+                imgui.PushItemWidth(globals.ctx, comboWidth)
+                local pairChanged, newPair = globals.UndoWrappers.Combo(globals.ctx, "##StereoPair_" .. containerId, currentPair, stereoPairOptions)
+                if imgui.IsItemHovered(globals.ctx) then
+                    imgui.SetTooltip(globals.ctx, "Select which stereo pair to extract from multichannel items.\n\nCh 1-2: Front L/R (most common)\nCh 3-4: Rear LS/RS\nCh 5-6: Additional channels")
+                end
+                if pairChanged then
+                    container.stereoPairMapping[1] = newPair
+                    container.stereoPairSelection = newPair  -- Backward compatibility
+                    container.needsRegeneration = true
+                end
+                imgui.PopItemWidth(globals.ctx)
+
+            elseif numTracks > 1 and numPairs > 1 then
+                -- Multiple tracks: show dropdown per track
+                imgui.Text(globals.ctx, "Stereo Pair Mapping:")
+
+                -- Build stereo pair options with "Random"
+                local stereoPairOptions = ""
+                for i = 0, numPairs - 1 do
+                    local ch1 = i * 2 + 1
+                    local ch2 = i * 2 + 2
+                    stereoPairOptions = stereoPairOptions .. "Ch " .. ch1 .. "-" .. ch2 .. "\0"
+                end
+                stereoPairOptions = stereoPairOptions .. "Random\0"
+
+                -- Show dropdown for each track
+                for trackIdx = 1, numTracks do
+                    imgui.Indent(globals.ctx, 20)
+
+                    -- Track label (L+R, LS+RS, LB+RB, etc.)
+                    local trackLabel = ""
+                    if trackIdx == 1 then trackLabel = "L+R"
+                    elseif trackIdx == 2 then trackLabel = "LS+RS"
+                    elseif trackIdx == 3 then trackLabel = "LB+RB"
+                    else trackLabel = "Track " .. trackIdx
+                    end
+
+                    imgui.Text(globals.ctx, trackLabel .. ":")
+                    imgui.SameLine(globals.ctx, labelWidth - 20)
+
+                    -- Get current pair selection for this track
+                    local currentPair = container.stereoPairMapping[trackIdx]
+                    local comboIndex
+                    if currentPair == "random" then
+                        comboIndex = numPairs  -- Last index is "Random"
+                    else
+                        comboIndex = currentPair or (trackIdx - 1)  -- Default to logical mapping
+                    end
+
+                    imgui.PushItemWidth(globals.ctx, comboWidth)
+                    local pairChanged, newIndex = globals.UndoWrappers.Combo(globals.ctx, "##StereoPairTrack" .. trackIdx .. "_" .. containerId, comboIndex, stereoPairOptions)
+                    if imgui.IsItemHovered(globals.ctx) then
+                        imgui.SetTooltip(globals.ctx, "Select which stereo pair from the source item to route to this track.\n\nCh 1-2: Usually Front L/R\nCh 3-4: Usually Rear LS/RS\nCh 5-6: Usually Back LB/RB or side surrounds\nRandom: Randomly select a pair for each item")
+                    end
+                    if pairChanged then
+                        if newIndex == numPairs then
+                            container.stereoPairMapping[trackIdx] = "random"
+                        else
+                            container.stereoPairMapping[trackIdx] = newIndex
+                        end
+                        container.needsRegeneration = true
+                    end
+                    imgui.PopItemWidth(globals.ctx)
+
+                    imgui.Unindent(globals.ctx, 20)
+                end
+
+            elseif numTracks > 1 and numPairs == 1 then
+                -- Multiple tracks but items only have 1 stereo pair - show info message
+                imgui.TextColored(globals.ctx, 0xFFAAAAFF, "ℹ Items have only 1 stereo pair")
+                imgui.Indent(globals.ctx, 20)
+                imgui.TextWrapped(globals.ctx, "Ch 1-2 will be used for all " .. numTracks .. " tracks")
+                imgui.Unindent(globals.ctx, 20)
             end
-            if pairChanged then
-                container.stereoPairSelection = newPair
-                container.needsRegeneration = true
-            end
-            imgui.PopItemWidth(globals.ctx)
         else
             -- Items don't support stereo pairs (odd channels)
             imgui.TextColored(globals.ctx, 0xFF4444FF, "⚠ Stereo pairs not available")
