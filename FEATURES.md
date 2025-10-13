@@ -48,12 +48,6 @@ Complete reference guide for all features available in DM Ambiance Creator.
 - **Interactive circular preview**
 - **Pattern browser** with preset library
 
-#### Fibonacci Mode
-- Placement based on Fibonacci sequence
-
-#### Golden Ratio Mode
-- Intervals based on golden ratio (φ)
-
 ### 1.2 Randomization
 
 #### Pitch
