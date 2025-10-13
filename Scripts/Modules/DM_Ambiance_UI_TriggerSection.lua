@@ -1177,53 +1177,59 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
         local spacing = imgui.GetStyleVar(globals.ctx, imgui.StyleVar_ItemSpacing)
         local totalWidth = (layerWidth * layerCount) + (spacing * math.max(0, layerCount - 1))
 
-        -- Use BeginGroup instead of BeginChild to avoid nested child window conflicts
-        -- BeginChild within RightPanel BeginChild causes context issues when scrolling
-        -- Horizontal scrolling handled by manually tracking content width
-        imgui.BeginGroup(globals.ctx)
+        -- Set content width for horizontal scrolling
+        imgui.SetNextWindowContentSize(globals.ctx, totalWidth, 0)
+
+        -- BeginChild with horizontal scrollbar
+        -- CRITICAL: Only call EndChild if BeginChild returns true
+        local windowFlags = imgui.WindowFlags_HorizontalScrollbar
+        local euclideanScrollVisible = imgui.BeginChild(globals.ctx, "EuclideanLayersScroll_" .. trackingKey, availWidth, contentHeight, 0, windowFlags)
+
+        if euclideanScrollVisible then
             if not isAutoBind then
-            -- MANUAL MODE: Use modular Euclidean UI
-            local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
-            globals.EuclideanUI.renderLayerColumns(
-                dataObj.euclideanLayers,
-                trackingKey,
-                adaptedCallbacks,
-                checkAutoRegen,
-                "manual_",
-                contentHeight
-            )
-        else
-            -- AUTO-BIND MODE: Use modular Euclidean UI
-            local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
-            local bindingOrder = dataObj.euclideanBindingOrder or {}
-            local uuid = bindingOrder[selectedBindingIndex]
+                -- MANUAL MODE: Use modular Euclidean UI
+                local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
+                globals.EuclideanUI.renderLayerColumns(
+                    dataObj.euclideanLayers,
+                    trackingKey,
+                    adaptedCallbacks,
+                    checkAutoRegen,
+                    "manual_",
+                    contentHeight
+                )
+            else
+                -- AUTO-BIND MODE: Use modular Euclidean UI
+                local selectedBindingIndex = dataObj.euclideanSelectedBindingIndex or 1
+                local bindingOrder = dataObj.euclideanBindingOrder or {}
+                local uuid = bindingOrder[selectedBindingIndex]
 
-            -- Get binding layers for selected container
-            local bindingLayers = {}
-            if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
-                bindingLayers = dataObj.euclideanLayerBindings[uuid]
-            end
+                -- Get binding layers for selected container
+                local bindingLayers = {}
+                if uuid and dataObj.euclideanLayerBindings and dataObj.euclideanLayerBindings[uuid] then
+                    bindingLayers = dataObj.euclideanLayerBindings[uuid]
+                end
 
-            local numLayers = #bindingLayers
-            if numLayers == 0 then
-                -- Fallback: create default layer
-                bindingLayers = {{pulses = 8, steps = 16, rotation = 0}}
-            end
+                local numLayers = #bindingLayers
+                if numLayers == 0 then
+                    -- Fallback: create default layer
+                    bindingLayers = {{pulses = 8, steps = 16, rotation = 0}}
+                end
 
-            local adaptedCallbacks = globals.EuclideanUI.createAutoBindModeCallbacks(callbacks, selectedBindingIndex)
-            local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
-            globals.EuclideanUI.renderLayerColumns(
-                bindingLayers,
-                trackingKey .. "_" .. itemIdentifier,
-                adaptedCallbacks,
-                checkAutoRegen,
-                "bind" .. selectedBindingIndex .. "_",
-                contentHeight
-            )
+                local adaptedCallbacks = globals.EuclideanUI.createAutoBindModeCallbacks(callbacks, selectedBindingIndex)
+                local itemIdentifier = uuid or ("binding_" .. selectedBindingIndex)
+                globals.EuclideanUI.renderLayerColumns(
+                    bindingLayers,
+                    trackingKey .. "_" .. itemIdentifier,
+                    adaptedCallbacks,
+                    checkAutoRegen,
+                    "bind" .. selectedBindingIndex .. "_",
+                    contentHeight
+                )
             end  -- Close if not isAutoBind
 
-        -- End group (no visibility check needed for groups)
-        imgui.EndGroup(globals.ctx)
+            -- CRITICAL: Only call EndChild if BeginChild returned true
+            imgui.EndChild(globals.ctx)
+        end
     end
 
     -- Fade in/out controls are commented out but can be enabled if needed

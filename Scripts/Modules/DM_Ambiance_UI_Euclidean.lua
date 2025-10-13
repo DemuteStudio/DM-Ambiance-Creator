@@ -82,117 +82,121 @@ function EuclideanUI.renderLayerColumn(config)
     local labelWidth = 60
     local sliderWidth = columnWidth - labelWidth - 20
 
-    -- Use BeginGroup instead of BeginChild to avoid nested child window conflicts
+    -- Use BeginChild with border for each layer
+    -- This creates a fixed-width container that allows absolute positioning
+    local childFlags = globals.imgui.ChildFlags_Border
+    if columnHeight == 0 then
+        childFlags = childFlags | globals.imgui.ChildFlags_AutoResizeY
+    end
+
     local layerColor = getLayerColor(layerIdx)
 
-    -- Draw border manually around the group
-    globals.imgui.PushStyleColor(ctx, globals.imgui.Col_Border, layerColor)
-    globals.imgui.PushStyleVar(ctx, globals.imgui.StyleVar_FrameBorderSize, 1)
-    globals.imgui.BeginGroup(ctx)
+    -- CRITICAL: Only render content if BeginChild returns true
+    local layerVisible = globals.imgui.BeginChild(ctx, idPrefix .. "EucLayer" .. layerIdx, columnWidth, columnHeight, childFlags)
 
-    -- Header with color indicator and Load Preset button on same line
-    globals.imgui.ColorButton(ctx, "##layerColorHeader" .. idPrefix .. layerIdx,
-        layerColor, globals.imgui.ColorEditFlags_NoTooltip, 16, 16)
-    globals.imgui.SameLine(ctx)
-    globals.imgui.Text(ctx, "Layer " .. layerIdx)
+    if layerVisible then
+        -- Header with color indicator and Load Preset button on same line
+        globals.imgui.ColorButton(ctx, "##layerColorHeader" .. idPrefix .. layerIdx,
+            layerColor, globals.imgui.ColorEditFlags_NoTooltip, 16, 16)
+        globals.imgui.SameLine(ctx)
+        globals.imgui.Text(ctx, "Layer " .. layerIdx)
 
-    -- Load Preset button on the same line, aligned to the right
-    globals.imgui.SameLine(ctx)
-    local cursorX = globals.imgui.GetCursorPosX(ctx)
-    local availWidth = columnWidth - cursorX + 10
-    globals.imgui.SetCursorPosX(ctx, columnWidth - 80)
-    if globals.imgui.Button(ctx, "Preset##" .. idPrefix .. "preset" .. layerIdx, 70, 0) then
-        -- Store context for the modal callback
-        globals.euclideanPatternModalContext = {
-            layerIdx = layerIdx,
-            callbacks = callbacks
-        }
-        globals.euclideanPatternModalOpen = true
+        -- Load Preset button on the same line, aligned to the right
+        globals.imgui.SameLine(ctx)
+        local cursorX = globals.imgui.GetCursorPosX(ctx)
+        local availWidth = columnWidth - cursorX + 10
+        globals.imgui.SetCursorPosX(ctx, columnWidth - 80)
+        if globals.imgui.Button(ctx, "Preset##" .. idPrefix .. "preset" .. layerIdx, 70, 0) then
+            -- Store context for the modal callback
+            globals.euclideanPatternModalContext = {
+                layerIdx = layerIdx,
+                callbacks = callbacks
+            }
+            globals.euclideanPatternModalOpen = true
+        end
+        if globals.imgui.IsItemHovered(ctx) then
+            globals.imgui.SetTooltip(ctx, "Load a rhythmic pattern preset")
+        end
+
+        globals.imgui.Spacing(ctx)
+
+        -- Pulses slider
+        globals.SliderEnhanced.SliderDouble({
+            id = "##Pulses_" .. idPrefix .. "Layer" .. layerIdx,
+            value = currentPulses,
+            min = 1,
+            max = 64,
+            defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
+            format = "%.0f",
+            width = sliderWidth,
+            onChange = function(newValue)
+                callbacks.setPulses(layerIdx, math.floor(newValue))
+            end,
+            onChangeComplete = function(oldValue, newValue)
+                if checkAutoRegen then
+                    checkAutoRegen()
+                end
+            end
+        })
+
+        globals.imgui.SameLine(ctx, 0, 5)
+        globals.imgui.AlignTextToFramePadding(ctx)
+        globals.imgui.Text(ctx, "Pulses")
+
+        globals.imgui.Spacing(ctx)
+
+        -- Steps slider
+        globals.SliderEnhanced.SliderDouble({
+            id = "##Steps_" .. idPrefix .. "Layer" .. layerIdx,
+            value = currentSteps,
+            min = 1,
+            max = 64,
+            defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
+            format = "%.0f",
+            width = sliderWidth,
+            onChange = function(newValue)
+                callbacks.setSteps(layerIdx, math.floor(newValue))
+            end,
+            onChangeComplete = function(oldValue, newValue)
+                if checkAutoRegen then
+                    checkAutoRegen()
+                end
+            end
+        })
+
+        globals.imgui.SameLine(ctx, 0, 5)
+        globals.imgui.AlignTextToFramePadding(ctx)
+        globals.imgui.Text(ctx, "Steps")
+
+        globals.imgui.Spacing(ctx)
+
+        -- Rotation slider
+        local maxRotation = currentSteps - 1
+        globals.SliderEnhanced.SliderDouble({
+            id = "##Rotation_" .. idPrefix .. "Layer" .. layerIdx,
+            value = currentRotation,
+            min = 0,
+            max = maxRotation,
+            defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
+            format = "%.0f",
+            width = sliderWidth,
+            onChange = function(newValue)
+                callbacks.setRotation(layerIdx, math.floor(newValue))
+            end,
+            onChangeComplete = function(oldValue, newValue)
+                if checkAutoRegen then
+                    checkAutoRegen()
+                end
+            end
+        })
+
+        globals.imgui.SameLine(ctx, 0, 5)
+        globals.imgui.AlignTextToFramePadding(ctx)
+        globals.imgui.Text(ctx, "Rotation")
+
+        -- CRITICAL: Only call EndChild if BeginChild returned true
+        globals.imgui.EndChild(ctx)
     end
-    if globals.imgui.IsItemHovered(ctx) then
-        globals.imgui.SetTooltip(ctx, "Load a rhythmic pattern preset")
-    end
-
-    globals.imgui.Spacing(ctx)
-
-    -- Pulses slider
-    globals.SliderEnhanced.SliderDouble({
-        id = "##Pulses_" .. idPrefix .. "Layer" .. layerIdx,
-        value = currentPulses,
-        min = 1,
-        max = 64,
-        defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_PULSES,
-        format = "%.0f",
-        width = sliderWidth,
-        onChange = function(newValue)
-            callbacks.setPulses(layerIdx, math.floor(newValue))
-        end,
-        onChangeComplete = function(oldValue, newValue)
-            if checkAutoRegen then
-                checkAutoRegen()
-            end
-        end
-    })
-
-    globals.imgui.SameLine(ctx, 0, 5)
-    globals.imgui.AlignTextToFramePadding(ctx)
-    globals.imgui.Text(ctx, "Pulses")
-
-    globals.imgui.Spacing(ctx)
-
-    -- Steps slider
-    globals.SliderEnhanced.SliderDouble({
-        id = "##Steps_" .. idPrefix .. "Layer" .. layerIdx,
-        value = currentSteps,
-        min = 1,
-        max = 64,
-        defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_STEPS,
-        format = "%.0f",
-        width = sliderWidth,
-        onChange = function(newValue)
-            callbacks.setSteps(layerIdx, math.floor(newValue))
-        end,
-        onChangeComplete = function(oldValue, newValue)
-            if checkAutoRegen then
-                checkAutoRegen()
-            end
-        end
-    })
-
-    globals.imgui.SameLine(ctx, 0, 5)
-    globals.imgui.AlignTextToFramePadding(ctx)
-    globals.imgui.Text(ctx, "Steps")
-
-    globals.imgui.Spacing(ctx)
-
-    -- Rotation slider
-    local maxRotation = currentSteps - 1
-    globals.SliderEnhanced.SliderDouble({
-        id = "##Rotation_" .. idPrefix .. "Layer" .. layerIdx,
-        value = currentRotation,
-        min = 0,
-        max = maxRotation,
-        defaultValue = globals.Constants.DEFAULTS.EUCLIDEAN_ROTATION,
-        format = "%.0f",
-        width = sliderWidth,
-        onChange = function(newValue)
-            callbacks.setRotation(layerIdx, math.floor(newValue))
-        end,
-        onChangeComplete = function(oldValue, newValue)
-            if checkAutoRegen then
-                checkAutoRegen()
-            end
-        end
-    })
-
-    globals.imgui.SameLine(ctx, 0, 5)
-    globals.imgui.AlignTextToFramePadding(ctx)
-    globals.imgui.Text(ctx, "Rotation")
-
-    -- End group and pop styles
-    globals.imgui.EndGroup(ctx)
-    globals.imgui.PopStyleVar(ctx, 1)
-    globals.imgui.PopStyleColor(ctx, 1)
 end
 
 --- Render multi-column layer interface
