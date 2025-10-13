@@ -435,6 +435,7 @@ function MainWindow.ShowMainWindow(open)
     end
 
     local visible, open = globals.imgui.Begin(globals.ctx, 'Ambiance Creator', open, windowFlags)
+    reaper.ShowConsoleMsg(string.format("[DEBUG] Main Begin() returned: visible=%s, open=%s\n", tostring(visible), tostring(open)))
 
     -- CRITICAL: Render content only if Begin() returned true (visible)
     if visible then
@@ -466,10 +467,20 @@ function MainWindow.ShowMainWindow(open)
     end
 
     -- CRITICAL: Always call End() after Begin(), regardless of visibility
-    globals.imgui.End(globals.ctx)
+    reaper.ShowConsoleMsg("[DEBUG] About to call main End()\n")
+    local success, err = pcall(function()
+        globals.imgui.End(globals.ctx)
+    end)
+    if success then
+        reaper.ShowConsoleMsg("[DEBUG] Main End() succeeded\n")
+    else
+        reaper.ShowConsoleMsg("[DEBUG] Main End() FAILED: " .. tostring(err) .. "\n")
+    end
 
     -- Render external windows and popups (outside main window)
+    reaper.ShowConsoleMsg("[DEBUG] About to call renderExternalWindows\n")
     renderExternalWindows()
+    reaper.ShowConsoleMsg("[DEBUG] renderExternalWindows completed\n")
 
     -- Process post-frame operations
     processPostFrameOperations()
