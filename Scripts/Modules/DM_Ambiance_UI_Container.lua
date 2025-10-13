@@ -190,35 +190,34 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             globals.selectedItemIndex[selectionKey] = -1
         end
         
-        -- Use PushID to create stable context
-        imgui.PushID(globals.ctx, containerId .. "_items")
-
         -- If we need to maintain the open state, set it before the header
         if globals.containerExpandedStates[expandedStateKey] then
             imgui.SetNextItemOpen(globals.ctx, true)
         end
 
-        -- Create header with stable ID
-        local headerLabel = "Imported items (" .. #container.items .. ")"
+        -- Create header with stable ID (using unique label instead of PushID)
+        local headerLabel = "Imported items (" .. #container.items .. ")##" .. containerId .. "_items"
         local wasExpanded = globals.containerExpandedStates[expandedStateKey]
         local isExpanded = imgui.CollapsingHeader(globals.ctx, headerLabel)
-        
+
         -- Track state changes
         if isExpanded ~= wasExpanded then
             globals.containerExpandedStates[expandedStateKey] = isExpanded
         end
-        
+
         -- Show content if expanded
         if isExpanded then
             local itemToDelete = nil
 
-            -- Create a child window for the item list to make it scrollable
-            -- Use full width minus space for scrollbar
+            -- Use BeginGroup for items list to avoid nested child window conflicts
+            -- The scrolling is already handled by the parent RightPanel child window
             local scrollbarWidth = 20  -- Approximate scrollbar width
             local listWidth = width - scrollbarWidth
-            if imgui.BeginChild(globals.ctx, "ItemsList" .. containerId, listWidth, 100) then
-                -- List all imported items as selectable items
-                for l, item in ipairs(container.items) do
+
+            imgui.BeginGroup(globals.ctx)
+
+            -- List all imported items as selectable items
+            for l, item in ipairs(container.items) do
                     imgui.PushID(globals.ctx, "item_" .. l)
 
                     local isSelected = (globals.selectedItemIndex[selectionKey] == l)
@@ -307,9 +306,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
                     imgui.PopID(globals.ctx)
                 end
-            end
-            -- CRITICAL: Always call EndChild after BeginChild, regardless of visibility
-            imgui.EndChild(globals.ctx)
+
+            -- End group (no visibility check needed for groups)
+            imgui.EndGroup(globals.ctx)
 
             -- Remove the item if the delete button was pressed
             if itemToDelete then
@@ -339,8 +338,6 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             end
 
         end
-
-        imgui.PopID(globals.ctx)
     end
 
     -- Waveform Viewer Section (for selected imported items) - only visible in Edit Mode

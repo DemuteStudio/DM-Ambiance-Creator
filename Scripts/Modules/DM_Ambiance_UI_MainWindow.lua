@@ -463,10 +463,10 @@ function MainWindow.ShowMainWindow(open)
                 drawFunc()
             end
         end
-
-        -- CRITICAL: Only call End() if Begin() returned true
-        globals.imgui.End(globals.ctx)
     end
+
+    -- CRITICAL: Always call End() after Begin(), regardless of visibility
+    globals.imgui.End(globals.ctx)
 
     -- Render external windows and popups (outside main window)
     renderExternalWindows()

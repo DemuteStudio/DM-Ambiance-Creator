@@ -82,16 +82,15 @@ function EuclideanUI.renderLayerColumn(config)
     local labelWidth = 60
     local sliderWidth = columnWidth - labelWidth - 20
 
-    -- Use BeginChild with border for each layer
-    local childFlags = globals.imgui.ChildFlags_Border
-    if columnHeight == 0 then
-        childFlags = childFlags | globals.imgui.ChildFlags_AutoResizeY
-    end
-    local visible = globals.imgui.BeginChild(ctx, idPrefix .. "EucLayer" .. layerIdx, columnWidth, columnHeight, childFlags)
-
-    if visible then
-        -- Header with color indicator and Load Preset button on same line
+    -- Use BeginGroup instead of BeginChild to avoid nested child window conflicts
     local layerColor = getLayerColor(layerIdx)
+
+    -- Draw border manually around the group
+    globals.imgui.PushStyleColor(ctx, globals.imgui.Col_Border, layerColor)
+    globals.imgui.PushStyleVar(ctx, globals.imgui.StyleVar_FrameBorderSize, 1)
+    globals.imgui.BeginGroup(ctx)
+
+    -- Header with color indicator and Load Preset button on same line
     globals.imgui.ColorButton(ctx, "##layerColorHeader" .. idPrefix .. layerIdx,
         layerColor, globals.imgui.ColorEditFlags_NoTooltip, 16, 16)
     globals.imgui.SameLine(ctx)
@@ -189,10 +188,11 @@ function EuclideanUI.renderLayerColumn(config)
     globals.imgui.SameLine(ctx, 0, 5)
     globals.imgui.AlignTextToFramePadding(ctx)
     globals.imgui.Text(ctx, "Rotation")
-    end  -- Close if visible block
 
-    -- End child (CRITICAL: Always call EndChild after BeginChild, regardless of visibility)
-    globals.imgui.EndChild(ctx)
+    -- End group and pop styles
+    globals.imgui.EndGroup(ctx)
+    globals.imgui.PopStyleVar(ctx, 1)
+    globals.imgui.PopStyleColor(ctx, 1)
 end
 
 --- Render multi-column layer interface

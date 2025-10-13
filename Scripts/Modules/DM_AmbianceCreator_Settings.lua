@@ -304,10 +304,10 @@ function Settings.showSettingsWindow(open)
             openResult = false
             buttonPressed = true
         end
-        
-        -- CRITICAL: Only call End() if Begin() returned true
-        imgui.End(ctx)
     end
+
+    -- CRITICAL: Always call End() after Begin(), regardless of visibility
+    imgui.End(ctx)
     
     -- Handle window closed by X button (not by Save/Cancel buttons)
     if open and not openResult and not buttonPressed then

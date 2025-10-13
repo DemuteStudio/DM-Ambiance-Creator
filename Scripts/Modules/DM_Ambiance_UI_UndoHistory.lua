@@ -92,9 +92,10 @@ function UI_UndoHistory.showWindow()
         end
         imgui.SameLine(ctx)
         imgui.Text(ctx, string.format("Current: %d / %d", currentIndex, #historyStack))
-
-        imgui.End(ctx)
     end
+
+    -- CRITICAL: Always call End() after Begin(), regardless of visibility
+    imgui.End(ctx)
 
     return open
 end

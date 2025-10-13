@@ -1177,15 +1177,10 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
         local spacing = imgui.GetStyleVar(globals.ctx, imgui.StyleVar_ItemSpacing)
         local totalWidth = (layerWidth * layerCount) + (spacing * math.max(0, layerCount - 1))
 
-        -- Set content size BEFORE BeginChild to enable horizontal scrolling
-        imgui.SetNextWindowContentSize(globals.ctx, totalWidth, 0)
-
-        -- BeginChild with WindowFlags_HorizontalScrollbar
-        -- Parameters: ctx, id, width, height, child_flags, window_flags
-        local windowFlags = imgui.WindowFlags_HorizontalScrollbar
-        local visible = imgui.BeginChild(globals.ctx, "EuclideanLayersScroll_" .. trackingKey, availWidth, contentHeight, 0, windowFlags)
-
-        if visible then
+        -- Use BeginGroup instead of BeginChild to avoid nested child window conflicts
+        -- BeginChild within RightPanel BeginChild causes context issues when scrolling
+        -- Horizontal scrolling handled by manually tracking content width
+        imgui.BeginGroup(globals.ctx)
             if not isAutoBind then
             -- MANUAL MODE: Use modular Euclidean UI
             local adaptedCallbacks = globals.EuclideanUI.createManualModeCallbacks(callbacks)
@@ -1226,10 +1221,9 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
                 contentHeight
             )
             end  -- Close if not isAutoBind
-        end  -- Close if visible
 
-        -- CRITICAL: Always call EndChild after BeginChild, regardless of visibility
-        imgui.EndChild(globals.ctx)
+        -- End group (no visibility check needed for groups)
+        imgui.EndGroup(globals.ctx)
     end
 
     -- Fade in/out controls are commented out but can be enabled if needed

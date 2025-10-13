@@ -3694,10 +3694,10 @@ function UI.ShowMainWindow_OLD(open)
                 drawFunc()
             end
         end
-
-        -- CRITICAL: Only call End() if Begin() returned true
-        globals.imgui.End(globals.ctx)
     end
+
+    -- CRITICAL: Always call End() after Begin(), regardless of visibility
+    globals.imgui.End(globals.ctx)
 
     -- Render Euclidean pattern preset browser modal (must be outside main window)
     UI.drawEuclideanPatternPresetBrowser()
