@@ -349,6 +349,7 @@ end
 -- Context stored in globals.euclideanPatternModalContext contains:
 -- - callbacks: {setPulses, setSteps, setRotation}
 -- - layerIdx: Index of the layer to modify
+-- - checkAutoRegen: Function to call after applying preset (triggers auto-regen if enabled)
 function EuclideanSection.drawEuclideanPatternPresetBrowser()
     -- Check if modal should be opened (button was clicked)
     if globals.euclideanPatternModalOpen then
@@ -513,6 +514,11 @@ function EuclideanSection.drawEuclideanPatternPresetBrowser()
                             if callbacks.setRotation then
                                 callbacks.setRotation(layerIdx, 0)
                             end
+
+                            -- Trigger auto-regeneration check
+                            if ctx.checkAutoRegen then
+                                ctx.checkAutoRegen()
+                            end
                         end
                         -- Close window after selection
                         globals.euclideanPatternBrowserOpen = false
@@ -560,6 +566,11 @@ function EuclideanSection.drawEuclideanPatternPresetBrowser()
                                 -- Reset rotation to 0 when loading preset
                                 if callbacks.setRotation then
                                     callbacks.setRotation(layerIdx, 0)
+                                end
+
+                                -- Trigger auto-regeneration check
+                                if ctx.checkAutoRegen then
+                                    ctx.checkAutoRegen()
                                 end
                             end
                             -- Close window after selection

@@ -110,7 +110,8 @@ function EuclideanUI.renderLayerColumn(config)
             -- Store context for the modal callback
             globals.euclideanPatternModalContext = {
                 layerIdx = layerIdx,
-                callbacks = callbacks
+                callbacks = callbacks,
+                checkAutoRegen = checkAutoRegen
             }
             globals.euclideanPatternModalOpen = true
         end
