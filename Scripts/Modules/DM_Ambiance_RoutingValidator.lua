@@ -77,6 +77,7 @@ end
 local ISSUE_TYPES = {
     CHANNEL_CONFLICT = "channel_conflict",
     PARENT_INSUFFICIENT_CHANNELS = "parent_insufficient_channels",
+    PARENT_EXCESSIVE_CHANNELS = "parent_excessive_channels",  -- NEW: Track has more channels than needed
     ORPHAN_SEND = "orphan_send",
     CIRCULAR_ROUTING = "circular_routing",
     DOWNMIX_ERROR = "downmix_error",
@@ -458,6 +459,19 @@ function RoutingValidator.validateChannelConsistency(projectTree)
                     channels = maxRequiredChannels
                 }
             })
+        elseif projectTree.master.channelCount > maxRequiredChannels and maxRequiredChannels >= 2 then
+            -- Master has more channels than needed - suggest reduction
+            table.insert(projectTree.master.issues, {
+                type = ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS,
+                severity = SEVERITY.WARNING,
+                description = string.format("Master track has %d channels but only needs %d",
+                    projectTree.master.channelCount, maxRequiredChannels),
+                suggestedFix = {
+                    action = "set_channel_count",
+                    track = projectTree.master.track,
+                    channels = maxRequiredChannels
+                }
+            })
         end
     end
 
@@ -488,8 +502,21 @@ function RoutingValidator.calculateMaxRequiredChannels(projectTree)
                 local itemsAnalysis = globals.Generation.analyzeContainerItems(container)
                 local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
 
-                if trackStructure and trackStructure.numTracks then
-                    maxChannels = math.max(maxChannels, trackStructure.numTracks)
+                if trackStructure then
+                    -- CRITICAL FIX: Use the actual channel count, not the number of tracks
+                    -- For single-track multi-channel (e.g., perfect-match-passthrough):
+                    --   numTracks = 1, trackChannels = 4 → need 4 channels
+                    -- For multi-track mono (e.g., 4 mono child tracks):
+                    --   numTracks = 4, trackChannels = 1 → need 4 channels
+                    local requiredChannels = 0
+                    if trackStructure.numTracks == 1 and trackStructure.trackChannels then
+                        -- Single multi-channel track
+                        requiredChannels = trackStructure.trackChannels
+                    else
+                        -- Multiple tracks (each routing to a channel)
+                        requiredChannels = trackStructure.numTracks
+                    end
+                    maxChannels = math.max(maxChannels, requiredChannels)
                 end
             end
         end
@@ -593,6 +620,25 @@ function RoutingValidator.validateParentChannelRequirements(parentInfo)
                 maxRequiredChannel = math.max(maxRequiredChannel, channelNum)
             end
         end
+
+        -- CRITICAL FIX: Check folder parent routing (implicit routing)
+        -- When a track is inside a folder, it automatically routes to the folder parent
+        -- even without explicit sends. We need to check if the child's channel count
+        -- requires more channels than the parent has.
+        if childInfo.parent == parentInfo.track then
+            -- This child implicitly routes to this parent via folder structure
+            -- Check if child uses "Parent channel" routing (default behavior)
+            local childTrack = childInfo.track
+            local parentSend = reaper.GetMediaTrackInfo_Value(childTrack, "B_MAINSEND")
+
+            if parentSend == 1 then
+                -- Parent send is enabled (default behavior)
+                -- Child channels route to parent: child needs parent to have at least as many channels
+                -- Note: In REAPER folder routing, child's full channel count routes to parent
+                local requiredChannels = childInfo.channelCount
+                maxRequiredChannel = math.max(maxRequiredChannel, requiredChannels)
+            end
+        end
     end
 
     if maxRequiredChannel > parentInfo.channelCount then
@@ -601,6 +647,19 @@ function RoutingValidator.validateParentChannelRequirements(parentInfo)
             severity = SEVERITY.ERROR,
             description = string.format("Track '%s' has %d channels but children require up to channel %d",
                 parentInfo.name, parentInfo.channelCount, maxRequiredChannel),
+            suggestedFix = {
+                action = "set_channel_count",
+                track = parentInfo.track,
+                channels = maxRequiredChannel
+            }
+        })
+    elseif maxRequiredChannel > 0 and maxRequiredChannel < parentInfo.channelCount then
+        -- Parent has more channels than needed - suggest reduction
+        table.insert(parentInfo.issues, {
+            type = ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS,
+            severity = SEVERITY.WARNING,
+            description = string.format("Track '%s' has %d channels but only needs %d (children use channels 1-%d)",
+                parentInfo.name, parentInfo.channelCount, maxRequiredChannel, maxRequiredChannel),
             suggestedFix = {
                 action = "set_channel_count",
                 track = parentInfo.track,
@@ -1069,6 +1128,8 @@ function RoutingValidator.generateFixSuggestion(issue, projectTree)
     elseif issue.type == ISSUE_TYPES.CHANNEL_CONFLICT then
         return RoutingValidator.suggestChannelConflictFix(issue, projectTree)
     elseif issue.type == ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS then
+        return issue.suggestedFix  -- Already included in issue
+    elseif issue.type == ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS then
         return issue.suggestedFix  -- Already included in issue
     elseif issue.type == ISSUE_TYPES.ORPHAN_SEND then
         return RoutingValidator.suggestOrphanSendFix(issue, projectTree)
@@ -1873,10 +1934,15 @@ local function getFixDescription(issue)
         end
         return "Realign routing to match master format"
     elseif issue.type == ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS then
-        if issue.suggestedFix and issue.suggestedFix.requiredChannels then
-            return string.format("Increase parent track to %d channels", issue.suggestedFix.requiredChannels)
+        if issue.suggestedFix and issue.suggestedFix.channels then
+            return string.format("Increase parent track to %d channels", issue.suggestedFix.channels)
         end
         return "Increase parent track channel count"
+    elseif issue.type == ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS then
+        if issue.suggestedFix and issue.suggestedFix.channels then
+            return string.format("Reduce parent track to %d channels", issue.suggestedFix.channels)
+        end
+        return "Reduce parent track channel count"
     elseif issue.type == ISSUE_TYPES.ORPHAN_SEND then
         if issue.sendData then
             local channelNum = RoutingValidator.parseDstChannel(issue.sendData.dstChannel)

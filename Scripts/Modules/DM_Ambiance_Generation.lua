@@ -1367,8 +1367,9 @@ function Generation.generateGroups()
         end
     end
 
-    -- Check for routing conflicts after generating all groups
-    Generation.checkAndResolveConflicts()
+    -- NOTE: Routing validation is handled in stabilizeProjectConfiguration() below
+    -- Don't call checkAndResolveConflicts() here to avoid duplicate validation
+    -- on issues that will be auto-corrected by recalculateChannelRequirements()
 
     -- Clear regeneration flags for all groups and containers
     for _, group in ipairs(globals.groups) do
@@ -2681,9 +2682,15 @@ function Generation.stabilizeProjectConfiguration(lightMode)
         -- Capture project state before changes
         local startState = Generation.captureProjectState()
 
-        -- Recalculate channel requirements bottom-up
-        -- reaper.ShowConsoleMsg("  → Recalculating channel requirements...\n")
-        Generation.recalculateChannelRequirements()
+        -- CRITICAL: Only recalculate channel requirements if auto-fix is enabled
+        -- This prevents automatic modification of parent tracks without user authorization
+        -- The RoutingValidator will detect issues and let the user decide whether to apply fixes
+        if globals.autoFixRouting then
+            -- reaper.ShowConsoleMsg("  → Recalculating channel requirements (auto-fix enabled)...\n")
+            Generation.recalculateChannelRequirements()
+        else
+            -- reaper.ShowConsoleMsg("  → Skipping recalculation (manual validation mode)...\n")
+        end
 
         -- Capture project state after changes
         local endState = Generation.captureProjectState()
