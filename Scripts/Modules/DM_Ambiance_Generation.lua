@@ -3152,6 +3152,30 @@ function Generation.applyChannelSelection(item, container, itemChannels, channel
             reaper.Main_OnCommand(41456, 0) -- Channels 7-8
         end
 
+    elseif channelSelectionMode == "split-stereo" then
+        -- Split stereo pairs: Extract different stereo pair per track
+        -- Used for multi-channel containers with stereo pair distribution
+        -- trackIdx (1-based) determines which stereo pair to extract
+
+        local pairIndex = trackIdx - 1  -- Convert to 0-based index
+
+        -- UPSAMPLING: If items don't have enough stereo pairs, randomly select from available
+        if trackStructure and trackStructure.upsampling and pairIndex >= trackStructure.availableStereoPairs then
+            -- Random selection from available pairs for missing tracks
+            pairIndex = math.random(0, trackStructure.availableStereoPairs - 1)
+        end
+
+        -- Apply stereo pair extraction based on pair index
+        if pairIndex == 0 then
+            reaper.Main_OnCommand(41450, 0) -- Channels 1-2 (L/R)
+        elseif pairIndex == 1 then
+            reaper.Main_OnCommand(41452, 0) -- Channels 3-4 (LS/RS)
+        elseif pairIndex == 2 then
+            reaper.Main_OnCommand(41454, 0) -- Channels 5-6 (LB/RB)
+        elseif pairIndex == 3 then
+            reaper.Main_OnCommand(41456, 0) -- Channels 7-8
+        end
+
     elseif channelSelectionMode == "mono" then
         -- Mono channel selection
         -- Priority: trackStructure value (auto-forced) > container value (user choice)
@@ -3555,9 +3579,15 @@ function Generation.determineTrackStructure(container, itemsAnalysis)
     end
 
     -- ═══════════════════════════════════════════════════════════
-    -- RÈGLE 2 : Match parfait → Passthrough (1 track)
+    -- RÈGLE 2 : Channel Selection Mode (get early for priority check)
     -- ═══════════════════════════════════════════════════════════
-    if itemCh == outputChannels then
+    local channelSelectionMode = container.channelSelectionMode or "none"
+
+    -- ═══════════════════════════════════════════════════════════
+    -- RÈGLE 3 : Match parfait → Passthrough (1 track)
+    -- SAUF si l'utilisateur force explicitement Mono ou Stereo
+    -- ═══════════════════════════════════════════════════════════
+    if itemCh == outputChannels and channelSelectionMode == "none" then
         return {
             strategy = "perfect-match-passthrough",
             numTracks = 1,
@@ -3569,7 +3599,7 @@ function Generation.determineTrackStructure(container, itemsAnalysis)
     end
 
     -- ═══════════════════════════════════════════════════════════
-    -- RÈGLE 3 : Items MONO → Distribution sur N tracks mono
+    -- RÈGLE 4 : Items MONO → Distribution sur N tracks mono
     -- ═══════════════════════════════════════════════════════════
     if itemCh == 1 then
         return {
@@ -3584,10 +3614,9 @@ function Generation.determineTrackStructure(container, itemsAnalysis)
 
     -- ═══════════════════════════════════════════════════════════
     -- À partir d'ici : itemCh > 1 et itemCh != outputChannels
+    -- (ou itemCh == outputChannels avec mode explicite mono/stereo)
     -- → Besoin de Channel Selection (downmix/split)
     -- ═══════════════════════════════════════════════════════════
-
-    local channelSelectionMode = container.channelSelectionMode or "none"
 
     -- ═══════════════════════════════════════════════════════════
     -- RÈGLE 4 : Channel Selection = STEREO
@@ -3647,9 +3676,23 @@ function Generation.determineTrackStructure(container, itemsAnalysis)
             end
         end
 
-        -- Cas : Container multi avec items 4ch+
-        if outputChannels >= 4 and numStereoPairs >= 2 then
-            local targetPairs = math.min(numStereoPairs, math.floor(outputChannels / 2))
+        -- Cas : Container multi avec items 2ch+ (allow upsampling if needed)
+        if outputChannels >= 4 and numStereoPairs >= 1 then
+            -- CORRECTED: Calculate target pairs correctly for odd/even channel formats
+            -- Even formats (4.0): outputChannels / 2 = 2 pairs (L+R, LS+RS)
+            -- Odd formats (5.0, 7.0): (outputChannels - 1) / 2 (skip center channel)
+            --   5.0: (5-1)/2 = 2 pairs (L+R, LS+RS)
+            --   7.0: (7-1)/2 = 3 pairs (L+R, LS+RS, LB+RB)
+            local targetPairs
+            if outputChannels % 2 == 0 then
+                targetPairs = outputChannels / 2  -- Even channel formats
+            else
+                targetPairs = (outputChannels - 1) / 2  -- Odd channel formats (skip center)
+            end
+
+            -- Check if upsampling is needed (items have fewer pairs than needed)
+            local needsUpsampling = numStereoPairs < targetPairs
+
             return {
                 strategy = "split-stereo-pairs",
                 numTracks = targetPairs,
@@ -3658,6 +3701,8 @@ function Generation.determineTrackStructure(container, itemsAnalysis)
                 needsChannelSelection = true,
                 channelSelectionMode = "split-stereo",
                 trackLabels = Generation.generateStereoPairLabels(itemCh, targetPairs),
+                upsampling = needsUpsampling,
+                availableStereoPairs = numStereoPairs,
             }
         end
 

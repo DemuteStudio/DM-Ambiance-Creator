@@ -494,37 +494,6 @@ end
 
 -- Validate channel consistency across the entire project
 function RoutingValidator.validateChannelConsistency(projectTree)
-    -- Check master track has sufficient channels
-    if projectTree.master then
-        local maxRequiredChannels = RoutingValidator.calculateMaxRequiredChannels(projectTree)
-        if projectTree.master.channelCount < maxRequiredChannels then
-            table.insert(projectTree.master.issues, {
-                type = ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS,
-                severity = SEVERITY.ERROR,
-                description = string.format("Master track has %d channels but needs %d",
-                    projectTree.master.channelCount, maxRequiredChannels),
-                suggestedFix = {
-                    action = "set_channel_count",
-                    track = projectTree.master.track,
-                    channels = maxRequiredChannels
-                }
-            })
-        elseif projectTree.master.channelCount > maxRequiredChannels and maxRequiredChannels >= 2 then
-            -- Master has more channels than needed - suggest reduction
-            table.insert(projectTree.master.issues, {
-                type = ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS,
-                severity = SEVERITY.WARNING,
-                description = string.format("Master track has %d channels but only needs %d",
-                    projectTree.master.channelCount, maxRequiredChannels),
-                suggestedFix = {
-                    action = "set_channel_count",
-                    track = projectTree.master.track,
-                    channels = maxRequiredChannels
-                }
-            })
-        end
-    end
-
     -- BOTTOM-UP VALIDATION: Validate by folder depth (deepest to shallowest)
     -- This ensures each parent is validated exactly once, in the correct order
     -- Children are always processed before their parents
@@ -564,7 +533,32 @@ function RoutingValidator.validateChannelConsistency(projectTree)
                     -- Check implicit folder routing (B_MAINSEND = parent send)
                     local parentSend = reaper.GetMediaTrackInfo_Value(child.track, "B_MAINSEND")
                     if parentSend == 1 then
-                        maxRequired = math.max(maxRequired, child.channelCount)
+                        -- CRITICAL: Check if child is a folder and has children using higher channels
+                        local actualChannelsUsed = child.channelCount
+
+                        local childFolderDepth = reaper.GetMediaTrackInfo_Value(child.track, "I_FOLDERDEPTH")
+                        if childFolderDepth == 1 then
+                            -- Child is a folder - check what its children actually use
+                            for _, grandchild in pairs(projectTree.allTracks) do
+                                if grandchild.parent == child.track then
+                                    -- Check explicit sends from grandchild to child
+                                    for _, send in ipairs(grandchild.sends) do
+                                        if send.destTrack == child.track then
+                                            local channelNum = RoutingValidator.parseDstChannel(send.dstChannel)
+                                            actualChannelsUsed = math.max(actualChannelsUsed, channelNum)
+                                        end
+                                    end
+
+                                    -- Check implicit routing (B_MAINSEND to child)
+                                    local grandchildParentSend = reaper.GetMediaTrackInfo_Value(grandchild.track, "B_MAINSEND")
+                                    if grandchildParentSend == 1 then
+                                        actualChannelsUsed = math.max(actualChannelsUsed, grandchild.channelCount)
+                                    end
+                                end
+                            end
+                        end
+
+                        maxRequired = math.max(maxRequired, actualChannelsUsed)
                     end
 
                     -- Check explicit sends
@@ -604,6 +598,86 @@ function RoutingValidator.validateChannelConsistency(projectTree)
                     })
                 end
             end
+        end
+    end
+
+    -- MASTER VALIDATION (depth 0): Validate Master track against all top-level tracks
+    if projectTree.master then
+        local maxRequired = 0
+
+        -- Find all tracks at depth 0 (top-level tracks that send to Master)
+        local topLevelTracks = tracksByDepth[0] or {}
+
+        for _, trackInfo in ipairs(topLevelTracks) do
+            -- Check implicit folder routing (B_MAINSEND)
+            local masterSend = reaper.GetMediaTrackInfo_Value(trackInfo.track, "B_MAINSEND")
+            if masterSend == 1 then
+                -- CRITICAL: Use the ACTUAL channel requirements based on children's sends
+                -- Not just the configured channelCount, but the HIGHEST channel used
+                local actualChannelsUsed = 0
+
+                -- Check if this track has children (folder track)
+                local hasFolderDepth = reaper.GetMediaTrackInfo_Value(trackInfo.track, "I_FOLDERDEPTH")
+                if hasFolderDepth == 1 then
+                    -- This is a folder - check what channels its children actually use
+                    for _, otherTrack in pairs(projectTree.allTracks) do
+                        if otherTrack.parent == trackInfo.track then
+                            -- Check sends from this child to its parent
+                            for _, send in ipairs(otherTrack.sends) do
+                                if send.destTrack == trackInfo.track then
+                                    local channelNum = RoutingValidator.parseDstChannel(send.dstChannel)
+                                    actualChannelsUsed = math.max(actualChannelsUsed, channelNum)
+                                end
+                            end
+
+                            -- Check implicit routing (B_MAINSEND to parent)
+                            local parentSend = reaper.GetMediaTrackInfo_Value(otherTrack.track, "B_MAINSEND")
+                            if parentSend == 1 then
+                                actualChannelsUsed = math.max(actualChannelsUsed, otherTrack.channelCount)
+                            end
+                        end
+                    end
+                end
+
+                -- Use the maximum of configured channels or actual channels used
+                maxRequired = math.max(maxRequired, math.max(trackInfo.channelCount, actualChannelsUsed))
+            end
+
+            -- Check explicit sends to Master
+            for _, send in ipairs(trackInfo.sends) do
+                if send.destTrack == projectTree.master.track then
+                    local channelNum = RoutingValidator.parseDstChannel(send.dstChannel)
+                    maxRequired = math.max(maxRequired, channelNum)
+                end
+            end
+        end
+
+        -- Add issue if Master needs more channels
+        if maxRequired > projectTree.master.channelCount then
+            table.insert(projectTree.master.issues, {
+                type = ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS,
+                severity = SEVERITY.ERROR,
+                description = string.format("Master track has %d channels but needs %d (top-level tracks use channels 1-%d)",
+                    projectTree.master.channelCount, maxRequired, maxRequired),
+                suggestedFix = {
+                    action = "set_channel_count",
+                    track = projectTree.master.track,
+                    channels = maxRequired
+                }
+            })
+        elseif maxRequired > 0 and maxRequired < projectTree.master.channelCount then
+            -- Master has excessive channels
+            table.insert(projectTree.master.issues, {
+                type = ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS,
+                severity = SEVERITY.WARNING,
+                description = string.format("Master track has %d channels but only needs %d (top-level tracks use channels 1-%d)",
+                    projectTree.master.channelCount, maxRequired, maxRequired),
+                suggestedFix = {
+                    action = "set_channel_count",
+                    track = projectTree.master.track,
+                    channels = maxRequired
+                }
+            })
         end
     end
 end

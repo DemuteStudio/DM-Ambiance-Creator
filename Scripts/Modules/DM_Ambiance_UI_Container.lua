@@ -1277,7 +1277,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             imgui.PushItemWidth(globals.ctx, comboWidth)
             local pairChanged, newPair = globals.UndoWrappers.Combo(globals.ctx, "##StereoPair_" .. containerId, container.stereoPairSelection, stereoPairOptions)
             if imgui.IsItemHovered(globals.ctx) then
-                imgui.SetTooltip(globals.ctx, "Select which stereo pair to extract from multichannel items.\n\nCh 1-2: Front L/R (most common)\nCh 3-4: Rear LS/RS or Center/LFE\nCh 5-6: Additional channels\n\nOnly the selected pair will be used.")
+                imgui.SetTooltip(globals.ctx, "Select which stereo pair to extract from multichannel items.\n\nCh 1-2: Front L/R (most common)\nCh 3-4: Rear LS/RS\nCh 5-6: Additional channels\n\nOnly the selected pair will be used.")
             end
             if pairChanged then
                 container.stereoPairSelection = newPair
