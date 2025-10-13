@@ -40,7 +40,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     imgui.TextColored(globals.ctx, 0xFF4CAF50, "Editing " .. selectedCount .. " containers")
 
     if selectedCount == 0 then
-        imgui.TextColored(globals.ctx, 0xFFAA00FF, "No containers selected. Select containers to edit them.")
+        -- Don't render anything to avoid corrupting ImGui context
         return
     end
 

@@ -120,7 +120,7 @@ end
 -- Display the settings for a specific container in the right panel
 function UI_Container.displayContainerSettings(groupIndex, containerIndex, width)
     if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
-        imgui.Text(globals.ctx, "No container selected")
+        -- Don't render anything to avoid corrupting ImGui context
         return
     end
     local group = globals.groups[groupIndex]

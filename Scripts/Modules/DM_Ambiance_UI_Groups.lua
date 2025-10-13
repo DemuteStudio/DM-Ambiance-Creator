@@ -636,7 +636,7 @@ function UI_Groups.drawGroupsPanel(width, isContainerSelected, toggleContainerSe
     local availableHeight = imgui.GetWindowHeight(globals.ctx)
     local availableWidth = imgui.GetWindowWidth(globals.ctx)
     if availableHeight < Constants.UI.MIN_WINDOW_HEIGHT or availableWidth < Constants.UI.MIN_WINDOW_WIDTH then
-        imgui.TextColored(globals.ctx, Constants.COLORS.ERROR_RED, "Window too small")
+        -- Don't render anything when window is too small to avoid corrupting ImGui context
         return
     end
 

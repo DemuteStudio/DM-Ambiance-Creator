@@ -2533,10 +2533,12 @@ end
 -- Draw the left panel with groups (public function for UI_MainWindow)
 function UI.drawLeftPanel(width)
     local availHeight = globals.imgui.GetWindowHeight(globals.ctx)
+
     if availHeight < 100 then -- Minimum height check
-        globals.imgui.TextColored(globals.ctx, 0xFF0000FF, "Window too small")
+        -- Don't render anything when window is too small
         return
     end
+
     UI_Groups.drawGroupsPanel(width, UI_Core.isContainerSelected, UI_Core.toggleContainerSelection, UI_Core.clearContainerSelections, UI_Core.selectContainerRange)
 end
 
@@ -2555,9 +2557,8 @@ function UI.drawRightPanel(width)
         UI_Container.displayContainerSettings(globals.selectedGroupIndex, globals.selectedContainerIndex, width)
     elseif globals.selectedGroupIndex then
         UI_Group.displayGroupSettings(globals.selectedGroupIndex, width)
-    else
-        globals.imgui.TextColored(globals.ctx, 0xFFAA00FF, "Select a group or container to view and edit its settings.")
     end
+    -- Don't show "Select a group..." message to avoid corrupting ImGui context in edge cases
 end
 
 -- Handle popups and force close if a popup is stuck for too long

@@ -368,9 +368,9 @@ local function renderTwoPanelLayout()
     local leftVisible = globals.imgui.BeginChild(globals.ctx, "LeftPanel", leftPanelWidth, 0, imgui.WindowFlags_None)
     if leftVisible then
         drawLeftPanel(leftPanelWidth)
+        -- CRITICAL: Only call EndChild if BeginChild returned true
+        globals.imgui.EndChild(globals.ctx)
     end
-    -- CRITICAL: Always call EndChild after BeginChild, regardless of visibility
-    globals.imgui.EndChild(globals.ctx)
 
     -- Splitter between panels
     renderPanelSplitter(windowWidth)
@@ -382,9 +382,9 @@ local function renderTwoPanelLayout()
     local rightVisible = globals.imgui.BeginChild(globals.ctx, "RightPanel", rightPanelWidth, 0, imgui.WindowFlags_None)
     if rightVisible then
         drawRightPanel(rightPanelWidth)
+        -- CRITICAL: Only call EndChild if BeginChild returned true
+        globals.imgui.EndChild(globals.ctx)
     end
-    -- CRITICAL: Always call EndChild after BeginChild, regardless of visibility
-    globals.imgui.EndChild(globals.ctx)
 end
 
 -- Render external windows and popups (outside main window)
@@ -436,7 +436,7 @@ function MainWindow.ShowMainWindow(open)
 
     local visible, open = globals.imgui.Begin(globals.ctx, 'Ambiance Creator', open, windowFlags)
 
-    -- CRITICAL: Only call End() if Begin() returned true (visible)
+    -- CRITICAL: Render content only if Begin() returned true (visible)
     if visible then
         -- Store main window position and size for modal centering
         globals.mainWindowPos = {imgui.GetWindowPos(globals.ctx)}
