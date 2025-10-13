@@ -372,6 +372,12 @@ function EuclideanSection.drawEuclideanPatternPresetBrowser()
         return
     end
 
+    -- Initialize sort state if needed (default to Pattern sorting)
+    if not globals.euclideanPatternSortColumn then
+        globals.euclideanPatternSortColumn = "pattern"  -- Default sort by pattern
+        globals.euclideanPatternSortAscending = true     -- Ascending by default
+    end
+
     -- Window flags (non-modal, always on top, auto-resize to content)
     local windowFlags = imgui.WindowFlags_NoCollapse | imgui.WindowFlags_TopMost | imgui.WindowFlags_AlwaysAutoResize
 
@@ -388,30 +394,108 @@ function EuclideanSection.drawEuclideanPatternPresetBrowser()
                           imgui.TableFlags_SizingFixedFit
 
         if imgui.BeginTable(globals.ctx, "##eucPatternTable", 3, tableFlags, 0, 450) then
-            -- Setup columns
+            -- Setup columns (no auto-sort flags, we handle sorting manually)
             imgui.TableSetupColumn(globals.ctx, "Name", imgui.TableColumnFlags_WidthFixed, 180)
             imgui.TableSetupColumn(globals.ctx, "Pattern", imgui.TableColumnFlags_WidthFixed, 100)
             imgui.TableSetupColumn(globals.ctx, "Description", imgui.TableColumnFlags_WidthStretch)
             imgui.TableSetupScrollFreeze(globals.ctx, 0, 1)  -- Freeze header row
-            imgui.TableHeadersRow(globals.ctx)
 
-            -- Iterate through categories and patterns
+            -- Custom header row with clickable sort indicators
+            imgui.TableNextRow(globals.ctx, imgui.TableRowFlags_Headers)
+
+            -- Name column header
+            imgui.TableSetColumnIndex(globals.ctx, 0)
+            local nameHeaderLabel = "Name"
+            if globals.euclideanPatternSortColumn == "name" then
+                nameHeaderLabel = nameHeaderLabel .. (globals.euclideanPatternSortAscending and " ▲" or " ▼")
+            end
+            imgui.PushStyleColor(globals.ctx, imgui.Col_Header, 0x404040FF)
+            if imgui.Selectable(globals.ctx, nameHeaderLabel .. "##nameHeader", false) then
+                if globals.euclideanPatternSortColumn == "name" then
+                    globals.euclideanPatternSortAscending = not globals.euclideanPatternSortAscending
+                else
+                    globals.euclideanPatternSortColumn = "name"
+                    globals.euclideanPatternSortAscending = true
+                end
+            end
+            imgui.PopStyleColor(globals.ctx)
+
+            -- Pattern column header
+            imgui.TableSetColumnIndex(globals.ctx, 1)
+            local patternHeaderLabel = "Pattern"
+            if globals.euclideanPatternSortColumn == "pattern" then
+                patternHeaderLabel = patternHeaderLabel .. (globals.euclideanPatternSortAscending and " ▲" or " ▼")
+            end
+            imgui.PushStyleColor(globals.ctx, imgui.Col_Header, 0x404040FF)
+            if imgui.Selectable(globals.ctx, patternHeaderLabel .. "##patternHeader", false) then
+                if globals.euclideanPatternSortColumn == "pattern" then
+                    globals.euclideanPatternSortAscending = not globals.euclideanPatternSortAscending
+                else
+                    globals.euclideanPatternSortColumn = "pattern"
+                    globals.euclideanPatternSortAscending = true
+                end
+            end
+            imgui.PopStyleColor(globals.ctx)
+
+            -- Description column header (not sortable)
+            imgui.TableSetColumnIndex(globals.ctx, 2)
+            imgui.PushStyleColor(globals.ctx, imgui.Col_Header, 0x404040FF)
+            imgui.Selectable(globals.ctx, "Description##descHeader", false)
+            imgui.PopStyleColor(globals.ctx)
+
+            -- Flatten patterns with category information
+            local allPatterns = {}
             for _, category in ipairs(globals.Constants.EUCLIDEAN_PATTERNS) do
-                -- Category header
-                imgui.TableNextRow(globals.ctx)
-                imgui.TableSetColumnIndex(globals.ctx, 0)
-                imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFFFFAA00)  -- Yellow/orange
-                imgui.Text(globals.ctx, category.category)
-                imgui.PopStyleColor(globals.ctx)
-
-                -- Patterns in category
                 for idx, pattern in ipairs(category.patterns) do
+                    table.insert(allPatterns, {
+                        name = pattern.name,
+                        pulses = pattern.pulses,
+                        steps = pattern.steps,
+                        description = pattern.description,
+                        category = category.category,
+                        originalIndex = idx
+                    })
+                end
+            end
+
+            -- Sort patterns if a sort column is active
+            if globals.euclideanPatternSortColumn == "name" then
+                table.sort(allPatterns, function(a, b)
+                    if globals.euclideanPatternSortAscending then
+                        return a.name < b.name
+                    else
+                        return a.name > b.name
+                    end
+                end)
+            elseif globals.euclideanPatternSortColumn == "pattern" then
+                table.sort(allPatterns, function(a, b)
+                    -- Sort by steps first, then by pulses
+                    if a.steps == b.steps then
+                        if globals.euclideanPatternSortAscending then
+                            return a.pulses < b.pulses
+                        else
+                            return a.pulses > b.pulses
+                        end
+                    else
+                        if globals.euclideanPatternSortAscending then
+                            return a.steps < b.steps
+                        else
+                            return a.steps > b.steps
+                        end
+                    end
+                end)
+            end
+
+            -- Display patterns
+            if globals.euclideanPatternSortColumn then
+                -- Sorted view: show all patterns without category headers
+                for i, pattern in ipairs(allPatterns) do
                     imgui.TableNextRow(globals.ctx)
 
                     -- Column 1: Name (clickable)
                     imgui.TableSetColumnIndex(globals.ctx, 0)
                     local isSelected = false
-                    if imgui.Selectable(globals.ctx, pattern.name .. "##pat" .. category.category .. idx, isSelected, imgui.SelectableFlags_SpanAllColumns) then
+                    if imgui.Selectable(globals.ctx, pattern.name .. "##pat" .. i, isSelected, imgui.SelectableFlags_SpanAllColumns) then
                         -- Pattern selected, apply to layer using stored context
                         if globals.euclideanPatternModalContext then
                             local ctx = globals.euclideanPatternModalContext
@@ -441,6 +525,55 @@ function EuclideanSection.drawEuclideanPatternPresetBrowser()
                     -- Column 3: Description
                     imgui.TableSetColumnIndex(globals.ctx, 2)
                     imgui.TextWrapped(globals.ctx, pattern.description)
+                end
+            else
+                -- Unsorted view: show with category headers
+                for _, category in ipairs(globals.Constants.EUCLIDEAN_PATTERNS) do
+                    -- Category header
+                    imgui.TableNextRow(globals.ctx)
+                    imgui.TableSetColumnIndex(globals.ctx, 0)
+                    imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFFFFAA00)  -- Yellow/orange
+                    imgui.Text(globals.ctx, category.category)
+                    imgui.PopStyleColor(globals.ctx)
+
+                    -- Patterns in category
+                    for idx, pattern in ipairs(category.patterns) do
+                        imgui.TableNextRow(globals.ctx)
+
+                        -- Column 1: Name (clickable)
+                        imgui.TableSetColumnIndex(globals.ctx, 0)
+                        local isSelected = false
+                        if imgui.Selectable(globals.ctx, pattern.name .. "##pat" .. category.category .. idx, isSelected, imgui.SelectableFlags_SpanAllColumns) then
+                            -- Pattern selected, apply to layer using stored context
+                            if globals.euclideanPatternModalContext then
+                                local ctx = globals.euclideanPatternModalContext
+                                local callbacks = ctx.callbacks
+                                local layerIdx = ctx.layerIdx
+
+                                -- Apply pattern parameters
+                                if callbacks.setPulses then
+                                    callbacks.setPulses(layerIdx, pattern.pulses)
+                                end
+                                if callbacks.setSteps then
+                                    callbacks.setSteps(layerIdx, pattern.steps)
+                                end
+                                -- Reset rotation to 0 when loading preset
+                                if callbacks.setRotation then
+                                    callbacks.setRotation(layerIdx, 0)
+                                end
+                            end
+                            -- Close window after selection
+                            globals.euclideanPatternBrowserOpen = false
+                        end
+
+                        -- Column 2: Pattern notation
+                        imgui.TableSetColumnIndex(globals.ctx, 1)
+                        imgui.TextDisabled(globals.ctx, "E(" .. pattern.pulses .. "," .. pattern.steps .. ")")
+
+                        -- Column 3: Description
+                        imgui.TableSetColumnIndex(globals.ctx, 2)
+                        imgui.TextWrapped(globals.ctx, pattern.description)
+                    end
                 end
             end
 
