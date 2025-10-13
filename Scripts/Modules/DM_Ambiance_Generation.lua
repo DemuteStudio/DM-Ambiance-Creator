@@ -755,6 +755,21 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
         end
         channelTracks = existingTracks
 
+        -- CRITICAL FIX: Update channel count even when not recreating tracks
+        -- This handles cases like perfect-match-passthrough where trackStructure changes
+        -- but the physical track structure remains the same (1 track, no children)
+        if trackStructure.numTracks == 1 and not hasChildTracks then
+            -- Single track case: update I_NCHAN based on trackStructure
+            local requiredChannels = trackStructure.trackChannels
+            if requiredChannels and requiredChannels > 0 then
+                -- Round up to even number
+                if requiredChannels % 2 == 1 then
+                    requiredChannels = requiredChannels + 1
+                end
+                reaper.SetMediaTrackInfo_Value(containerGroup, "I_NCHAN", requiredChannels)
+            end
+        end
+
         -- Store/update GUIDs
         if trackStructure.numTracks > 1 then
             Generation.storeTrackGUIDs(container, containerGroup, channelTracks)
@@ -2082,23 +2097,41 @@ function Generation.recalculateChannelRequirements()
                     -- reaper.ShowConsoleMsg(string.format("INFO: Container '%s' has %d REAL tracks → requires %d physical channels\n",
                     --     container.name, realChildCount, requiredChannels))
                 else
-                    -- Fallback to theoretical if no tracks exist yet
-                    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
-                    if config then
-                        local requiredChannels = config.channels
-                        if requiredChannels % 2 == 1 then
-                            requiredChannels = requiredChannels + 1
+                    -- No child tracks: could be perfect-match-passthrough or not generated yet
+                    -- Check if container track exists and already has channel count set
+                    local containerTrack = Generation.findContainerTrackRobust(container)
+                    if containerTrack then
+                        -- Use actual I_NCHAN from the track (handles perfect-match-passthrough)
+                        local actualChannels = reaper.GetMediaTrackInfo_Value(containerTrack, "I_NCHAN")
+                        if actualChannels > 0 then
+                            containerRequirements[container.name] = {
+                                logicalChannels = actualChannels,
+                                physicalChannels = actualChannels,
+                                container = container,
+                                group = group
+                            }
+                            -- reaper.ShowConsoleMsg(string.format("INFO: Container '%s' (no children) has %d channels (from I_NCHAN)\n",
+                            --     container.name, actualChannels))
                         end
+                    else
+                        -- Track doesn't exist yet, use theoretical config
+                        local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+                        if config then
+                            local requiredChannels = config.totalChannels or config.channels
+                            if requiredChannels % 2 == 1 then
+                                requiredChannels = requiredChannels + 1
+                            end
 
-                        containerRequirements[container.name] = {
-                            logicalChannels = config.channels,
-                            physicalChannels = requiredChannels,
-                            container = container,
-                            group = group
-                        }
+                            containerRequirements[container.name] = {
+                                logicalChannels = requiredChannels,
+                                physicalChannels = requiredChannels,
+                                container = container,
+                                group = group
+                            }
 
-                        -- reaper.ShowConsoleMsg(string.format("INFO: Container '%s' (no tracks yet) → requires %d channels (theoretical)\n",
-                        --     container.name, requiredChannels))
+                            -- reaper.ShowConsoleMsg(string.format("INFO: Container '%s' (no tracks yet) → requires %d channels (theoretical)\n",
+                            --     container.name, requiredChannels))
+                        end
                     end
                 end
             end
