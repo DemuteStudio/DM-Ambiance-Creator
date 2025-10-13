@@ -815,14 +815,6 @@ function Generation.placeItemsForContainer(group, container, containerGroup, xfa
             else
                 return Generation.placeItemsEuclideanMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
             end
-        elseif effectiveParams.intervalMode == 6 then
-            -- Fibonacci mode (placeholder for now)
-            reaper.ShowConsoleMsg("Fibonacci mode not yet implemented\n")
-            return
-        elseif effectiveParams.intervalMode == 7 then
-            -- Golden Ratio mode (placeholder for now)
-            reaper.ShowConsoleMsg("Golden Ratio mode not yet implemented\n")
-            return
         end
 
         -- Generate items considering channel count matching

@@ -199,7 +199,7 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
         imgui.TableNextRow(globals.ctx)
         imgui.TableSetColumnIndex(globals.ctx, 0)
         imgui.PushItemWidth(globals.ctx, -1)
-        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0Noise\0Euclidean\0Fibonacci\0Golden Ratio\0"
+        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0Noise\0Euclidean\0"
         local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "##IntervalMode", dataObj.intervalMode, intervalModes)
         if rv then callbacks.setIntervalMode(newIntervalMode) end
         imgui.PopItemWidth(globals.ctx)
@@ -213,13 +213,11 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
             "Coverage: Percentage of time selection to be filled\n" ..
             "Chunk: Create structured sound/silence periods\n" ..
             "Noise: Place items based on Perlin noise function\n" ..
-            "Euclidean: Mathematically optimal rhythm distribution\n" ..
-            "Fibonacci: Intervals based on Fibonacci sequence\n" ..
-            "Golden Ratio: Intervals based on φ (phi ≈ 1.618)"
+            "Euclidean: Mathematically optimal rhythm distribution"
         )
 
-        -- Interval value (slider) - Not shown in Noise, Euclidean, Fibonacci, Golden Ratio modes
-        if dataObj.intervalMode ~= 4 and dataObj.intervalMode ~= 5 and dataObj.intervalMode ~= 6 and dataObj.intervalMode ~= 7 then
+        -- Interval value (slider) - Not shown in Noise and Euclidean modes
+        if dataObj.intervalMode ~= 4 and dataObj.intervalMode ~= 5 then
             local rateLabel = "Interval (sec)"
             local rateMin = -10.0
             local rateMax = 60.0
