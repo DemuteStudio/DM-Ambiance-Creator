@@ -435,20 +435,21 @@ function MainWindow.ShowMainWindow(open)
     end
 
     local visible, open = globals.imgui.Begin(globals.ctx, 'Ambiance Creator', open, windowFlags)
-    reaper.ShowConsoleMsg(string.format("[DEBUG] Main Begin() returned: visible=%s, open=%s\n", tostring(visible), tostring(open)))
+
+    -- Store main window position and size for modal centering (if visible)
+    if visible then
+        globals.mainWindowPos = {imgui.GetWindowPos(globals.ctx)}
+        globals.mainWindowSize = {imgui.GetWindowSize(globals.ctx)}
+    end
+
+    -- Initialize deferred widget drawing list for animated widgets
+    if not globals.deferredWidgetDraws then
+        globals.deferredWidgetDraws = {}
+    end
+    globals.deferredWidgetDraws = {}  -- Clear previous frame
 
     -- CRITICAL: Render content only if Begin() returned true (visible)
     if visible then
-        -- Store main window position and size for modal centering
-        globals.mainWindowPos = {imgui.GetWindowPos(globals.ctx)}
-        globals.mainWindowSize = {imgui.GetWindowSize(globals.ctx)}
-
-        -- Initialize deferred widget drawing list for animated widgets
-        if not globals.deferredWidgetDraws then
-            globals.deferredWidgetDraws = {}
-        end
-        globals.deferredWidgetDraws = {}  -- Clear previous frame
-
         -- Handle keyboard shortcuts
         handleKeyboardShortcuts()
 
@@ -464,23 +465,14 @@ function MainWindow.ShowMainWindow(open)
                 drawFunc()
             end
         end
-    end
 
-    -- CRITICAL: Always call End() after Begin(), regardless of visibility
-    reaper.ShowConsoleMsg("[DEBUG] About to call main End()\n")
-    local success, err = pcall(function()
+        -- CRITICAL: Only call End() if Begin() returned true (visible)
+        -- This matches the original implementation before modular refactor
         globals.imgui.End(globals.ctx)
-    end)
-    if success then
-        reaper.ShowConsoleMsg("[DEBUG] Main End() succeeded\n")
-    else
-        reaper.ShowConsoleMsg("[DEBUG] Main End() FAILED: " .. tostring(err) .. "\n")
     end
 
     -- Render external windows and popups (outside main window)
-    reaper.ShowConsoleMsg("[DEBUG] About to call renderExternalWindows\n")
     renderExternalWindows()
-    reaper.ShowConsoleMsg("[DEBUG] renderExternalWindows completed\n")
 
     -- Process post-frame operations
     processPostFrameOperations()
