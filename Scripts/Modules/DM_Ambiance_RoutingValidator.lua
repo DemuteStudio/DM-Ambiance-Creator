@@ -620,12 +620,9 @@ function RoutingValidator.validateChannelConsistency(projectTree)
         -- SIMPLE RULE: Check ALL tracks in the project (EXCEPT Master), find the maximum channel count
         for _, trackInfo in pairs(projectTree.allTracks) do
             if trackInfo and trackInfo.channelCount and trackInfo.track ~= projectTree.master.track then
-                reaper.ShowConsoleMsg(string.format("DEBUG: Track '%s' has %d channels\n", trackInfo.name or "Unknown", trackInfo.channelCount))
                 maxRequired = math.max(maxRequired, trackInfo.channelCount)
             end
         end
-
-        reaper.ShowConsoleMsg(string.format("DEBUG MASTER VALIDATION: Master has %d ch, maxRequired = %d (should detect issue!)\n", projectTree.master.channelCount, maxRequired))
 
         -- Add issue if Master needs more channels
         if maxRequired > projectTree.master.channelCount then
@@ -1445,10 +1442,7 @@ end
 
 -- Apply all fix suggestions automatically
 function RoutingValidator.autoFixRouting(issuesList, fixSuggestions)
-    reaper.ShowConsoleMsg(string.format("DEBUG AUTOFIX: Called with %d issues, %d suggestions\n", #issuesList, fixSuggestions and #fixSuggestions or 0))
-
     if not fixSuggestions or #fixSuggestions == 0 then
-        reaper.ShowConsoleMsg("DEBUG AUTOFIX: No suggestions, returning false\n")
         return false
     end
 
@@ -1456,10 +1450,8 @@ function RoutingValidator.autoFixRouting(issuesList, fixSuggestions)
 
     local allSuccess = true
 
-    for i, suggestion in ipairs(fixSuggestions) do
-        reaper.ShowConsoleMsg(string.format("DEBUG AUTOFIX: Applying fix %d/%d, action='%s'\n", i, #fixSuggestions, suggestion.action or "nil"))
+    for _, suggestion in ipairs(fixSuggestions) do
         local success = RoutingValidator.applySingleFix(suggestion, true)  -- Pass autoMode = true
-        reaper.ShowConsoleMsg(string.format("DEBUG AUTOFIX: Fix %d result: %s\n", i, success and "SUCCESS" or "FAILED"))
         if not success then
             allSuccess = false
         end
@@ -1470,7 +1462,6 @@ function RoutingValidator.autoFixRouting(issuesList, fixSuggestions)
     -- Clear cache to force re-validation
     projectTrackCache = nil
 
-    reaper.ShowConsoleMsg(string.format("DEBUG AUTOFIX: Returning %s\n", allSuccess and "true (all fixed)" or "false (some failed)"))
     return allSuccess
 end
 

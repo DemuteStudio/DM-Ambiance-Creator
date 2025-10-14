@@ -2862,14 +2862,12 @@ function Generation.checkAndResolveConflicts()
 
             while currentIssues and #currentIssues > 0 and iteration < maxIterations do
                 iteration = iteration + 1
-                reaper.ShowConsoleMsg(string.format("Auto-fix iteration %d: %d issues to fix\n", iteration, #currentIssues))
 
                 local suggestions = globals.RoutingValidator.generateFixSuggestions(currentIssues, globals.RoutingValidator.getProjectTrackCache())
                 local success = globals.RoutingValidator.autoFixRouting(currentIssues, suggestions)
 
                 if not success then
                     -- Auto-fix failed, show modal for manual resolution
-                    reaper.ShowConsoleMsg("Auto-fix failed, showing modal\n")
                     globals.RoutingValidator.showValidationModal(currentIssues)
                     break
                 end
@@ -2879,14 +2877,12 @@ function Generation.checkAndResolveConflicts()
                 currentIssues = globals.RoutingValidator.validateProjectRouting()
 
                 if not currentIssues or #currentIssues == 0 then
-                    reaper.ShowConsoleMsg("All issues fixed!\n")
                     break
                 end
             end
 
             -- If we hit max iterations, show remaining issues
             if iteration >= maxIterations and currentIssues and #currentIssues > 0 then
-                reaper.ShowConsoleMsg("WARNING: Max auto-fix iterations reached, showing remaining issues\n")
                 globals.RoutingValidator.showValidationModal(currentIssues)
             end
         else
