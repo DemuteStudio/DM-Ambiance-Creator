@@ -2855,21 +2855,39 @@ function Generation.checkAndResolveConflicts()
     -- Handle issues based on auto-fix setting
     if issues and #issues > 0 then
         if globals.autoFixRouting then
-            -- Auto-fix mode: apply fixes automatically
-            local suggestions = globals.RoutingValidator.generateFixSuggestions(issues, globals.RoutingValidator.getProjectTrackCache())
-            local success = globals.RoutingValidator.autoFixRouting(issues, suggestions)
+            -- Auto-fix mode: apply fixes automatically in a loop until all issues resolved
+            local maxIterations = 10  -- Prevent infinite loops
+            local iteration = 0
+            local currentIssues = issues
 
-            -- If auto-fix succeeded, re-validate to ensure everything is fixed
-            if success then
-                globals.RoutingValidator.clearCache()  -- Force fresh scan
-                local remainingIssues = globals.RoutingValidator.validateProjectRouting()
-                if remainingIssues and #remainingIssues > 0 then
-                    -- Some issues couldn't be auto-fixed, show modal
-                    globals.RoutingValidator.showValidationModal(remainingIssues)
+            while currentIssues and #currentIssues > 0 and iteration < maxIterations do
+                iteration = iteration + 1
+                reaper.ShowConsoleMsg(string.format("Auto-fix iteration %d: %d issues to fix\n", iteration, #currentIssues))
+
+                local suggestions = globals.RoutingValidator.generateFixSuggestions(currentIssues, globals.RoutingValidator.getProjectTrackCache())
+                local success = globals.RoutingValidator.autoFixRouting(currentIssues, suggestions)
+
+                if not success then
+                    -- Auto-fix failed, show modal for manual resolution
+                    reaper.ShowConsoleMsg("Auto-fix failed, showing modal\n")
+                    globals.RoutingValidator.showValidationModal(currentIssues)
+                    break
                 end
-            else
-                -- Auto-fix failed, show modal for manual resolution
-                globals.RoutingValidator.showValidationModal(issues)
+
+                -- Re-validate to check for remaining issues
+                globals.RoutingValidator.clearCache()
+                currentIssues = globals.RoutingValidator.validateProjectRouting()
+
+                if not currentIssues or #currentIssues == 0 then
+                    reaper.ShowConsoleMsg("All issues fixed!\n")
+                    break
+                end
+            end
+
+            -- If we hit max iterations, show remaining issues
+            if iteration >= maxIterations and currentIssues and #currentIssues > 0 then
+                reaper.ShowConsoleMsg("WARNING: Max auto-fix iterations reached, showing remaining issues\n")
+                globals.RoutingValidator.showValidationModal(currentIssues)
             end
         else
             -- Manual mode: show validation modal for user review

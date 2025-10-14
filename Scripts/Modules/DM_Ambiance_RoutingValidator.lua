@@ -611,37 +611,28 @@ function RoutingValidator.validateChannelConsistency(projectTree)
         end
     end
 
-    -- MASTER VALIDATION (depth 0): Validate Master track against all top-level tracks
+    -- MASTER VALIDATION: Simple rule - Master needs max of ALL tracks in project
+    -- Since all tracks ultimately route to Master (directly or via parent chain),
+    -- Master must have enough channels for the highest channel count in the project
     if projectTree.master then
-        local maxRequired = 0
+        local maxRequired = 2  -- Minimum stereo
 
-        -- Find all tracks at depth 0 (top-level tracks that send to Master)
-        local topLevelTracks = tracksByDepth[0] or {}
-
-        for _, trackInfo in ipairs(topLevelTracks) do
-            -- Check implicit folder routing (B_MAINSEND)
-            local masterSend = reaper.GetMediaTrackInfo_Value(trackInfo.track, "B_MAINSEND")
-            if masterSend == 1 then
-                -- RECURSIVE: Calculate actual channels used by this track and ALL its descendants
-                local actualChannelsUsed = calculateActualChannelsUsed(trackInfo, projectTree)
-                maxRequired = math.max(maxRequired, actualChannelsUsed)
-            end
-
-            -- Check explicit sends to Master
-            for _, send in ipairs(trackInfo.sends) do
-                if send.destTrack == projectTree.master.track then
-                    local channelNum = RoutingValidator.parseDstChannel(send.dstChannel)
-                    maxRequired = math.max(maxRequired, channelNum)
-                end
+        -- SIMPLE RULE: Check ALL tracks in the project (EXCEPT Master), find the maximum channel count
+        for _, trackInfo in pairs(projectTree.allTracks) do
+            if trackInfo and trackInfo.channelCount and trackInfo.track ~= projectTree.master.track then
+                reaper.ShowConsoleMsg(string.format("DEBUG: Track '%s' has %d channels\n", trackInfo.name or "Unknown", trackInfo.channelCount))
+                maxRequired = math.max(maxRequired, trackInfo.channelCount)
             end
         end
+
+        reaper.ShowConsoleMsg(string.format("DEBUG MASTER VALIDATION: Master has %d ch, maxRequired = %d (should detect issue!)\n", projectTree.master.channelCount, maxRequired))
 
         -- Add issue if Master needs more channels
         if maxRequired > projectTree.master.channelCount then
             table.insert(projectTree.master.issues, {
                 type = ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS,
                 severity = SEVERITY.ERROR,
-                description = string.format("Master track has %d channels but needs %d (top-level tracks use channels 1-%d)",
+                description = string.format("Master track has %d channels but needs %d (project has tracks using up to %d channels)",
                     projectTree.master.channelCount, maxRequired, maxRequired),
                 suggestedFix = {
                     action = "set_channel_count",
@@ -654,7 +645,7 @@ function RoutingValidator.validateChannelConsistency(projectTree)
             table.insert(projectTree.master.issues, {
                 type = ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS,
                 severity = SEVERITY.WARNING,
-                description = string.format("Master track has %d channels but only needs %d (top-level tracks use channels 1-%d)",
+                description = string.format("Master track has %d channels but only needs %d (highest track in project uses %d channels)",
                     projectTree.master.channelCount, maxRequired, maxRequired),
                 suggestedFix = {
                     action = "set_channel_count",
@@ -1454,7 +1445,10 @@ end
 
 -- Apply all fix suggestions automatically
 function RoutingValidator.autoFixRouting(issuesList, fixSuggestions)
+    reaper.ShowConsoleMsg(string.format("DEBUG AUTOFIX: Called with %d issues, %d suggestions\n", #issuesList, fixSuggestions and #fixSuggestions or 0))
+
     if not fixSuggestions or #fixSuggestions == 0 then
+        reaper.ShowConsoleMsg("DEBUG AUTOFIX: No suggestions, returning false\n")
         return false
     end
 
@@ -1462,8 +1456,10 @@ function RoutingValidator.autoFixRouting(issuesList, fixSuggestions)
 
     local allSuccess = true
 
-    for _, suggestion in ipairs(fixSuggestions) do
+    for i, suggestion in ipairs(fixSuggestions) do
+        reaper.ShowConsoleMsg(string.format("DEBUG AUTOFIX: Applying fix %d/%d, action='%s'\n", i, #fixSuggestions, suggestion.action or "nil"))
         local success = RoutingValidator.applySingleFix(suggestion, true)  -- Pass autoMode = true
+        reaper.ShowConsoleMsg(string.format("DEBUG AUTOFIX: Fix %d result: %s\n", i, success and "SUCCESS" or "FAILED"))
         if not success then
             allSuccess = false
         end
@@ -1474,6 +1470,7 @@ function RoutingValidator.autoFixRouting(issuesList, fixSuggestions)
     -- Clear cache to force re-validation
     projectTrackCache = nil
 
+    reaper.ShowConsoleMsg(string.format("DEBUG AUTOFIX: Returning %s\n", allSuccess and "true (all fixed)" or "false (some failed)"))
     return allSuccess
 end
 
