@@ -442,6 +442,39 @@ function RoutingValidator.analyzeSendsAndReceives(trackInfo)
     end
 end
 
+-- Recursively calculate the actual channels used by a track and ALL its descendants
+-- This ensures we detect the REAL channel requirements, not just the configured count
+local function calculateActualChannelsUsed(trackInfo, projectTree)
+    local maxChannels = trackInfo.channelCount or 0
+
+    -- Check if this track is a folder
+    local folderDepth = reaper.GetMediaTrackInfo_Value(trackInfo.track, "I_FOLDERDEPTH")
+    if folderDepth == 1 then
+        -- This is a folder - recursively check all children
+        for _, childTrack in pairs(projectTree.allTracks) do
+            if childTrack.parent == trackInfo.track then
+                -- Check explicit sends from child to this track
+                for _, send in ipairs(childTrack.sends) do
+                    if send.destTrack == trackInfo.track then
+                        local channelNum = RoutingValidator.parseDstChannel(send.dstChannel)
+                        maxChannels = math.max(maxChannels, channelNum)
+                    end
+                end
+
+                -- Check implicit routing (B_MAINSEND to parent)
+                local parentSend = reaper.GetMediaTrackInfo_Value(childTrack.track, "B_MAINSEND")
+                if parentSend == 1 then
+                    -- RECURSIVE: Get child's actual channel usage (including ITS children)
+                    local childActualChannels = calculateActualChannelsUsed(childTrack, projectTree)
+                    maxChannels = math.max(maxChannels, childActualChannels)
+                end
+            end
+        end
+    end
+
+    return maxChannels
+end
+
 -- Calculate folder depth for a track (0 = top-level, higher = deeper in hierarchy)
 -- This is used for bottom-up validation to ensure parents are validated after children
 local function calculateTrackDepth(trackInfo, projectTree)
@@ -533,31 +566,8 @@ function RoutingValidator.validateChannelConsistency(projectTree)
                     -- Check implicit folder routing (B_MAINSEND = parent send)
                     local parentSend = reaper.GetMediaTrackInfo_Value(child.track, "B_MAINSEND")
                     if parentSend == 1 then
-                        -- CRITICAL: Check if child is a folder and has children using higher channels
-                        local actualChannelsUsed = child.channelCount
-
-                        local childFolderDepth = reaper.GetMediaTrackInfo_Value(child.track, "I_FOLDERDEPTH")
-                        if childFolderDepth == 1 then
-                            -- Child is a folder - check what its children actually use
-                            for _, grandchild in pairs(projectTree.allTracks) do
-                                if grandchild.parent == child.track then
-                                    -- Check explicit sends from grandchild to child
-                                    for _, send in ipairs(grandchild.sends) do
-                                        if send.destTrack == child.track then
-                                            local channelNum = RoutingValidator.parseDstChannel(send.dstChannel)
-                                            actualChannelsUsed = math.max(actualChannelsUsed, channelNum)
-                                        end
-                                    end
-
-                                    -- Check implicit routing (B_MAINSEND to child)
-                                    local grandchildParentSend = reaper.GetMediaTrackInfo_Value(grandchild.track, "B_MAINSEND")
-                                    if grandchildParentSend == 1 then
-                                        actualChannelsUsed = math.max(actualChannelsUsed, grandchild.channelCount)
-                                    end
-                                end
-                            end
-                        end
-
+                        -- RECURSIVE: Calculate actual channels used by child and ALL its descendants
+                        local actualChannelsUsed = calculateActualChannelsUsed(child, projectTree)
                         maxRequired = math.max(maxRequired, actualChannelsUsed)
                     end
 
@@ -612,35 +622,9 @@ function RoutingValidator.validateChannelConsistency(projectTree)
             -- Check implicit folder routing (B_MAINSEND)
             local masterSend = reaper.GetMediaTrackInfo_Value(trackInfo.track, "B_MAINSEND")
             if masterSend == 1 then
-                -- CRITICAL: Use the ACTUAL channel requirements based on children's sends
-                -- Not just the configured channelCount, but the HIGHEST channel used
-                local actualChannelsUsed = 0
-
-                -- Check if this track has children (folder track)
-                local hasFolderDepth = reaper.GetMediaTrackInfo_Value(trackInfo.track, "I_FOLDERDEPTH")
-                if hasFolderDepth == 1 then
-                    -- This is a folder - check what channels its children actually use
-                    for _, otherTrack in pairs(projectTree.allTracks) do
-                        if otherTrack.parent == trackInfo.track then
-                            -- Check sends from this child to its parent
-                            for _, send in ipairs(otherTrack.sends) do
-                                if send.destTrack == trackInfo.track then
-                                    local channelNum = RoutingValidator.parseDstChannel(send.dstChannel)
-                                    actualChannelsUsed = math.max(actualChannelsUsed, channelNum)
-                                end
-                            end
-
-                            -- Check implicit routing (B_MAINSEND to parent)
-                            local parentSend = reaper.GetMediaTrackInfo_Value(otherTrack.track, "B_MAINSEND")
-                            if parentSend == 1 then
-                                actualChannelsUsed = math.max(actualChannelsUsed, otherTrack.channelCount)
-                            end
-                        end
-                    end
-                end
-
-                -- Use the maximum of configured channels or actual channels used
-                maxRequired = math.max(maxRequired, math.max(trackInfo.channelCount, actualChannelsUsed))
+                -- RECURSIVE: Calculate actual channels used by this track and ALL its descendants
+                local actualChannelsUsed = calculateActualChannelsUsed(trackInfo, projectTree)
+                maxRequired = math.max(maxRequired, actualChannelsUsed)
             end
 
             -- Check explicit sends to Master
