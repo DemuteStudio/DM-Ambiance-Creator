@@ -580,30 +580,38 @@ function RoutingValidator.validateChannelConsistency(projectTree)
                     end
                 end
 
+                -- Apply REAPER constraint BEFORE generating fix suggestions and messages
+                -- REAPER requires channel counts to be even numbers
+                local maxRequiredEven = maxRequired
+                if maxRequiredEven % 2 == 1 then
+                    maxRequiredEven = maxRequiredEven + 1
+                end
+
                 -- Add issue if parent needs more channels
                 if maxRequired > parentInfo.channelCount then
                     table.insert(parentInfo.issues, {
                         type = ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS,
                         severity = SEVERITY.ERROR,
-                        description = string.format("Track '%s' has %d channels but children require up to channel %d",
-                            parentInfo.name, parentInfo.channelCount, maxRequired),
+                        description = string.format("Track '%s' has %d channels but children require up to channel %d (rounded to %d for REAPER even constraint)",
+                            parentInfo.name, parentInfo.channelCount, maxRequired, maxRequiredEven),
                         suggestedFix = {
                             action = "set_channel_count",
                             track = parentInfo.track,
-                            channels = maxRequired
+                            channels = maxRequiredEven
                         }
                     })
-                elseif maxRequired > 0 and maxRequired < parentInfo.channelCount then
+                elseif maxRequiredEven < parentInfo.channelCount then
                     -- Parent has excessive channels
+                    -- NOTE: Compare with maxRequiredEven, not maxRequired
                     table.insert(parentInfo.issues, {
                         type = ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS,
                         severity = SEVERITY.WARNING,
-                        description = string.format("Track '%s' has %d channels but only needs %d (children use channels 1-%d)",
-                            parentInfo.name, parentInfo.channelCount, maxRequired, maxRequired),
+                        description = string.format("Track '%s' has %d channels but only needs %d (children use channels 1-%d, rounded to %d for REAPER even constraint)",
+                            parentInfo.name, parentInfo.channelCount, maxRequiredEven, maxRequired, maxRequiredEven),
                         suggestedFix = {
                             action = "set_channel_count",
                             track = parentInfo.track,
-                            channels = maxRequired
+                            channels = maxRequiredEven
                         }
                     })
                 end
@@ -624,30 +632,38 @@ function RoutingValidator.validateChannelConsistency(projectTree)
             end
         end
 
+        -- Apply REAPER constraint BEFORE generating fix suggestions and messages
+        -- REAPER requires channel counts to be even numbers
+        local maxRequiredEven = maxRequired
+        if maxRequiredEven % 2 == 1 then
+            maxRequiredEven = maxRequiredEven + 1
+        end
+
         -- Add issue if Master needs more channels
         if maxRequired > projectTree.master.channelCount then
             table.insert(projectTree.master.issues, {
                 type = ISSUE_TYPES.PARENT_INSUFFICIENT_CHANNELS,
                 severity = SEVERITY.ERROR,
-                description = string.format("Master track has %d channels but needs %d (project has tracks using up to %d channels)",
-                    projectTree.master.channelCount, maxRequired, maxRequired),
+                description = string.format("Master track has %d channels but needs %d (project has tracks using up to %d channels, rounded to %d for REAPER even constraint)",
+                    projectTree.master.channelCount, maxRequiredEven, maxRequired, maxRequiredEven),
                 suggestedFix = {
                     action = "set_channel_count",
                     track = projectTree.master.track,
-                    channels = maxRequired
+                    channels = maxRequiredEven
                 }
             })
-        elseif maxRequired > 0 and maxRequired < projectTree.master.channelCount then
+        elseif maxRequiredEven < projectTree.master.channelCount then
             -- Master has excessive channels
+            -- NOTE: Compare with maxRequiredEven, not maxRequired
             table.insert(projectTree.master.issues, {
                 type = ISSUE_TYPES.PARENT_EXCESSIVE_CHANNELS,
                 severity = SEVERITY.WARNING,
-                description = string.format("Master track has %d channels but only needs %d (highest track in project uses %d channels)",
-                    projectTree.master.channelCount, maxRequired, maxRequired),
+                description = string.format("Master track has %d channels but only needs %d (highest track in project uses %d channels, rounded to %d for REAPER even constraint)",
+                    projectTree.master.channelCount, maxRequiredEven, maxRequired, maxRequiredEven),
                 suggestedFix = {
                     action = "set_channel_count",
                     track = projectTree.master.track,
-                    channels = maxRequired
+                    channels = maxRequiredEven
                 }
             })
         end
