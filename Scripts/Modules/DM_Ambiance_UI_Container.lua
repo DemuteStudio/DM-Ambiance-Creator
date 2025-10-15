@@ -1024,99 +1024,28 @@ function UI_Container.displayContainerSettings(groupPath, containerIndex, width)
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Controls the volume of the container's track in Reaper. Affects all items in this container.")
 
-    -- Ensure trackVolume is initialized
-    if container.trackVolume == nil then
-        container.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
-    end
-
-    -- Initialize mute/solo states if not set
-    if container.isMuted == nil then container.isMuted = false end
-    if container.isSoloed == nil then container.isSoloed = false end
-
-    -- Solo button (square, same size as mute)
-    local buttonSize = 20
-    local soloColorPushed = 0
-    if container.isSoloed then
-        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFFAA00FF) -- Yellow/orange when active
-        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFFAA00FF) -- Same color on hover (no hover effect)
-        soloColorPushed = 2
-    end
-    if globals.UI.Button(globals.ctx, "S##ContainerSolo_" .. containerId, buttonSize, buttonSize) then
-        container.isSoloed = not container.isSoloed
-        if container.isSoloed and container.isMuted then
-            container.isMuted = false
-            globals.Utils.setContainerTrackMute(groupPath, containerIndex, false)
+    -- Use the shared VolumeControls widget
+    globals.UI_VolumeControls.draw({
+        id = "Container_" .. containerId,
+        item = container,
+        onVolumeChange = function(newVolumeDB)
+            globals.Utils.setContainerTrackVolume(groupPath, containerIndex, newVolumeDB)
+        end,
+        onMuteChange = function(isMuted)
+            if isMuted and container.isSoloed then
+                container.isSoloed = false
+                globals.Utils.setContainerTrackSolo(groupPath, containerIndex, false)
+            end
+            globals.Utils.setContainerTrackMute(groupPath, containerIndex, isMuted)
+        end,
+        onSoloChange = function(isSoloed)
+            if isSoloed and container.isMuted then
+                container.isMuted = false
+                globals.Utils.setContainerTrackMute(groupPath, containerIndex, false)
+            end
+            globals.Utils.setContainerTrackSolo(groupPath, containerIndex, isSoloed)
         end
-        globals.Utils.setContainerTrackSolo(groupPath, containerIndex, container.isSoloed)
-    end
-    if soloColorPushed > 0 then
-        imgui.PopStyleColor(globals.ctx, soloColorPushed)
-    end
-
-    -- Mute button (square, red when active)
-    imgui.SameLine(globals.ctx, 0, globals.UI.scaleSize(4))
-    local muteColorPushed = 0
-    if container.isMuted then
-        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF) -- Red when active
-        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFF0000FF) -- Same color on hover (no hover effect)
-        muteColorPushed = 2
-    end
-    if globals.UI.Button(globals.ctx, "M##ContainerMute_" .. containerId, buttonSize, buttonSize) then
-        container.isMuted = not container.isMuted
-        if container.isMuted and container.isSoloed then
-            container.isSoloed = false
-            globals.Utils.setContainerTrackSolo(groupPath, containerIndex, false)
-        end
-        globals.Utils.setContainerTrackMute(groupPath, containerIndex, container.isMuted)
-    end
-    if muteColorPushed > 0 then
-        imgui.PopStyleColor(globals.ctx, muteColorPushed)
-    end
-
-    -- Convert current dB to normalized
-    local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.trackVolume)
-
-    -- Volume knob
-    imgui.SameLine(globals.ctx, 0, 8)
-    local defaultNormalizedVolume = globals.Utils.dbToNormalizedRelative(globals.Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT)
-    local rv, newNormalizedVolume = globals.Knob.Knob({
-        id = "##TrackVolume_" .. containerId,
-        label = "",
-        value = normalizedVolume,
-        min = 0.0,
-        max = 1.0,
-        defaultValue = defaultNormalizedVolume,
-        size = 24,
-        format = "%.2f",
-        showLabel = false
     })
-    if rv then
-        local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
-        container.trackVolume = newVolumeDB
-        -- Apply volume to track in real-time (no regeneration needed)
-        globals.Utils.setContainerTrackVolume(groupPath, containerIndex, newVolumeDB)
-    end
-
-    -- Manual dB input field
-    imgui.SameLine(globals.ctx, 0, 8)
-    imgui.PushItemWidth(globals.ctx, 85)
-    local displayValue = container.trackVolume <= -144 and -144 or container.trackVolume
-    local rv2, manualDB = globals.UndoWrappers.InputDouble(
-        globals.ctx,
-        "##TrackVolumeInput_" .. containerId,
-        displayValue,
-        0, 0,  -- step, step_fast (not used)
-        "%.1f dB"
-    )
-    if rv2 then
-        -- Clamp to valid range
-        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
-                           math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
-        container.trackVolume = manualDB
-        -- Apply volume to track in real-time (no regeneration needed)
-        globals.Utils.setContainerTrackVolume(groupPath, containerIndex, manualDB)
-    end
-    imgui.PopItemWidth(globals.ctx)
 
     -- Multi-Channel Configuration
     imgui.Separator(globals.ctx)

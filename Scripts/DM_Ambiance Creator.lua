@@ -58,6 +58,7 @@ local UI_FadeSection = dofile(script_path .. "Modules/DM_Ambiance_UI_FadeSection
 local UI_EuclideanSection = dofile(script_path .. "Modules/DM_Ambiance_UI_EuclideanSection.lua")
 local UI_NoisePreview = dofile(script_path .. "Modules/DM_Ambiance_UI_NoisePreview.lua")
 local UI_Folder = dofile(script_path .. "Modules/DM_Ambiance_UI_Folder.lua")
+local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeControls.lua")
 
 -- Global state shared across modules and UI
 local globals = {
@@ -226,6 +227,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.UI_EuclideanSection = UI_EuclideanSection
     globals.UI_NoisePreview = UI_NoisePreview
     globals.UI_Folder = UI_Folder
+    globals.UI_VolumeControls = UI_VolumeControls
 
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
@@ -258,6 +260,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     UI_EuclideanSection.initModule(globals)
     UI_NoisePreview.initModule(globals)
     UI_Folder.initModule(globals)
+    UI_VolumeControls.initModule(globals)
 
     -- Migrate old groups structure to new items structure (for old presets)
     -- Presets.lua may load data into globals.groups temporarily, which we migrate to globals.items

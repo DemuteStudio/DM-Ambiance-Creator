@@ -103,7 +103,9 @@ function Knob.Knob(config)
 
     -- Use current animation state to determine VISUAL size (not hitbox)
     local currentAnimState = animationStates[id]
-    local animatedSize = slider_height + (baseSize - slider_height) * currentAnimState
+    -- Reduce growth by 50% for more subtle animation
+    local growthAmount = (baseSize - slider_height) * 0.5
+    local animatedSize = slider_height + growthAmount * currentAnimState
     local size = globals.UI and globals.UI.scaleSize(animatedSize) or animatedSize
 
     -- Use the size calculated at the start of the frame (no recalculation)
