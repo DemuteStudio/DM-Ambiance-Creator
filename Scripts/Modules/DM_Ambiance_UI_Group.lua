@@ -16,12 +16,17 @@ function UI_Group.initModule(g)
 end
 
 -- Function to display group randomization settings in the right panel
-function UI_Group.displayGroupSettings(groupIndex, width)
-    local group = globals.groups[groupIndex]
-    local groupId = "group" .. groupIndex
-    
+function UI_Group.displayGroupSettings(groupPath, width)
+    -- Get group using path-based system
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group then
+        return -- Group not found
+    end
+
+    local groupId = "group" .. globals.Utils.pathToString(groupPath)
+
     -- Sync group volume from track
-    globals.Utils.syncGroupVolumeFromTrack(groupIndex)
+    globals.Utils.syncGroupVolumeFromTrack(groupPath)
     
     -- Panel title showing which group is being edited
     imgui.Text(globals.ctx, "Group Settings: " .. group.name)
@@ -60,9 +65,9 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         group.isSoloed = not group.isSoloed
         if group.isSoloed and group.isMuted then
             group.isMuted = false
-            globals.Utils.setGroupTrackMute(groupIndex, false)
+            globals.Utils.setGroupTrackMute(groupPath, false)
         end
-        globals.Utils.setGroupTrackSolo(groupIndex, group.isSoloed)
+        globals.Utils.setGroupTrackSolo(groupPath, group.isSoloed)
     end
     if soloColorPushed > 0 then
         imgui.PopStyleColor(globals.ctx, soloColorPushed)
@@ -80,9 +85,9 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         group.isMuted = not group.isMuted
         if group.isMuted and group.isSoloed then
             group.isSoloed = false
-            globals.Utils.setGroupTrackSolo(groupIndex, false)
+            globals.Utils.setGroupTrackSolo(groupPath, false)
         end
-        globals.Utils.setGroupTrackMute(groupIndex, group.isMuted)
+        globals.Utils.setGroupTrackMute(groupPath, group.isMuted)
     end
     if muteColorPushed > 0 then
         imgui.PopStyleColor(globals.ctx, muteColorPushed)
@@ -110,7 +115,7 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         group.trackVolume = newVolumeDB
         -- Apply volume to track in real-time
-        globals.Utils.setGroupTrackVolume(groupIndex, newVolumeDB)
+        globals.Utils.setGroupTrackVolume(groupPath, newVolumeDB)
     end
 
     -- Manual dB input field
@@ -129,15 +134,15 @@ function UI_Group.displayGroupSettings(groupIndex, width)
         manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
                            math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
         group.trackVolume = manualDB
-        globals.Utils.setGroupTrackVolume(groupIndex, manualDB)
+        globals.Utils.setGroupTrackVolume(groupPath, manualDB)
     end
     imgui.PopItemWidth(globals.ctx)
     
     -- Group preset controls
-    globals.UI_Groups.drawGroupPresetControls(groupIndex)
-    
+    globals.UI_Groups.drawGroupPresetControls(groupPath)
+
     -- TRIGGER SETTINGS SECTION
-    globals.UI.displayTriggerSettings(group, groupId, width, true, groupIndex, nil)
+    globals.UI.displayTriggerSettings(group, groupId, width, true, groupPath, nil)
 end
 
 return UI_Group

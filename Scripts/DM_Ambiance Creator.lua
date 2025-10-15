@@ -57,16 +57,29 @@ local UI_TriggerSection = dofile(script_path .. "Modules/DM_Ambiance_UI_TriggerS
 local UI_FadeSection = dofile(script_path .. "Modules/DM_Ambiance_UI_FadeSection.lua")
 local UI_EuclideanSection = dofile(script_path .. "Modules/DM_Ambiance_UI_EuclideanSection.lua")
 local UI_NoisePreview = dofile(script_path .. "Modules/DM_Ambiance_UI_NoisePreview.lua")
+local UI_Folder = dofile(script_path .. "Modules/DM_Ambiance_UI_Folder.lua")
 
 -- Global state shared across modules and UI
 local globals = {
-    groups = {},                      -- Stores all defined groups
+    items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
     endTime = 0,                      -- End time of the current time selection
     timeSelectionLength = 0,          -- Length of the time selection
     currentPresetName = "",           -- Name of the currently loaded global preset
     presetsPath = "",                 -- Path to the presets directory
+
+    -- Path-based selection system
+    selectedPath = nil,               -- Path to the currently selected item (folder or group)
+    selectedType = nil,               -- Type of selected item: "folder", "group", or nil
+    selectedContainerIndex = nil,     -- Index of selected container within the group (if any)
+
+    -- Multi-selection system
+    selectedContainers = {},          -- Table of selected container keys for multi-selection
+    inMultiSelectMode = false,        -- Flag indicating if multi-selection mode is active
+    shiftAnchorPath = nil,            -- Path anchor for Shift+Click range selection
+    shiftAnchorContainerIndex = nil,  -- Container index anchor for Shift+Click range selection
+
     selectedGroupPresetIndex = {},    -- Stores selected group preset indices for each group
     selectedContainerPresetIndex = {},-- Stores selected container preset indices for each container
     currentSaveGroupIndex = nil,      -- Index of the group currently being saved as a preset
@@ -212,6 +225,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.UI_FadeSection = UI_FadeSection
     globals.UI_EuclideanSection = UI_EuclideanSection
     globals.UI_NoisePreview = UI_NoisePreview
+    globals.UI_Folder = UI_Folder
 
     -- Initialize all modules with the shared globals table
     Utils.initModule(globals)
@@ -243,6 +257,13 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     UI_FadeSection.initModule(globals)
     UI_EuclideanSection.initModule(globals)
     UI_NoisePreview.initModule(globals)
+    UI_Folder.initModule(globals)
+
+    -- Migrate old groups structure to new items structure (for old presets)
+    -- Presets.lua may load data into globals.groups temporarily, which we migrate to globals.items
+    if not globals.groups then
+        globals.groups = {}
+    end
 
     -- Initialize backward compatibility for container volumes
     Utils.initializeContainerVolumes()

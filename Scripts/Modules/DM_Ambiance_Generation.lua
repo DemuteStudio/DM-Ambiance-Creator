@@ -64,13 +64,31 @@ function Generation.labelToChannelNumber(label, config, channelVariant)
 end
 
 -- Function to delete existing groups with same names before generating
+--- Helper function to recursively collect item names (groups and folders)
+--- @param items table: Array of items (folders/groups)
+--- @param nameMap table: Map to store names (modified in-place)
+local function collectItemNames(items, nameMap)
+    for _, item in ipairs(items) do
+        nameMap[item.name] = true
+        if item.type == "folder" and item.children then
+            collectItemNames(item.children, nameMap)
+        end
+    end
+end
+
 function Generation.deleteExistingGroups()
-  -- Create a map of group names we're about to create
-  local groupNames = {}
-  for _, group in ipairs(globals.groups) do
-      groupNames[group.name] = true
+  -- Create a map of all item names (groups and folders) we're about to create
+  local itemNames = {}
+
+  -- Support both old globals.groups and new globals.items structure
+  if globals.items and #globals.items > 0 then
+      collectItemNames(globals.items, itemNames)
+  elseif globals.groups and #globals.groups > 0 then
+      for _, group in ipairs(globals.groups) do
+          itemNames[group.name] = true
+      end
   end
-  
+
   -- Find all tracks with matching names and their children
   local groupsToDelete = {}
   local groupCount = reaper.CountTracks(0)
@@ -78,7 +96,7 @@ function Generation.deleteExistingGroups()
   while i < groupCount do
       local group = reaper.GetTrack(0, i)
       local _, name = reaper.GetSetMediaTrackInfo_String(group, "P_NAME", "", false)
-      if groupNames[name] then
+      if itemNames[name] then
           -- Check if this is a folder track
           local depth = reaper.GetMediaTrackInfo_Value(group, "I_FOLDERDEPTH")
           -- Add this track to the delete list
@@ -101,7 +119,7 @@ function Generation.deleteExistingGroups()
       end
       i = i + 1
   end
-  
+
   -- Delete tracks in reverse order to avoid index issues
   for i = #groupsToDelete, 1, -1 do
       reaper.DeleteTrack(groupsToDelete[i])
@@ -1238,46 +1256,96 @@ end
 
 -- Update all functions that call placeItemsForContainer to pass group parameter
 
--- Function to generate groups and place items
-function Generation.generateGroups()
-    if not globals.timeSelectionValid then
-        reaper.MB("Please create a time selection before generating groups!", "Error", 0)
-        return
+--- Recursive function to process items (folders and groups) and generate REAPER tracks
+--- @param items table: Array of items (folders/groups) to process
+--- @param generateFolderTracks boolean: Whether to create folder tracks for folder items
+--- @param currentDepth number: Current folder nesting depth (for folder closing)
+--- @param xfadeshape number: Crossfade shape from REAPER preferences
+--- @return number: Number of tracks created at this level
+local function processItems(items, generateFolderTracks, currentDepth, xfadeshape)
+    if not items or #items == 0 then
+        return 0
     end
 
-    reaper.Main_OnCommand(40289, 0) -- "Item: Unselect all items"
-    reaper.Undo_BeginBlock()
-    reaper.PreventUIRefresh(1)
+    local tracksCreatedAtThisLevel = 0
 
-    -- Get default crossfade shape from REAPER preferences
-    local xfadeshape = reaper.SNM_GetIntConfigVar("defxfadeshape", 0)
+    for i, item in ipairs(items) do
+        if item.type == "folder" then
+            -- Process folder item
+            local folderTrack = nil
+            local folderStartIdx = nil
 
-    if globals.keepExistingTracks then
-        -- Use regeneration logic for existing tracks (keep existing)
-        for i, group in ipairs(globals.groups) do
-            Generation.generateSingleGroup(i)
-        end
-    else
-        -- Original behavior: delete and recreate tracks (clear all)
-        Generation.deleteExistingGroups()
-        
-        for i, group in ipairs(globals.groups) do
-            -- Create a parent group
+            if generateFolderTracks then
+                -- Create folder track in REAPER
+                folderStartIdx = reaper.GetNumTracks()
+                reaper.InsertTrackAtIndex(folderStartIdx, true)
+                folderTrack = reaper.GetTrack(0, folderStartIdx)
+                reaper.GetSetMediaTrackInfo_String(folderTrack, "P_NAME", item.name, true)
+
+                -- Set as folder start
+                reaper.SetMediaTrackInfo_Value(folderTrack, "I_FOLDERDEPTH", 1)
+
+                -- Apply folder properties
+                local folderVolumeDB = item.trackVolume or 0.0
+                local linearVolume = Utils.dbToLinear(folderVolumeDB)
+                reaper.SetMediaTrackInfo_Value(folderTrack, "D_VOL", linearVolume)
+
+                -- Apply solo/mute states (if present)
+                if item.solo then
+                    reaper.SetMediaTrackInfo_Value(folderTrack, "I_SOLO", item.solo and 1 or 0)
+                end
+                if item.mute then
+                    reaper.SetMediaTrackInfo_Value(folderTrack, "B_MUTE", item.mute and 1 or 0)
+                end
+
+                tracksCreatedAtThisLevel = tracksCreatedAtThisLevel + 1
+            end
+
+            -- Recursively process folder children
+            if item.children and #item.children > 0 then
+                local childTracksCreated = processItems(item.children, generateFolderTracks, currentDepth + 1, xfadeshape)
+                tracksCreatedAtThisLevel = tracksCreatedAtThisLevel + childTracksCreated
+            end
+
+            if generateFolderTracks and folderTrack then
+                -- Close the folder by setting I_FOLDERDEPTH = -1 on the last child track
+                local currentTrackCount = reaper.GetNumTracks()
+                if currentTrackCount > folderStartIdx + 1 then
+                    -- There are child tracks, close folder on last child
+                    local lastChildTrack = reaper.GetTrack(0, currentTrackCount - 1)
+                    local currentDepth = reaper.GetMediaTrackInfo_Value(lastChildTrack, "I_FOLDERDEPTH")
+                    -- If the last child is already closing a folder, we need to decrement further
+                    reaper.SetMediaTrackInfo_Value(lastChildTrack, "I_FOLDERDEPTH", currentDepth - 1)
+                else
+                    -- No children were created, close the folder immediately
+                    -- Create a dummy track to close it (REAPER requires at least one child)
+                    local dummyIdx = reaper.GetNumTracks()
+                    reaper.InsertTrackAtIndex(dummyIdx, true)
+                    local dummyTrack = reaper.GetTrack(0, dummyIdx)
+                    reaper.GetSetMediaTrackInfo_String(dummyTrack, "P_NAME", "(empty)", true)
+                    reaper.SetMediaTrackInfo_Value(dummyTrack, "I_FOLDERDEPTH", -1)
+                    tracksCreatedAtThisLevel = tracksCreatedAtThisLevel + 1
+                end
+            end
+
+        elseif item.type == "group" then
+            -- Process group item (existing logic from generateGroups)
+            local group = item
             local parentGroupIdx = reaper.GetNumTracks()
             reaper.InsertTrackAtIndex(parentGroupIdx, true)
             local parentGroup = reaper.GetTrack(0, parentGroupIdx)
             reaper.GetSetMediaTrackInfo_String(parentGroup, "P_NAME", group.name, true)
-            
+
             -- Set the group as parent (folder start)
             reaper.SetMediaTrackInfo_Value(parentGroup, "I_FOLDERDEPTH", 1)
-            
+
             -- Apply group track volume
             local groupVolumeDB = group.trackVolume or 0.0
             local linearVolume = Utils.dbToLinear(groupVolumeDB)
             reaper.SetMediaTrackInfo_Value(parentGroup, "D_VOL", linearVolume)
-            
+
             local containerCount = #group.containers
-            
+
             for j, container in ipairs(group.containers) do
                 -- Create a group for each container
                 local containerGroupIdx = reaper.GetNumTracks()
@@ -1324,13 +1392,13 @@ function Generation.generateGroups()
                 local lastTrackIdx = parentGroupIdx
 
                 -- Find the last track in this group's hierarchy
-                local i = parentGroupIdx + 1
-                while i < reaper.CountTracks(0) and depth > 0 do
-                    lastTrackIdx = i
-                    local track = reaper.GetTrack(0, i)
+                local k = parentGroupIdx + 1
+                while k < reaper.CountTracks(0) and depth > 0 do
+                    lastTrackIdx = k
+                    local track = reaper.GetTrack(0, k)
                     local trackDepth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
                     depth = depth + trackDepth
-                    i = i + 1
+                    k = k + 1
                 end
 
                 -- Get the actual last track and ensure it closes the parent group
@@ -1341,18 +1409,185 @@ function Generation.generateGroups()
                     reaper.SetMediaTrackInfo_Value(lastTrack, "I_FOLDERDEPTH", -1)
                 end
             end
+
+            tracksCreatedAtThisLevel = tracksCreatedAtThisLevel + (reaper.GetNumTracks() - parentGroupIdx)
         end
+    end
+
+    return tracksCreatedAtThisLevel
+end
+
+--- Helper function to recursively collect all groups from items structure
+--- @param items table: Array of items (folders/groups)
+--- @param groups table: Array to collect groups into (modified in-place)
+local function collectAllGroups(items, groups)
+    for _, item in ipairs(items) do
+        if item.type == "group" then
+            table.insert(groups, item)
+        elseif item.type == "folder" and item.children then
+            collectAllGroups(item.children, groups)
+        end
+    end
+end
+
+-- Function to generate groups and place items
+function Generation.generateGroups()
+    if not globals.timeSelectionValid then
+        reaper.MB("Please create a time selection before generating groups!", "Error", 0)
+        return
+    end
+
+    reaper.Main_OnCommand(40289, 0) -- "Item: Unselect all items"
+    reaper.Undo_BeginBlock()
+    reaper.PreventUIRefresh(1)
+
+    -- Get default crossfade shape from REAPER preferences
+    local xfadeshape = reaper.SNM_GetIntConfigVar("defxfadeshape", 0)
+
+    -- Determine data source: new globals.items or legacy globals.groups
+    local itemsSource = (globals.items and #globals.items > 0) and globals.items or nil
+    local groupsSource = (not itemsSource and globals.groups and #globals.groups > 0) and globals.groups or nil
+
+    if globals.keepExistingTracks then
+        -- Use regeneration logic for existing tracks (keep existing)
+        -- Use new items structure or fall back to legacy groups
+        if itemsSource then
+            -- TODO: Implement regeneration for new items structure
+            -- For now, show message and fall back to recreate mode
+            reaper.MB("Regeneration mode not yet supported with folder structure.\nWill recreate tracks instead.", "Info", 0)
+            globals.keepExistingTracks = false
+            Generation.deleteExistingGroups()
+            local generateFolderTracks = globals.Settings and globals.Settings.getSetting("generateFolderTracks")
+            if generateFolderTracks == nil then
+                generateFolderTracks = true
+            end
+            processItems(itemsSource, generateFolderTracks, 0, xfadeshape)
+        elseif groupsSource then
+            -- Legacy regeneration for old globals.groups
+            for i, group in ipairs(groupsSource) do
+                Generation.generateSingleGroup(i)
+            end
+        end
+    else
+        -- Original behavior: delete and recreate tracks (clear all)
+        Generation.deleteExistingGroups()
+
+        -- NEW APPROACH: Use processItems for recursive folder/group generation
+        if itemsSource then
+            -- Get generateFolderTracks setting
+            local generateFolderTracks = globals.Settings and globals.Settings.getSetting("generateFolderTracks")
+            if generateFolderTracks == nil then
+                generateFolderTracks = true  -- Default to true if setting not found
+            end
+
+            -- Process items recursively
+            processItems(itemsSource, generateFolderTracks, 0, xfadeshape)
+
+        elseif groupsSource then
+            -- LEGACY APPROACH: Use old globals.groups logic
+            for i, group in ipairs(groupsSource) do
+                -- Create a parent group
+                local parentGroupIdx = reaper.GetNumTracks()
+                reaper.InsertTrackAtIndex(parentGroupIdx, true)
+                local parentGroup = reaper.GetTrack(0, parentGroupIdx)
+                reaper.GetSetMediaTrackInfo_String(parentGroup, "P_NAME", group.name, true)
+
+                -- Set the group as parent (folder start)
+                reaper.SetMediaTrackInfo_Value(parentGroup, "I_FOLDERDEPTH", 1)
+
+                -- Apply group track volume
+                local groupVolumeDB = group.trackVolume or 0.0
+                local linearVolume = Utils.dbToLinear(groupVolumeDB)
+                reaper.SetMediaTrackInfo_Value(parentGroup, "D_VOL", linearVolume)
+
+                local containerCount = #group.containers
+
+                for j, container in ipairs(group.containers) do
+                    -- Create a group for each container
+                    local containerGroupIdx = reaper.GetNumTracks()
+                    reaper.InsertTrackAtIndex(containerGroupIdx, true)
+                    local containerGroup = reaper.GetTrack(0, containerGroupIdx)
+                    reaper.GetSetMediaTrackInfo_String(containerGroup, "P_NAME", container.name, true)
+
+                    -- Check if this is a multi-channel container
+                    local isMultiChannel = container.channelMode and container.channelMode > 0
+
+                    -- Set folder state based on position and channel mode
+                    local folderState = 0 -- Default: normal group in a folder
+                    if not isMultiChannel then
+                        -- Only set folder state for non-multi-channel containers
+                        if j == containerCount then
+                            -- If it's the last container, mark as folder end
+                            folderState = -1
+                        end
+                        reaper.SetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH", folderState)
+                    else
+                        -- For multi-channel containers, don't set folder depth here
+                        -- Let createMultiChannelTracks handle it
+                        -- But we need to pass info about whether it's the last container
+                        container.isLastInGroup = (j == containerCount)
+                    end
+
+                    -- Apply container track volume
+                    local volumeDB = container.trackVolume or 0.0
+                    local linearVolume = Utils.dbToLinear(volumeDB)
+                    reaper.SetMediaTrackInfo_Value(containerGroup, "D_VOL", linearVolume)
+
+                    -- Place items on the timeline according to the chosen mode
+                    Generation.placeItemsForContainer(group, container, containerGroup, xfadeshape)
+                end
+
+                -- After all containers are created, ensure proper folder closure
+                -- If the last container was multi-channel, we need to close the parent group
+                local lastContainer = group.containers[#group.containers]
+                if lastContainer and lastContainer.channelMode and lastContainer.channelMode > 0 then
+                    -- The last container is multi-channel, its children need to close the parent group too
+                    -- Find the last track in the entire group
+                    local parentGroupIdx = reaper.GetMediaTrackInfo_Value(parentGroup, "IP_TRACKNUMBER") - 1
+                    local depth = 1
+                    local lastTrackIdx = parentGroupIdx
+
+                    -- Find the last track in this group's hierarchy
+                    local k = parentGroupIdx + 1
+                    while k < reaper.CountTracks(0) and depth > 0 do
+                        lastTrackIdx = k
+                        local track = reaper.GetTrack(0, k)
+                        local trackDepth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+                        depth = depth + trackDepth
+                        k = k + 1
+                    end
+
+                    -- Get the actual last track and ensure it closes the parent group
+                    if lastTrackIdx > parentGroupIdx then
+                        local lastTrack = reaper.GetTrack(0, lastTrackIdx)
+                        -- This track should close both its container and the parent group
+                        -- Since Reaper doesn't support -2, we use -1 which should close the outermost open folder
+                        reaper.SetMediaTrackInfo_Value(lastTrack, "I_FOLDERDEPTH", -1)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Collect all groups from either source for master track channel calculation
+    local allGroups = {}
+    if itemsSource then
+        collectAllGroups(itemsSource, allGroups)
+    elseif groupsSource then
+        allGroups = groupsSource
     end
 
     -- Ensure Master track has enough channels for all multi-channel groups
     local maxChannels = 2  -- Minimum stereo
-    for i, group in ipairs(globals.groups) do
-        for j, container in ipairs(group.containers) do
-            if container.channelMode and container.channelMode > 0 then
-                local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
-                if config then
-                    local requiredChannels = config.totalChannels or config.channels
-                    maxChannels = math.max(maxChannels, requiredChannels)
+    for _, group in ipairs(allGroups) do
+        if group.containers then
+            for _, container in ipairs(group.containers) do
+                if container.channelMode and container.channelMode > 0 then
+                    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+                    if config then
+                        local requiredChannels = config.totalChannels or config.channels
+                        maxChannels = math.max(maxChannels, requiredChannels)
+                    end
                 end
             end
         end
@@ -1372,10 +1607,12 @@ function Generation.generateGroups()
     -- on issues that will be auto-corrected by recalculateChannelRequirements()
 
     -- Clear regeneration flags for all groups and containers
-    for _, group in ipairs(globals.groups) do
+    for _, group in ipairs(allGroups) do
         group.needsRegeneration = false
-        for _, container in ipairs(group.containers) do
-            container.needsRegeneration = false
+        if group.containers then
+            for _, container in ipairs(group.containers) do
+                container.needsRegeneration = false
+            end
         end
     end
 

@@ -17,11 +17,12 @@ function RightPanel.initModule(g)
 end
 
 -- Render the right panel
--- Handles three modes:
+-- Handles four modes:
 -- 1. Multi-selection mode: Show multi-selection panel
 -- 2. Container selected: Show container settings
 -- 3. Group selected (no container): Show group settings
--- 4. Nothing selected: Show help text
+-- 4. Folder selected: Show folder settings
+-- 5. Nothing selected: Show help text
 function RightPanel.render(width)
     -- Early exit if no containers are selected (empty table check)
     if globals.selectedContainers == {} then
@@ -35,21 +36,40 @@ function RightPanel.render(width)
     end
 
     -- SINGLE SELECTION MODE
-    if globals.selectedGroupIndex and globals.selectedContainerIndex then
+    -- Use path-based selection system only
+    if not globals.selectedPath then
+        -- Nothing selected
+        imgui.TextColored(
+            globals.ctx,
+            0xFFAA00FF,
+            "Select a group or container to view and edit its settings."
+        )
+        return
+    end
+
+    if globals.selectedContainerIndex and globals.selectedContainerIndex > 0 then
         -- Container is selected: display container settings
         globals.UI_Container.displayContainerSettings(
-            globals.selectedGroupIndex,
+            globals.selectedPath,
             globals.selectedContainerIndex,
             width
         )
-    elseif globals.selectedGroupIndex then
-        -- Only group is selected: display group settings
+    elseif globals.selectedType == "folder" then
+        -- Folder is selected: display folder settings
+        if globals.UI_Folder then
+            local folder = globals.Structures.getItemFromPath(globals.selectedPath)
+            if folder then
+                globals.UI_Folder.drawFolderPanel(folder)
+            end
+        end
+    elseif globals.selectedType == "group" then
+        -- Group is selected: display group settings
         globals.UI_Group.displayGroupSettings(
-            globals.selectedGroupIndex,
+            globals.selectedPath,
             width
         )
     else
-        -- Nothing is selected: show help text
+        -- Shouldn't happen, but fallback to help text
         imgui.TextColored(
             globals.ctx,
             0xFFAA00FF,

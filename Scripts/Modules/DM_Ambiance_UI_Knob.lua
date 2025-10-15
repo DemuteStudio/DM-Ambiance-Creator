@@ -91,8 +91,9 @@ function Knob.Knob(config)
     -- Hitbox is ALWAYS at max size to prevent shrinking when hovering
     local maxSize = globals.UI and globals.UI.scaleSize(baseSize) or baseSize
 
-    -- Create invisible button with FIXED max size
-    imgui.InvisibleButton(ctx, id, maxSize, maxSize)
+    -- Create invisible button with slider height to not push UI elements
+    -- But make it wide enough for the max size hitbox
+    imgui.InvisibleButton(ctx, id, slider_height, slider_height)
     local is_active = imgui.IsItemActive(ctx)
     local is_hovered = imgui.IsItemHovered(ctx)
 
@@ -108,9 +109,9 @@ function Knob.Knob(config)
     -- Use the size calculated at the start of the frame (no recalculation)
     local radius = size * 0.5
 
-    -- Calculate where to draw the circle (centered in FIXED hitbox)
-    local center_x = cursor_x + maxSize * 0.5
-    local center_y = cursor_y + maxSize * 0.5
+    -- Calculate where to draw the circle (centered in slider_height hitbox)
+    local center_x = cursor_x + slider_height * 0.5
+    local center_y = cursor_y + slider_height * 0.5
 
     -- Handle mouse drag
     if is_active then

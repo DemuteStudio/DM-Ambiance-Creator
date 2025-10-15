@@ -15,11 +15,27 @@ function Structures.initModule(g)
     globals = g
 end
 
+-- Folder structure for organizational purposes
+-- @param name string: Folder name (optional, defaults to "New Folder")
+-- @return table: Folder structure
+function Structures.createFolder(name)
+    return {
+        type = "folder",
+        name = name or "New Folder",
+        trackVolume = Constants.DEFAULTS.FOLDER_VOLUME_DEFAULT or 0.0,
+        solo = false,
+        mute = false,
+        expanded = true,
+        children = {}  -- Array of folders and groups
+    }
+end
+
 -- Group structure with randomization parameters
 -- @param name string: Group name (optional, defaults to "New Group")
 -- @return table: Group structure
 function Structures.createGroup(name)
     return {
+        type = "group",
         name = name or "New Group",
         containers = {},
         expanded = true,
@@ -501,6 +517,220 @@ function Structures.syncEuclideanBindings(group)
     group.euclideanLayerBindings = newBindings
     group.euclideanBindingOrder = newBindingOrder
     group.euclideanSelectedLayerPerBinding = newSelectedLayers
+end
+
+-- ============================================================================
+-- PATH-BASED ACCESS HELPERS
+-- ============================================================================
+
+-- Local helper to copy a table (shallow copy for paths)
+-- @param t table: Table to copy
+-- @return table: New table with same contents
+local function copyTable(t)
+    if not t or type(t) ~= "table" then
+        return {}
+    end
+    local result = {}
+    for i, v in ipairs(t) do
+        result[i] = v
+    end
+    return result
+end
+
+-- Local helper for pathToString (forwards to Utils module after initialization)
+local function pathToString(path)
+    -- Use Utils.pathToString for consistency across all modules
+    if globals and globals.Utils and globals.Utils.pathToString then
+        return globals.Utils.pathToString(path)
+    end
+    -- Fallback for early initialization
+    if not path or type(path) ~= "table" or #path == 0 then
+        return ""
+    end
+    return table.concat(path, ",")
+end
+
+-- Get an item (folder or group) from a path array
+-- @param path table: Path array like {1, 2, 3}
+-- @return table|nil: The item at the path, or nil if not found
+function Structures.getItemFromPath(path)
+    if not path or type(path) ~= "table" or #path == 0 then
+        return nil
+    end
+
+    local current = globals.items
+    for i = 1, #path do
+        if not current or #current < path[i] then
+            return nil
+        end
+
+        local item = current[path[i]]
+        if not item then
+            return nil
+        end
+
+        -- If this is the last index in the path, return the item
+        if i == #path then
+            return item
+        end
+
+        -- Navigate deeper based on item type
+        if item.type == "folder" then
+            current = item.children
+        elseif item.type == "group" then
+            -- Groups don't have children, only containers
+            return nil
+        else
+            return nil
+        end
+    end
+
+    return nil
+end
+
+-- Get a container by its ID (UUID)
+-- Searches recursively through all groups in globals.items
+-- @param containerID string: The container's UUID
+-- @return table|nil, table|nil: The container and its parent group, or nil if not found
+function Structures.getContainerByID(containerID)
+    if not containerID or not globals.items then
+        return nil, nil
+    end
+
+    local function searchItems(items)
+        for _, item in ipairs(items) do
+            if item.type == "group" and item.containers then
+                for _, container in ipairs(item.containers) do
+                    if container.id == containerID then
+                        return container, item
+                    end
+                end
+            elseif item.type == "folder" and item.children then
+                local container, group = searchItems(item.children)
+                if container then
+                    return container, group
+                end
+            end
+        end
+        return nil, nil
+    end
+
+    return searchItems(globals.items)
+end
+
+-- Get a container from a group by index
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container (1-based)
+-- @return table|nil: The container, or nil if not found
+function Structures.getContainerFromGroup(groupPath, containerIndex)
+    local group = Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" or not group.containers then
+        return nil
+    end
+
+    return group.containers[containerIndex]
+end
+
+-- Get the parent group of a container by its ID
+-- @param containerID string: The container's UUID
+-- @return table|nil, table|nil: The parent group and its path, or nil if not found
+function Structures.getParentGroupOfContainer(containerID)
+    local _, group = Structures.getContainerByID(containerID)
+    if not group then
+        return nil, nil
+    end
+
+    -- Find the path to this group
+    local function findPath(items, targetGroup, currentPath)
+        for i, item in ipairs(items) do
+            local newPath = copyTable(currentPath)
+            table.insert(newPath, i)
+
+            if item == targetGroup then
+                return newPath
+            end
+
+            if item.type == "folder" and item.children then
+                local path = findPath(item.children, targetGroup, newPath)
+                if path then
+                    return path
+                end
+            end
+        end
+        return nil
+    end
+
+    local path = findPath(globals.items, group, {})
+    return group, path
+end
+
+-- Get a group by its path
+-- This is essentially an alias for getItemFromPath with type checking
+-- @param path table: Path array like {1, 2, 3}
+-- @return table|nil: The group, or nil if not found or not a group
+function Structures.getGroupByPath(path)
+    local item = Structures.getItemFromPath(path)
+    if item and item.type == "group" then
+        return item
+    end
+    return nil
+end
+
+-- Make a unique key for a container selection
+-- @param path table: Path to the group
+-- @param containerIndex number: Index of the container
+-- @return string: A unique key like "1_2_3::5"
+function Structures.makeContainerKey(path, containerIndex)
+    if type(path) == "table" then
+        local pathStr = pathToString(path)
+        return pathStr .. "::" .. tostring(containerIndex)
+    else
+        -- Fallback for legacy numeric index
+        return tostring(path) .. "_" .. tostring(containerIndex)
+    end
+end
+
+-- Parse a container selection key back into path and index
+-- @param key string: A key like "1_2_3::5" or "3_5" (legacy)
+-- @return table|number, number: The path (or legacy index) and container index
+function Structures.parseContainerKey(key)
+    if not key then
+        return nil, nil
+    end
+
+    -- Try new format first: "path::containerIndex"
+    local pathStr, containerIndexStr = key:match("^(.+)::(%d+)$")
+    if pathStr and containerIndexStr then
+        -- Parse path string back to array
+        local path = {}
+        for num in pathStr:gmatch("(%d+)") do
+            table.insert(path, tonumber(num))
+        end
+        return path, tonumber(containerIndexStr)
+    end
+
+    -- Fallback to legacy format: "groupIndex_containerIndex"
+    local groupIndexStr, containerIndexStr = key:match("^(%d+)_(%d+)$")
+    if groupIndexStr and containerIndexStr then
+        return tonumber(groupIndexStr), tonumber(containerIndexStr)
+    end
+
+    return nil, nil
+end
+
+-- Make a unique key for an item (for waveform cache, etc.)
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container
+-- @param itemIndex number: Index of the item
+-- @return string: A unique key like "1_2_3::5::2"
+function Structures.makeItemKey(groupPath, containerIndex, itemIndex)
+    if type(groupPath) == "table" then
+        local containerKey = Structures.makeContainerKey(groupPath, containerIndex)
+        return containerKey .. "::" .. tostring(itemIndex)
+    else
+        -- Legacy format
+        return string.format("g%d_c%d_i%d", groupPath, containerIndex, itemIndex)
+    end
 end
 
 return Structures

@@ -187,12 +187,27 @@ end
 
 -- Check if a container is selected
 function Core.isContainerSelected(groupIndex, containerIndex)
-    return globals.selectedContainers[groupIndex .. "_" .. containerIndex] == true
+    local key
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        key = globals.Utils.makeContainerKey(groupIndex, containerIndex)
+    else
+        -- Legacy numeric index system
+        key = groupIndex .. "_" .. containerIndex
+    end
+    return globals.selectedContainers[key] == true
 end
 
 -- Toggle the selection state of a container
 function Core.toggleContainerSelection(groupIndex, containerIndex)
-    local key = groupIndex .. "_" .. containerIndex
+    local key
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        key = globals.Utils.makeContainerKey(groupIndex, containerIndex)
+    else
+        -- Legacy numeric index system
+        key = groupIndex .. "_" .. containerIndex
+    end
     local isShiftPressed = (globals.imgui.GetKeyMods(globals.ctx) & globals.imgui.Mod_Shift ~= 0)
 
     -- If Shift is pressed and an anchor exists, select a range
