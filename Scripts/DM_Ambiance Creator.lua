@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.9.2-beta
+@version 0.10.0-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -8,7 +8,40 @@
     [nomain] Modules/*.lua
     Icons/*.png
 @changelog
-  Fix a crash when doing a time selection.
+  # Version 0.10.0-beta - Major Feature Release
+
+  ## New Features
+  + Euclidean Rhythm System: Multi-layer euclidean rhythm generation with visual preview and pattern preset library
+  + Euclidean Pattern Browser: Search, sort, and save/load famous traditional rhythm patterns with auto-bind mode
+  + Enhanced Multi-Channel Audio: Per-track stereo pair mapping, split-stereo selection modes, and channel conflict resolver with auto-fix
+  + Channel Volume Controls: Per-channel volume controls with dB input fields and audio taper curve
+  + Folder/Group Hierarchy System: Path-based item management replacing flat structure with unique name generation
+  + Interactive Waveform Editor: Zoom, pan, drawable zones, auto-detect areas, and playback from any position
+  + Complete Undo/Redo System: Full history window with icons and jump to previous states functionality
+  + Advanced UI Components: Rotating knob widget, S-curve fade widget, LinkFader component, searchable combo boxes
+  + Noise Generation Mode: Deterministic noise-based item generation with visual preview
+  + Item Variation System: Variation direction, pitch stretch mode, gain fader, and coverage mode drift/variance
+  + Copy/Paste System: Copy and paste groups and containers with keyboard shortcuts (Ctrl+C, Ctrl+V)
+  + Enhanced Drag & Drop: Multi-container drag and drop, drag from media explorer or timeline
+  + Auto-Regeneration System: Auto-regen on trigger settings change with visual indicators for containers needing regeneration
+  + UI Scaling Support: Improved UI scaling and modular architecture (MainWindow, LeftPanel, RightPanel)
+
+  ## Bug Fixes
+  + Fixed multiple ImGui context management issues causing crashes on window resize and mode changes
+  + Fixed "Calling End() too many times" errors and BeginChild/EndChild pattern for collapsed windows
+  + Fixed channel count updates and pan generation on multichannel items
+  + Fixed fades not applied correctly with multichannel configurations
+  + Fixed conflict resolver channel mapping and routing validation issues
+  + Fixed fade slider double undo and unlink fades still linked when moving fade out fader
+  + Fixed mode changes not reflected on items and empty slots in dropdown menus
+  + Fixed Keep existing track checkbox disabled after ambiance generation
+  + Fixed coverage mode behavior and rotation generation issues
+  + Fixed waveform display clipping when zoomed in and crashes when opening edit mode on new items
+  + Fixed playback with space bar and play cursor behavior
+  + Fixed autoplay save/recall and column size persistence
+  + Fixed folder system issues and unique name generation
+  + Fixed regeneration after changing multi-channel settings
+  + Fixed console message clutter and syntax errors
 --]]
 
 -- Check if ReaImGui is available; display an error and exit if not
