@@ -26,7 +26,8 @@ function Structures.createFolder(name)
         solo = false,
         mute = false,
         expanded = true,
-        children = {}  -- Array of folders and groups
+        children = {},  -- Array of folders and groups
+        trackGUID = nil  -- GUID of the folder track in REAPER (set during generation)
     }
 end
 

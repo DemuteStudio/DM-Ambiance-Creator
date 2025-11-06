@@ -152,8 +152,11 @@ function UI_Container.displayContainerSettings(groupPath, containerIndex, width)
         globals.Utils.syncChannelVolumesFromTracks(groupPath, containerIndex)
     end
 
-    -- Sync container volume from track
+    -- Sync container volume, name, mute, and solo from track
     globals.Utils.syncContainerVolumeFromTrack(groupPath, containerIndex)
+    globals.Utils.syncContainerNameFromTrack(groupPath, containerIndex)
+    globals.Utils.syncContainerMuteFromTrack(groupPath, containerIndex)
+    globals.Utils.syncContainerSoloFromTrack(groupPath, containerIndex)
 
     -- Panel title showing which container is being edited
     imgui.Text(globals.ctx, "Container Settings: " .. container.name)
@@ -169,6 +172,8 @@ function UI_Container.displayContainerSettings(groupPath, containerIndex, width)
     local rv, newContainerName = globals.UndoWrappers.InputText(globals.ctx, "Name##detail_" .. containerId, container.name)
     if rv then
         container.name = newContainerName
+        -- Update track name in REAPER in real-time
+        globals.Utils.setContainerTrackName(groupPath, containerIndex, newContainerName)
     end
     imgui.PopItemWidth(globals.ctx)
 

@@ -59,7 +59,7 @@ function RightPanel.render(width)
         if globals.UI_Folder then
             local folder = globals.Structures.getItemFromPath(globals.selectedPath)
             if folder then
-                globals.UI_Folder.drawFolderPanel(folder)
+                globals.UI_Folder.drawFolderPanel(folder, globals.selectedPath)
             end
         end
     elseif globals.selectedType == "group" then

@@ -25,9 +25,12 @@ function UI_Group.displayGroupSettings(groupPath, width)
 
     local groupId = "group" .. globals.Utils.pathToString(groupPath)
 
-    -- Sync group volume from track
+    -- Sync group volume, name, mute, and solo from track
     globals.Utils.syncGroupVolumeFromTrack(groupPath)
-    
+    globals.Utils.syncGroupNameFromTrack(groupPath)
+    globals.Utils.syncGroupMuteFromTrack(groupPath)
+    globals.Utils.syncGroupSoloFromTrack(groupPath)
+
     -- Panel title showing which group is being edited
     imgui.Text(globals.ctx, "Group Settings: " .. group.name)
     imgui.Separator(globals.ctx)
@@ -37,6 +40,8 @@ function UI_Group.displayGroupSettings(groupPath, width)
     local rv, newGroupName = globals.UndoWrappers.InputText(globals.ctx, "Name##detail_" .. groupId, group.name)
     if rv then
         group.name = newGroupName
+        -- Update track name in REAPER in real-time
+        globals.Utils.setGroupTrackName(groupPath, newGroupName)
     end
     
     -- Group track volume slider

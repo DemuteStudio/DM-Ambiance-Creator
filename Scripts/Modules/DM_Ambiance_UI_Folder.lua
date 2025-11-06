@@ -16,7 +16,8 @@ end
 
 -- Draw the folder details panel
 -- @param folder table: The folder structure to display
-function UI_Folder.drawFolderPanel(folder)
+-- @param folderPath table: Path to the folder in the items hierarchy
+function UI_Folder.drawFolderPanel(folder, folderPath)
     if not folder then
         return
     end
@@ -24,6 +25,14 @@ function UI_Folder.drawFolderPanel(folder)
     local ctx = globals.ctx
     local imgui = globals.imgui
     local Constants = globals.Constants
+
+    -- Sync folder volume, name, mute, and solo from track
+    if folderPath then
+        globals.Utils.syncFolderVolumeFromTrack(folderPath)
+        globals.Utils.syncFolderNameFromTrack(folderPath)
+        globals.Utils.syncFolderMuteFromTrack(folderPath)
+        globals.Utils.syncFolderSoloFromTrack(folderPath)
+    end
 
     -- Title
     imgui.Text(ctx, "Folder Settings")
@@ -36,6 +45,10 @@ function UI_Folder.drawFolderPanel(folder)
     local nameChanged, newName = imgui.InputText(ctx, "##FolderName", folder.name, imgui.InputTextFlags_None)
     if nameChanged then
         folder.name = newName
+        -- Update track name in REAPER in real-time
+        if folderPath then
+            globals.Utils.setFolderTrackName(folderPath, newName)
+        end
     end
 
     imgui.Separator(ctx)
@@ -63,8 +76,17 @@ function UI_Folder.drawFolderPanel(folder)
     end
     if imgui.Button(ctx, "S##FolderSolo", buttonSize, buttonSize) then
         folder.isSoloed = not folder.isSoloed
-        -- Apply solo to REAPER track if it exists
-        -- TODO: Implement folder track solo
+        -- If soloing, unmute automatically
+        if folder.isSoloed and folder.isMuted then
+            folder.isMuted = false
+            if folderPath then
+                globals.Utils.setFolderTrackMute(folderPath, false)
+            end
+        end
+        -- Apply solo to REAPER track in real-time
+        if folderPath then
+            globals.Utils.setFolderTrackSolo(folderPath, folder.isSoloed)
+        end
     end
     if soloColorPushed > 0 then
         imgui.PopStyleColor(ctx, soloColorPushed)
@@ -84,8 +106,17 @@ function UI_Folder.drawFolderPanel(folder)
     end
     if imgui.Button(ctx, "M##FolderMute", buttonSize, buttonSize) then
         folder.isMuted = not folder.isMuted
-        -- Apply mute to REAPER track if it exists
-        -- TODO: Implement folder track mute
+        -- If muting, unsolo automatically
+        if folder.isMuted and folder.isSoloed then
+            folder.isSoloed = false
+            if folderPath then
+                globals.Utils.setFolderTrackSolo(folderPath, false)
+            end
+        end
+        -- Apply mute to REAPER track in real-time
+        if folderPath then
+            globals.Utils.setFolderTrackMute(folderPath, folder.isMuted)
+        end
     end
     if muteColorPushed > 0 then
         imgui.PopStyleColor(ctx, muteColorPushed)
@@ -114,8 +145,10 @@ function UI_Folder.drawFolderPanel(folder)
     if rv then
         local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
         folder.trackVolume = newVolumeDB
-        -- Apply volume to REAPER track if it exists
-        -- TODO: Implement folder track volume
+        -- Apply volume to REAPER track in real-time
+        if folderPath then
+            globals.Utils.setFolderTrackVolume(folderPath, newVolumeDB)
+        end
     end
 
     -- Manual dB input field
@@ -134,8 +167,10 @@ function UI_Folder.drawFolderPanel(folder)
         manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
                            math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
         folder.trackVolume = manualDB
-        -- Apply volume to REAPER track if it exists
-        -- TODO: Implement folder track volume
+        -- Apply volume to REAPER track in real-time
+        if folderPath then
+            globals.Utils.setFolderTrackVolume(folderPath, manualDB)
+        end
     end
     imgui.PopItemWidth(ctx)
 

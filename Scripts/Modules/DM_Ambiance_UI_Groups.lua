@@ -141,8 +141,11 @@ local function drawListItemWithButtons(params)
                 imgui.DrawList_AddLine(drawList, min_x, min_y, max_x, min_y, lineColor, 1)
             elseif dropPosition == "after" then
                 imgui.DrawList_AddLine(drawList, min_x, max_y, max_x, max_y, lineColor, 1)
+            elseif dropPosition == "middle" and params.allowDropInto then
+                -- Draw a rectangle highlight to show item will be dropped INTO this folder/group
+                local highlightColor = 0x4080FF40 -- Semi-transparent blue
+                imgui.DrawList_AddRectFilled(drawList, min_x, min_y, max_x, max_y, highlightColor)
             end
-            -- Middle zone: no line (visual clarity that item will go INTO)
 
             -- Try to accept each specified payload type
             for _, acceptType in ipairs(params.dropTarget.accept) do
@@ -296,7 +299,7 @@ local function renderItems(items, parentPath, indentLevel, availableWidth, isCon
                                 local targetPath = currentPath
 
                                 -- Prevent dropping folder into itself or its descendants
-                                if globals.Utils.isPathAncestor(sourcePath, targetPath) then
+                                if globals.Utils.isPathAncestor(sourcePath, targetPath) or globals.Utils.pathsEqual(sourcePath, targetPath) then
                                     return
                                 end
 
@@ -313,6 +316,11 @@ local function renderItems(items, parentPath, indentLevel, availableWidth, isCon
                                     -- Drop INTO this folder
                                     targetPath = globals.Utils.copyTable(currentPath)
                                     table.insert(targetPath, #item.children + 1)
+                                end
+
+                                -- Additional validation: don't drop item onto itself
+                                if globals.Utils.pathsEqual(sourcePath, targetPath) then
+                                    return
                                 end
 
                                 globals.pendingFolderMove = {
@@ -336,6 +344,11 @@ local function renderItems(items, parentPath, indentLevel, availableWidth, isCon
                                 else -- "middle"
                                     targetPath = globals.Utils.copyTable(currentPath)
                                     table.insert(targetPath, #item.children + 1)
+                                end
+
+                                -- Don't drop group onto itself
+                                if globals.Utils.pathsEqual(sourcePath, targetPath) then
+                                    return
                                 end
 
                                 globals.pendingFolderMove = {
@@ -416,6 +429,68 @@ local function renderItems(items, parentPath, indentLevel, availableWidth, isCon
             if item.expanded then
                 imgui.Indent(globals.ctx, Constants.UI.CONTAINER_INDENT)
                 renderItems(item.children, currentPath, indentLevel + 1, availableWidth - Constants.UI.CONTAINER_INDENT, isContainerSelected, toggleContainerSelection, clearContainerSelections, selectContainerRange)
+
+                -- Add minimal invisible drop zone at the end of folder's children (only visible during drag)
+                -- Only show if we're currently dragging something
+                if globals.draggedItem then
+                    imgui.InvisibleButton(globals.ctx, "drop_zone_" .. itemId, availableWidth - Constants.UI.CONTAINER_INDENT - 30, 4)
+
+                    -- Visual feedback when hovering over drop zone during drag
+                    if imgui.IsItemHovered(globals.ctx) then
+                        local min_x, min_y = imgui.GetItemRectMin(globals.ctx)
+                        local max_x, max_y = imgui.GetItemRectMax(globals.ctx)
+                        local drawList = imgui.GetWindowDrawList(globals.ctx)
+                        -- Draw a line to indicate drop zone
+                        local lineColor = 0x8080FFFF -- Blue
+                        imgui.DrawList_AddLine(drawList, min_x, min_y + 2, max_x, min_y + 2, lineColor, 2)
+                    end
+
+                    -- Make this a drop target for folders and groups
+                    if imgui.BeginDragDropTarget(globals.ctx) then
+                    -- Try to accept folders
+                    local folderPayload = imgui.AcceptDragDropPayload(globals.ctx, "DND_FOLDER")
+                    if folderPayload then
+                        if globals.draggedItem and globals.draggedItem.type == "FOLDER" then
+                            local sourcePath = globals.draggedItem.path
+
+                            -- Prevent dropping folder into itself or its descendants
+                            if not (globals.Utils.isPathAncestor(sourcePath, currentPath) or globals.Utils.pathsEqual(sourcePath, currentPath)) then
+                                local targetPath = globals.Utils.copyTable(currentPath)
+                                table.insert(targetPath, #item.children + 1)
+
+                                if not globals.Utils.pathsEqual(sourcePath, targetPath) then
+                                    globals.pendingFolderMove = {
+                                        sourcePath = sourcePath,
+                                        targetPath = targetPath,
+                                        moveType = "folder"
+                                    }
+                                end
+                            end
+                        end
+                    end
+
+                    -- Try to accept groups
+                    local groupPayload = imgui.AcceptDragDropPayload(globals.ctx, "DND_GROUP")
+                    if groupPayload then
+                        if globals.draggedItem and globals.draggedItem.type == "GROUP" then
+                            local sourcePath = globals.draggedItem.path
+                            local targetPath = globals.Utils.copyTable(currentPath)
+                            table.insert(targetPath, #item.children + 1)
+
+                            if not globals.Utils.pathsEqual(sourcePath, targetPath) then
+                                globals.pendingFolderMove = {
+                                    sourcePath = sourcePath,
+                                    targetPath = targetPath,
+                                    moveType = "group"
+                                }
+                            end
+                        end
+                    end
+
+                        imgui.EndDragDropTarget(globals.ctx)
+                    end
+                end
+
                 imgui.Unindent(globals.ctx, Constants.UI.CONTAINER_INDENT)
             end
 
@@ -507,6 +582,11 @@ local function renderItems(items, parentPath, indentLevel, availableWidth, isCon
                                 else -- "middle" - treat as "after" for groups
                                     targetPath = globals.Utils.copyTable(parentPath)
                                     table.insert(targetPath, i + 1)
+                                end
+
+                                -- Don't drop group onto itself
+                                if globals.Utils.pathsEqual(sourcePath, targetPath) then
+                                    return
                                 end
 
                                 globals.pendingFolderMove = {
@@ -1093,7 +1173,7 @@ function UI_Groups.moveItem(sourcePath, targetPath)
         globals.selectedPath = targetPath
     end
 
-    clearContainerSelections()
+    globals.UI_Core.clearContainerSelections()
 end
 
 -- Move a container from one group to another
