@@ -1452,7 +1452,7 @@ function Generation.generateGroups()
         if itemsSource then
             -- TODO: Implement true regeneration for new items structure with folders
             -- For now, silently fall back to recreate mode (delete and regenerate)
-            globals.keepExistingTracks = false
+            -- NOTE: We don't modify globals.keepExistingTracks to preserve user's checkbox state
             Generation.deleteExistingGroups()
             local generateFolderTracks = globals.Settings and globals.Settings.getSetting("generateFolderTracks")
             if generateFolderTracks == nil then
