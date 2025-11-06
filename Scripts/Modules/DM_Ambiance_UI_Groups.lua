@@ -112,37 +112,47 @@ local function drawListItemWithButtons(params)
             local min_x, min_y = imgui.GetItemRectMin(ctx)
             local max_x, max_y = imgui.GetItemRectMax(ctx)
             local drawList = imgui.GetWindowDrawList(ctx)
-            local _, mouseY = imgui.GetMousePos(ctx)
+            local mouseX, mouseY = imgui.GetMousePos(ctx)
 
             -- Light gray color for insertion line (1px)
             local lineColor = 0xB0B0B0FF -- Lighter gray
 
-            -- Calculate relative mouse position (0.0 = top, 1.0 = bottom)
+            -- Calculate relative mouse position
             local itemHeight = max_y - min_y
             local relativeY = (mouseY - min_y) / itemHeight
 
-            -- Smart positioning:
-            -- Top 25%: insert BEFORE
-            -- Bottom 25%: insert AFTER
-            -- Middle 50%: insert INTO (for folders/groups only)
-            local dropPosition = "middle" -- "before", "after", "middle"
+            -- X-based detection: if mouse is indented to the right, it's a "drop into"
+            -- INDENT_THRESHOLD: amount of pixels to the right needed to trigger "drop into"
+            local INDENT_THRESHOLD = 30
+            local relativeX = mouseX - min_x
 
-            if relativeY < 0.25 then
-                dropPosition = "before"
-            elseif relativeY > 0.75 then
-                dropPosition = "after"
+            -- Check if this item allows dropping into it
+            local allowDropInto = params.dropTarget and params.dropTarget.allowDropInto or false
+
+            -- Determine drop position based on X and Y
+            local dropPosition = "after" -- default
+
+            if allowDropInto and relativeX > INDENT_THRESHOLD then
+                -- Mouse is indented to the right → DROP INTO
+                dropPosition = "middle"
             else
-                -- Middle zone: only valid for folders/groups to drop INTO
-                dropPosition = params.allowDropInto and "middle" or (relativeY < 0.5 and "before" or "after")
+                -- Mouse is aligned → REORDER (before/after based on Y position)
+                if relativeY < 0.5 then
+                    dropPosition = "before"
+                else
+                    dropPosition = "after"
+                end
             end
 
-            -- Draw insertion line (NOT in middle zone)
+            -- Draw visual feedback based on drop position
             if dropPosition == "before" then
+                -- Gray line at top
                 imgui.DrawList_AddLine(drawList, min_x, min_y, max_x, min_y, lineColor, 1)
             elseif dropPosition == "after" then
+                -- Gray line at bottom
                 imgui.DrawList_AddLine(drawList, min_x, max_y, max_x, max_y, lineColor, 1)
-            elseif dropPosition == "middle" and params.allowDropInto then
-                -- Draw a rectangle highlight to show item will be dropped INTO this folder/group
+            elseif dropPosition == "middle" then
+                -- Blue rectangle to show "drop into"
                 local highlightColor = 0x4080FF40 -- Semi-transparent blue
                 imgui.DrawList_AddRectFilled(drawList, min_x, min_y, max_x, max_y, highlightColor)
             end
@@ -429,68 +439,6 @@ local function renderItems(items, parentPath, indentLevel, availableWidth, isCon
             if item.expanded then
                 imgui.Indent(globals.ctx, Constants.UI.CONTAINER_INDENT)
                 renderItems(item.children, currentPath, indentLevel + 1, availableWidth - Constants.UI.CONTAINER_INDENT, isContainerSelected, toggleContainerSelection, clearContainerSelections, selectContainerRange)
-
-                -- Add minimal invisible drop zone at the end of folder's children (only visible during drag)
-                -- Only show if we're currently dragging something
-                if globals.draggedItem then
-                    imgui.InvisibleButton(globals.ctx, "drop_zone_" .. itemId, availableWidth - Constants.UI.CONTAINER_INDENT - 30, 4)
-
-                    -- Visual feedback when hovering over drop zone during drag
-                    if imgui.IsItemHovered(globals.ctx) then
-                        local min_x, min_y = imgui.GetItemRectMin(globals.ctx)
-                        local max_x, max_y = imgui.GetItemRectMax(globals.ctx)
-                        local drawList = imgui.GetWindowDrawList(globals.ctx)
-                        -- Draw a line to indicate drop zone
-                        local lineColor = 0x8080FFFF -- Blue
-                        imgui.DrawList_AddLine(drawList, min_x, min_y + 2, max_x, min_y + 2, lineColor, 2)
-                    end
-
-                    -- Make this a drop target for folders and groups
-                    if imgui.BeginDragDropTarget(globals.ctx) then
-                    -- Try to accept folders
-                    local folderPayload = imgui.AcceptDragDropPayload(globals.ctx, "DND_FOLDER")
-                    if folderPayload then
-                        if globals.draggedItem and globals.draggedItem.type == "FOLDER" then
-                            local sourcePath = globals.draggedItem.path
-
-                            -- Prevent dropping folder into itself or its descendants
-                            if not (globals.Utils.isPathAncestor(sourcePath, currentPath) or globals.Utils.pathsEqual(sourcePath, currentPath)) then
-                                local targetPath = globals.Utils.copyTable(currentPath)
-                                table.insert(targetPath, #item.children + 1)
-
-                                if not globals.Utils.pathsEqual(sourcePath, targetPath) then
-                                    globals.pendingFolderMove = {
-                                        sourcePath = sourcePath,
-                                        targetPath = targetPath,
-                                        moveType = "folder"
-                                    }
-                                end
-                            end
-                        end
-                    end
-
-                    -- Try to accept groups
-                    local groupPayload = imgui.AcceptDragDropPayload(globals.ctx, "DND_GROUP")
-                    if groupPayload then
-                        if globals.draggedItem and globals.draggedItem.type == "GROUP" then
-                            local sourcePath = globals.draggedItem.path
-                            local targetPath = globals.Utils.copyTable(currentPath)
-                            table.insert(targetPath, #item.children + 1)
-
-                            if not globals.Utils.pathsEqual(sourcePath, targetPath) then
-                                globals.pendingFolderMove = {
-                                    sourcePath = sourcePath,
-                                    targetPath = targetPath,
-                                    moveType = "group"
-                                }
-                            end
-                        end
-                    end
-
-                        imgui.EndDragDropTarget(globals.ctx)
-                    end
-                end
-
                 imgui.Unindent(globals.ctx, Constants.UI.CONTAINER_INDENT)
             end
 
@@ -1151,12 +1099,50 @@ function UI_Groups.moveItem(sourcePath, targetPath)
 
     table.remove(sourceParent, sourceIndex)
 
+    -- Adjust targetPath if needed (when source and target share parent at same level)
+    -- If we removed an item before the target index at the same level, decrement the target index
+    local adjustedTargetPath = {}
+    for i, idx in ipairs(targetPath) do
+        adjustedTargetPath[i] = idx
+    end
+
+    -- Check if source and target share the same parent path
+    local sourceParentPath = {}
+    for i = 1, #sourcePath - 1 do
+        sourceParentPath[i] = sourcePath[i]
+    end
+
+    local targetParentPath = {}
+    for i = 1, #targetPath - 1 do
+        targetParentPath[i] = targetPath[i]
+    end
+
+    -- If they share the same parent path, and we removed an item before the target
+    local sameParent = #sourceParentPath == #targetParentPath
+    if sameParent then
+        for i = 1, #sourceParentPath do
+            if sourceParentPath[i] ~= targetParentPath[i] then
+                sameParent = false
+                break
+            end
+        end
+    end
+
+    -- Special case: if source is at root and we're moving INTO an item at root
+    -- We need to adjust the targetPath[1] if sourcePath[1] < targetPath[1]
+    if #sourcePath == 1 and #targetPath >= 2 and sourcePath[1] < targetPath[1] then
+        adjustedTargetPath[1] = targetPath[1] - 1
+    elseif sameParent and #sourcePath > 0 and sourcePath[#sourcePath] < targetPath[#sourceParentPath + 1] then
+        -- We removed an item before the target index at the same parent level
+        adjustedTargetPath[#sourceParentPath + 1] = targetPath[#sourceParentPath + 1] - 1
+    end
+
     -- Insert at target
     local targetParent = globals.items
-    local targetIndex = targetPath[#targetPath]
+    local targetIndex = adjustedTargetPath[#adjustedTargetPath]
 
-    for i = 1, #targetPath - 1 do
-        local item = targetParent[targetPath[i]]
+    for i = 1, #adjustedTargetPath - 1 do
+        local item = targetParent[adjustedTargetPath[i]]
         if not item then
             -- Target path invalid, restore item
             table.insert(sourceParent, sourceIndex, movingItem)

@@ -15,13 +15,50 @@ function Structures.initModule(g)
     globals = g
 end
 
+-- Helper function to generate a unique name by checking existing names and incrementing
+-- @param baseName string: Base name (e.g., "New Folder")
+-- @param items table: Array of items to check against
+-- @return string: Unique name (e.g., "New Folder", "New Folder 2", "New Folder 3", etc.)
+local function generateUniqueName(baseName, items)
+    -- Recursive function to collect all names from items and their children
+    local function collectNames(itemList, nameSet)
+        for _, item in ipairs(itemList) do
+            nameSet[item.name] = true
+            if item.type == "folder" and item.children then
+                collectNames(item.children, nameSet)
+            end
+        end
+    end
+
+    -- Collect all existing names
+    local existingNames = {}
+    collectNames(items, existingNames)
+
+    -- If base name doesn't exist, use it
+    if not existingNames[baseName] then
+        return baseName
+    end
+
+    -- Otherwise, find the next available number
+    local counter = 2
+    while existingNames[baseName .. " " .. counter] do
+        counter = counter + 1
+    end
+
+    return baseName .. " " .. counter
+end
+
 -- Folder structure for organizational purposes
--- @param name string: Folder name (optional, defaults to "New Folder")
+-- @param name string: Folder name (optional, auto-generates unique name if not provided)
 -- @return table: Folder structure
 function Structures.createFolder(name)
+    -- Generate unique name if not provided
+    if not name then
+        name = generateUniqueName("New Folder", globals.items or {})
+    end
     return {
         type = "folder",
-        name = name or "New Folder",
+        name = name,
         trackVolume = Constants.DEFAULTS.FOLDER_VOLUME_DEFAULT or 0.0,
         solo = false,
         mute = false,
@@ -32,12 +69,16 @@ function Structures.createFolder(name)
 end
 
 -- Group structure with randomization parameters
--- @param name string: Group name (optional, defaults to "New Group")
+-- @param name string: Group name (optional, auto-generates unique name if not provided)
 -- @return table: Group structure
 function Structures.createGroup(name)
+    -- Generate unique name if not provided
+    if not name then
+        name = generateUniqueName("New Group", globals.items or {})
+    end
     return {
         type = "group",
-        name = name or "New Group",
+        name = name,
         containers = {},
         expanded = true,
         -- Randomization parameters using constants

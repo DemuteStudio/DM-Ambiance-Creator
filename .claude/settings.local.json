@@ -12,7 +12,8 @@
       "Read(//c/Users/antho/AppData/Roaming/REAPER/Scripts/Demute/Ambiance Creator/Presets/Global/**)",
       "Bash(cd:*)",
       "Read(//d/Git/Scripts/Reaper/DM_Ranch Media Player/**)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []
