@@ -1320,14 +1320,9 @@ local function processItems(items, generateFolderTracks, currentDepth, xfadeshap
                     -- If the last child is already closing a folder, we need to decrement further
                     reaper.SetMediaTrackInfo_Value(lastChildTrack, "I_FOLDERDEPTH", currentDepth - 1)
                 else
-                    -- No children were created, close the folder immediately
-                    -- Create a dummy track to close it (REAPER requires at least one child)
-                    local dummyIdx = reaper.GetNumTracks()
-                    reaper.InsertTrackAtIndex(dummyIdx, true)
-                    local dummyTrack = reaper.GetTrack(0, dummyIdx)
-                    reaper.GetSetMediaTrackInfo_String(dummyTrack, "P_NAME", "(empty)", true)
-                    reaper.SetMediaTrackInfo_Value(dummyTrack, "I_FOLDERDEPTH", -1)
-                    tracksCreatedAtThisLevel = tracksCreatedAtThisLevel + 1
+                    -- No children were created, delete the empty folder track
+                    reaper.DeleteTrack(folderTrack)
+                    tracksCreatedAtThisLevel = tracksCreatedAtThisLevel - 1
                 end
             end
 
@@ -1912,9 +1907,40 @@ function Generation.generateSingleGroupByPath(groupPath)
         end
     else
         -- Group doesn't exist in REAPER, create it from scratch
-        local parentGroupIdx = reaper.GetNumTracks()
-        reaper.InsertTrackAtIndex(parentGroupIdx, true)
-        local parentGroup = reaper.GetTrack(0, parentGroupIdx)
+
+        -- Check if this group has a parent folder
+        local parent, parentType, parentPath = globals.Utils.getParentFromPath(groupPath)
+        local insertIdx = reaper.GetNumTracks() -- Default: insert at end
+
+        if parent and parentType == "folder" then
+            -- Find the parent folder track to insert after it
+            local folderTrack = nil
+            if parent.trackGUID and globals.Generation then
+                folderTrack = globals.Generation.findTrackByGUID(parent.trackGUID)
+            end
+            if not folderTrack then
+                folderTrack = globals.Utils.findTrackByName(parent.name)
+            end
+
+            if folderTrack then
+                -- Find the index of the folder track
+                local folderIdx = -1
+                for i = 0, reaper.CountTracks(0) - 1 do
+                    if reaper.GetTrack(0, i) == folderTrack then
+                        folderIdx = i
+                        break
+                    end
+                end
+
+                if folderIdx >= 0 then
+                    -- Insert right after the folder track
+                    insertIdx = folderIdx + 1
+                end
+            end
+        end
+
+        reaper.InsertTrackAtIndex(insertIdx, true)
+        local parentGroup = reaper.GetTrack(0, insertIdx)
         reaper.GetSetMediaTrackInfo_String(parentGroup, "P_NAME", group.name, true)
 
         -- Set the group as parent (folder start)
@@ -2025,7 +2051,38 @@ function Generation.generateSingleContainer(groupIndex, containerIndex)
 
     if not parentGroup then
         -- Parent group doesn't exist, create it first
-        parentGroupIdx = reaper.GetNumTracks()
+
+        -- Check if this group has a parent folder
+        local parent, parentType, parentPath = globals.Utils.getParentFromPath(groupPath)
+        parentGroupIdx = reaper.GetNumTracks() -- Default: insert at end
+
+        if parent and parentType == "folder" then
+            -- Find the parent folder track to insert after it
+            local folderTrack = nil
+            if parent.trackGUID and globals.Generation then
+                folderTrack = globals.Generation.findTrackByGUID(parent.trackGUID)
+            end
+            if not folderTrack then
+                folderTrack = globals.Utils.findTrackByName(parent.name)
+            end
+
+            if folderTrack then
+                -- Find the index of the folder track
+                local folderIdx = -1
+                for i = 0, reaper.CountTracks(0) - 1 do
+                    if reaper.GetTrack(0, i) == folderTrack then
+                        folderIdx = i
+                        break
+                    end
+                end
+
+                if folderIdx >= 0 then
+                    -- Insert right after the folder track
+                    parentGroupIdx = folderIdx + 1
+                end
+            end
+        end
+
         reaper.InsertTrackAtIndex(parentGroupIdx, true)
         parentGroup = reaper.GetTrack(0, parentGroupIdx)
         reaper.GetSetMediaTrackInfo_String(parentGroup, "P_NAME", group.name, true)
@@ -2190,7 +2247,38 @@ function Generation.generateSingleContainerByPath(groupPath, containerIndex)
 
     if not parentGroup then
         -- Parent group doesn't exist, create it first
-        parentGroupIdx = reaper.GetNumTracks()
+
+        -- Check if this group has a parent folder
+        local parent, parentType, parentPath = globals.Utils.getParentFromPath(groupPath)
+        parentGroupIdx = reaper.GetNumTracks() -- Default: insert at end
+
+        if parent and parentType == "folder" then
+            -- Find the parent folder track to insert after it
+            local folderTrack = nil
+            if parent.trackGUID and globals.Generation then
+                folderTrack = globals.Generation.findTrackByGUID(parent.trackGUID)
+            end
+            if not folderTrack then
+                folderTrack = globals.Utils.findTrackByName(parent.name)
+            end
+
+            if folderTrack then
+                -- Find the index of the folder track
+                local folderIdx = -1
+                for i = 0, reaper.CountTracks(0) - 1 do
+                    if reaper.GetTrack(0, i) == folderTrack then
+                        folderIdx = i
+                        break
+                    end
+                end
+
+                if folderIdx >= 0 then
+                    -- Insert right after the folder track
+                    parentGroupIdx = folderIdx + 1
+                end
+            end
+        end
+
         reaper.InsertTrackAtIndex(parentGroupIdx, true)
         parentGroup = reaper.GetTrack(0, parentGroupIdx)
         reaper.GetSetMediaTrackInfo_String(parentGroup, "P_NAME", group.name, true)
