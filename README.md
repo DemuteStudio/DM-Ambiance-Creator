@@ -133,12 +133,48 @@ Select the "Birds - Generic Bed Chirps" container and check the "Override Parent
 Here is a quick explanation of each parameters:
 
 **Trigger Settings**
-- Interval Mode: Choice between Absolute, Relative, or Coverage
-- Absolute: Fixed interval in seconds (can be negative to create overlaps)
-- Relative: Interval expressed as a percentage of the time selection
-- Coverage: Percentage of the time selection to fill
-- Interval: Time interval between sounds (in seconds or percentage depending on the mode)
-- Random variation (%): Percentage of random variation applied to the interval
+
+The tool offers **six interval modes** for maximum creative flexibility:
+
+**1. Absolute Mode**
+- Fixed interval in seconds (can be negative to create overlaps)
+- **Interval**: Time between items in seconds
+- **Random variation (%)**: Percentage of random variation applied to the interval
+- Perfect for: Precise timing, crossfaded beds, overlapping textures
+
+**2. Relative Mode**
+- Interval expressed as a percentage of item duration
+- **Interval**: Percentage of the current item's length before triggering the next
+- Example: 150% means next item starts at 1.5x the duration of current item
+- Perfect for: Adaptive spacing based on source file length
+
+**3. Coverage Mode**
+- Fill a percentage of the time selection with sound
+- **Coverage (%)**: Target percentage of timeline to fill (0-100%)
+- Automatically calculates intervals to reach target coverage
+- **Drift (%)**: Random variation in coverage density
+- Perfect for: Consistent sound density, sparse ambiances
+
+**4. Chunk Mode**
+- Alternate between structured sound/silence periods
+- **Chunk Duration**: Length of sound period in seconds
+- **Chunk Silence**: Length of silence period in seconds
+- Both support variation percentages
+- Perfect for: Rhythmic patterns, structured ambiances, intermittent sounds
+
+**5. Euclidean Mode**
+- Mathematical rhythm distribution using Euclidean algorithms
+- **Steps**: Total timeline divisions
+- **Pulses**: Number of sound events to distribute
+- **Rotation**: Shift pattern start point
+- Multi-layer support for polyrhythmic textures
+- Perfect for: Rhythmic industrial sounds, musical elements, complex patterns
+
+**6. Noise Mode**
+- Organic placement using mathematical noise functions
+- Deterministic but natural-sounding distribution
+- Visual 60-second preview of placement pattern
+- Perfect for: Natural-sounding sparse ambiances, avoiding clustering
 
 **Randomize Parameters**
 - Randomize Pitch: Enables pitch randomization
