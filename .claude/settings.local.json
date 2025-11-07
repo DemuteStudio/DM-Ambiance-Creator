@@ -14,7 +14,10 @@
       "Read(//d/Git/Scripts/Reaper/DM_Ranch Media Player/**)",
       "Bash(awk:*)",
       "Bash(git restore:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(reapack-index --version:*)",
+      "Bash(reapack-index --scan:*)"
     ],
     "deny": [],
     "ask": []
