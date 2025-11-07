@@ -364,6 +364,60 @@ You can also customize the interface in the Settings.
 <img width="463" height="171" alt="image" src="https://github.com/user-attachments/assets/f954cf56-6a0b-432b-b81f-57399b83d41c" />
 
 
+## Quick Reference Guide
+
+**Keyboard Shortcuts:**
+- **Ctrl+C** - Copy selected group or container(s)
+- **Ctrl+V** - Paste copied group or container(s)
+- **Ctrl+Z** - Undo last action
+- **Ctrl+Shift+Z** - Redo action
+- **Space** - Play/pause from current position (in waveform editor)
+- **Shift+Click+Drag** - Create new area on waveform (upper half)
+- **Ctrl+Click** - Delete area on waveform (upper half)
+
+**Linked Faders Control (Override Link Mode):**
+- **Ctrl+Drag** - Force "Link" mode (move min/max together)
+- **Shift+Drag** - Force "Mirror" mode (mirror values around zero)
+- **Alt+Drag** - Force "Unlink" mode (move independently)
+- Override the button-defined link mode temporarily while dragging
+
+**Multi-Selection:**
+- **Ctrl+Click** - Toggle individual container selection
+- **Shift+Click** - Range selection (select all containers between anchor and current)
+- Works with copy/paste, drag & drop, and batch operations
+
+**Advanced UI Interactions:**
+- **Fade Controls:**
+  - **Click label** - Toggle between seconds (sec) and percentage (%)
+  - **Drag fade curve** - Adjust fade shape interactively
+  - **Right-click fade** - Choose from predefined slope presets
+- **Pitch Controls:**
+  - **Click "Pitch" label** - Switch to "Stretch" mode (time-stretching instead of pitch-shifting)
+  - **Click "Stretch" label** - Switch back to "Pitch" mode
+
+**Waveform Editor Interaction:**
+- **Upper Half** - Area manipulation (create, resize, move, delete)
+- **Lower Half** - Playback control (click to jump, drag to scrub)
+- **Click area edges** - Resize area boundaries
+- **Click area center** - Move entire area
+- **Mouse wheel** - Zoom in/out
+- **Middle-click+Drag** - Pan through waveform
+
+**Drag & Drop:**
+- Drag containers between groups
+- Drag groups to reorder
+- Drag audio files from Media Explorer directly into containers
+- Drag items from REAPER timeline into containers
+- Multi-container drag support (select multiple, drag any one)
+
+**Generation Tips:**
+- Use **Coverage Mode** for consistent sound density
+- Use **Euclidean Mode** for rhythmic patterns
+- Use **Noise Mode** for organic, natural-sounding distributions
+- Use **Auto Detect** split mode for field recordings with natural silences
+- Enable **Auto-Regeneration** for real-time parameter tweaking
+
+
 ## Planned future additions:
 
 - **Preview Listening for Containers/Groups**: A new function will enable you to preview the sound of a container or an entire group directly within the interface before generating it in REAPER, saving time in the creative process.
