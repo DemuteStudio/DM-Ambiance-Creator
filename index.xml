@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="DM Ambiance Creator" commit="6c96242cdd8059474627c9df155f64db5f2480fb">
+<index version="1" name="DM Ambiance Creator" commit="33cfbae15d042085ba180ae23dd6a7aca1bfa5a6">
   <category name="Scripts">
     <reapack name="DM_Ambiance Creator.lua" type="script" desc="DM_Ambiance Creator">
       <metadata>
@@ -199,6 +199,94 @@ Better fade control system]]></changelog>
         <source file="Icons/DM_Ambiance_undo_history_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/6c96242cdd8059474627c9df155f64db5f2480fb/Scripts/Icons/DM_Ambiance_undo_history_icon.png</source>
         <source file="Icons/DM_Ambiance_undo_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/6c96242cdd8059474627c9df155f64db5f2480fb/Scripts/Icons/DM_Ambiance_undo_icon.png</source>
         <source file="Icons/DM_Ambiance_unlink_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/6c96242cdd8059474627c9df155f64db5f2480fb/Scripts/Icons/DM_Ambiance_unlink_icon.png</source>
+      </version>
+      <version name="0.10.1-beta" author="Anthony Deneyer" time="2025-11-10T09:57:20Z">
+        <changelog><![CDATA[# Version 0.10.1-beta - Preset System Fixes
+
+## Bug Fixes
++ Fixed crash when saving group presets (missing saveGroupPresetByPath function)
++ Fixed crash when loading group presets (missing loadGroupPresetByPath function)
++ Fixed "Container not found" error when saving container presets
++ Fixed crash when loading container presets (groupPath/groupIndex type mismatch)
++ Added proper path-based preset functions to work with new folder hierarchy system
+
+## Technical Changes
++ Added Presets.saveGroupPresetByPath() for path-based group preset saving
++ Added Presets.loadGroupPresetByPath() for path-based group preset loading
++ Added Presets.saveContainerPresetByPath() for path-based container preset saving
++ Added Presets.loadContainerPresetByPath() for path-based container preset loading
++ Updated UI_Container and UI_Groups to use new path-based preset functions
++ Fixed "Calling End() too many times" errors and BeginChild/EndChild pattern for collapsed windows
++ Fixed channel count updates and pan generation on multichannel items
++ Fixed fades not applied correctly with multichannel configurations
++ Fixed conflict resolver channel mapping and routing validation issues
++ Fixed fade slider double undo and unlink fades still linked when moving fade out fader
++ Fixed mode changes not reflected on items and empty slots in dropdown menus
++ Fixed Keep existing track checkbox disabled after ambiance generation
++ Fixed coverage mode behavior and rotation generation issues
++ Fixed waveform display clipping when zoomed in and crashes when opening edit mode on new items
++ Fixed playback with space bar and play cursor behavior
++ Fixed autoplay save/recall and column size persistence
++ Fixed folder system issues and unique name generation
++ Fixed regeneration after changing multi-channel settings
++ Fixed console message clutter and syntax errors]]></changelog>
+        <source main="main">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/DM_Ambiance%20Creator.lua</source>
+        <source file="Modules/DM_AmbianceCreator_Settings.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_AmbianceCreator_Settings.lua</source>
+        <source file="Modules/DM_Ambiance_Constants.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Constants.lua</source>
+        <source file="Modules/DM_Ambiance_ErrorHandler.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_ErrorHandler.lua</source>
+        <source file="Modules/DM_Ambiance_Generation.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Generation.lua</source>
+        <source file="Modules/DM_Ambiance_History.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_History.lua</source>
+        <source file="Modules/DM_Ambiance_Icons.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Icons.lua</source>
+        <source file="Modules/DM_Ambiance_Items.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Items.lua</source>
+        <source file="Modules/DM_Ambiance_Noise.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Noise.lua</source>
+        <source file="Modules/DM_Ambiance_Presets.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Presets.lua</source>
+        <source file="Modules/DM_Ambiance_RegenManager.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_RegenManager.lua</source>
+        <source file="Modules/DM_Ambiance_RoutingValidator.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_RoutingValidator.lua</source>
+        <source file="Modules/DM_Ambiance_Structures.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Structures.lua</source>
+        <source file="Modules/DM_Ambiance_UI.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Container.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Container.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Core.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Core.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Euclidean.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Euclidean.lua</source>
+        <source file="Modules/DM_Ambiance_UI_EuclideanSection.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_EuclideanSection.lua</source>
+        <source file="Modules/DM_Ambiance_UI_FadeSection.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_FadeSection.lua</source>
+        <source file="Modules/DM_Ambiance_UI_FadeWidget.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_FadeWidget.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Folder.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Folder.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Generation.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Generation.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Group.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Group.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Groups.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Groups.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Knob.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Knob.lua</source>
+        <source file="Modules/DM_Ambiance_UI_LeftPanel.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_LeftPanel.lua</source>
+        <source file="Modules/DM_Ambiance_UI_LinkedSliders.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_LinkedSliders.lua</source>
+        <source file="Modules/DM_Ambiance_UI_MainWindow.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_MainWindow.lua</source>
+        <source file="Modules/DM_Ambiance_UI_MultiSelection.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_MultiSelection.lua</source>
+        <source file="Modules/DM_Ambiance_UI_NoisePreview.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_NoisePreview.lua</source>
+        <source file="Modules/DM_Ambiance_UI_Preset.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_Preset.lua</source>
+        <source file="Modules/DM_Ambiance_UI_RightPanel.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_RightPanel.lua</source>
+        <source file="Modules/DM_Ambiance_UI_SliderEnhanced.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_SliderEnhanced.lua</source>
+        <source file="Modules/DM_Ambiance_UI_TriggerSection.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_TriggerSection.lua</source>
+        <source file="Modules/DM_Ambiance_UI_UndoHistory.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_UndoHistory.lua</source>
+        <source file="Modules/DM_Ambiance_UI_VolumeControls.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UI_VolumeControls.lua</source>
+        <source file="Modules/DM_Ambiance_UndoWrappers.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_UndoWrappers.lua</source>
+        <source file="Modules/DM_Ambiance_Utils.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Utils.lua</source>
+        <source file="Modules/DM_Ambiance_Waveform.lua">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Modules/DM_Ambiance_Waveform.lua</source>
+        <source file="Icons/DM_Ambiance_+_add_increase_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_+_add_increase_icon.png</source>
+        <source file="Icons/DM_Ambiance_arrow_left_right_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_arrow_left_right_icon.png</source>
+        <source file="Icons/DM_Ambiance_conflict_resolution_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_conflict_resolution_icon.png</source>
+        <source file="Icons/DM_Ambiance_delete_garbage_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_delete_garbage_icon.png</source>
+        <source file="Icons/DM_Ambiance_download_import_save_down_storage_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_download_import_save_down_storage_icon.png</source>
+        <source file="Icons/DM_Ambiance_export_share_upload_up_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_export_share_upload_up_icon.png</source>
+        <source file="Icons/DM_Ambiance_folder_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_folder_icon.png</source>
+        <source file="Icons/DM_Ambiance_left_arrow_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_left_arrow_icon.png</source>
+        <source file="Icons/DM_Ambiance_left_right_arrow_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_left_right_arrow_icon.png</source>
+        <source file="Icons/DM_Ambiance_link_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_link_icon.png</source>
+        <source file="Icons/DM_Ambiance_redo_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_redo_icon.png</source>
+        <source file="Icons/DM_Ambiance_refresh_reload_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_refresh_reload_icon.png</source>
+        <source file="Icons/DM_Ambiance_right_arrow_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_right_arrow_icon.png</source>
+        <source file="Icons/DM_Ambiance_save_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_save_icon.png</source>
+        <source file="Icons/DM_Ambiance_settings_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_settings_icon.png</source>
+        <source file="Icons/DM_Ambiance_undo_history_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_undo_history_icon.png</source>
+        <source file="Icons/DM_Ambiance_undo_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_undo_icon.png</source>
+        <source file="Icons/DM_Ambiance_unlink_icon.png">https://github.com/DemuteStudio/DM-Ambiance-Creator/raw/33cfbae15d042085ba180ae23dd6a7aca1bfa5a6/Scripts/Icons/DM_Ambiance_unlink_icon.png</source>
       </version>
     </reapack>
   </category>
