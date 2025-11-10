@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.10.0-beta
+@version 0.10.1-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -8,26 +8,21 @@
     [nomain] Modules/*.lua
     Icons/*.png
 @changelog
-  # Version 0.10.0-beta - Major Feature Release
-
-  ## New Features
-  + Euclidean Rhythm System: Multi-layer euclidean rhythm generation with visual preview and pattern preset library
-  + Euclidean Pattern Browser: Search, sort, and save/load famous traditional rhythm patterns with auto-bind mode
-  + Enhanced Multi-Channel Audio: Per-track stereo pair mapping, split-stereo selection modes, and channel conflict resolver with auto-fix
-  + Channel Volume Controls: Per-channel volume controls with dB input fields and audio taper curve
-  + Folder/Group Hierarchy System: Path-based item management replacing flat structure with unique name generation
-  + Interactive Waveform Editor: Zoom, pan, drawable zones, auto-detect areas, and playback from any position
-  + Complete Undo/Redo System: Full history window with icons and jump to previous states functionality
-  + Advanced UI Components: Rotating knob widget, S-curve fade widget, LinkFader component, searchable combo boxes
-  + Noise Generation Mode: Deterministic noise-based item generation with visual preview
-  + Item Variation System: Variation direction, pitch stretch mode, gain fader, and coverage mode drift/variance
-  + Copy/Paste System: Copy and paste groups and containers with keyboard shortcuts (Ctrl+C, Ctrl+V)
-  + Enhanced Drag & Drop: Multi-container drag and drop, drag from media explorer or timeline
-  + Auto-Regeneration System: Auto-regen on trigger settings change with visual indicators for containers needing regeneration
-  + UI Scaling Support: Improved UI scaling and modular architecture (MainWindow, LeftPanel, RightPanel)
+  # Version 0.10.1-beta - Preset System Fixes
 
   ## Bug Fixes
-  + Fixed multiple ImGui context management issues causing crashes on window resize and mode changes
+  + Fixed crash when saving group presets (missing saveGroupPresetByPath function)
+  + Fixed crash when loading group presets (missing loadGroupPresetByPath function)
+  + Fixed "Container not found" error when saving container presets
+  + Fixed crash when loading container presets (groupPath/groupIndex type mismatch)
+  + Added proper path-based preset functions to work with new folder hierarchy system
+
+  ## Technical Changes
+  + Added Presets.saveGroupPresetByPath() for path-based group preset saving
+  + Added Presets.loadGroupPresetByPath() for path-based group preset loading
+  + Added Presets.saveContainerPresetByPath() for path-based container preset saving
+  + Added Presets.loadContainerPresetByPath() for path-based container preset loading
+  + Updated UI_Container and UI_Groups to use new path-based preset functions
   + Fixed "Calling End() too many times" errors and BeginChild/EndChild pattern for collapsed windows
   + Fixed channel count updates and pan generation on multichannel items
   + Fixed fades not applied correctly with multichannel configurations

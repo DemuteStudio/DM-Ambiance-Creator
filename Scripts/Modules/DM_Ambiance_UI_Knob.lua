@@ -1,3 +1,7 @@
+--[[
+@version 1.0
+@noindex
+--]]
 -- DM_Ambiance_UI_Knob.lua
 -- Rotary knob widget with keyboard shortcuts integration
 --
