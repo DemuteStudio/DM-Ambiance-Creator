@@ -80,7 +80,7 @@ function UI_Container.drawContainerPresetControls(groupPath, containerIndex, wid
         and globals.selectedContainerPresetIndex[presetKey] < #containerPresetList then
 
         local presetName = containerPresetList[globals.selectedContainerPresetIndex[presetKey] + 1]
-        globals.Presets.loadContainerPreset(presetName, groupPath, containerIndex)
+        globals.Presets.loadContainerPresetByPath(presetName, groupPath, containerIndex)
     end
 
     -- Save preset button: opens a popup to save the current container as a preset
@@ -106,7 +106,7 @@ function UI_Container.drawContainerPresetControls(groupPath, containerIndex, wid
         if rv then globals.newContainerPresetName = value end
 
         if imgui.Button(globals.ctx, "Save", 120, 0) and globals.newContainerPresetName ~= "" then
-            if globals.Presets.saveContainerPreset(
+            if globals.Presets.saveContainerPresetByPath(
                 globals.newContainerPresetName,
                 globals.currentSaveContainerGroup,
                 globals.currentSaveContainerIndex
