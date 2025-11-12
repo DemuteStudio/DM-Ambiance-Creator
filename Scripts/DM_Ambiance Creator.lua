@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.10.1-beta
+@version 0.10.2-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -8,35 +8,10 @@
     [nomain] Modules/*.lua
     Icons/*.png
 @changelog
-  # Version 0.10.1-beta - Preset System Fixes
+  # Version 0.10.2-beta - Preset System Fixes
 
   ## Bug Fixes
-  + Fixed crash when saving group presets (missing saveGroupPresetByPath function)
-  + Fixed crash when loading group presets (missing loadGroupPresetByPath function)
-  + Fixed "Container not found" error when saving container presets
-  + Fixed crash when loading container presets (groupPath/groupIndex type mismatch)
-  + Added proper path-based preset functions to work with new folder hierarchy system
-
-  ## Technical Changes
-  + Added Presets.saveGroupPresetByPath() for path-based group preset saving
-  + Added Presets.loadGroupPresetByPath() for path-based group preset loading
-  + Added Presets.saveContainerPresetByPath() for path-based container preset saving
-  + Added Presets.loadContainerPresetByPath() for path-based container preset loading
-  + Updated UI_Container and UI_Groups to use new path-based preset functions
-  + Fixed "Calling End() too many times" errors and BeginChild/EndChild pattern for collapsed windows
-  + Fixed channel count updates and pan generation on multichannel items
-  + Fixed fades not applied correctly with multichannel configurations
-  + Fixed conflict resolver channel mapping and routing validation issues
-  + Fixed fade slider double undo and unlink fades still linked when moving fade out fader
-  + Fixed mode changes not reflected on items and empty slots in dropdown menus
-  + Fixed Keep existing track checkbox disabled after ambiance generation
-  + Fixed coverage mode behavior and rotation generation issues
-  + Fixed waveform display clipping when zoomed in and crashes when opening edit mode on new items
-  + Fixed playback with space bar and play cursor behavior
-  + Fixed autoplay save/recall and column size persistence
-  + Fixed folder system issues and unique name generation
-  + Fixed regeneration after changing multi-channel settings
-  + Fixed console message clutter and syntax errors
+  + Fixed crash when undo
 --]]
 
 -- Check if ReaImGui is available; display an error and exit if not
