@@ -61,6 +61,7 @@ end
 function History.captureState(description)
     -- Create a deep copy of the current groups state
     local snapshot = {
+        items = globals.items and deepCopy(globals.items) or nil,
         groups = deepCopy(globals.groups),
         timestamp = reaper.time_precise(),
         description = description or "Unnamed action"
@@ -81,6 +82,11 @@ local function restoreState(snapshot)
     local savedSelectedContainers = {}
     for k, v in pairs(globals.selectedContainers) do
         savedSelectedContainers[k] = v
+    end
+
+    -- Restore the items state (new hierarchical structure)
+    if snapshot.items and globals.items then
+        globals.items = deepCopy(snapshot.items)
     end
 
     -- Restore the groups state
