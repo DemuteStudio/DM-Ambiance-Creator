@@ -1,3 +1,7 @@
+--[[
+@version 1.0
+@noindex
+--]]
 -- DM_Ambiance_UI_SliderEnhanced.lua
 -- Enhanced slider wrappers with unified keyboard shortcuts
 --

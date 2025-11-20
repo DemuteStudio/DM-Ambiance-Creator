@@ -16,13 +16,21 @@ function UI_Group.initModule(g)
 end
 
 -- Function to display group randomization settings in the right panel
-function UI_Group.displayGroupSettings(groupIndex, width)
-    local group = globals.groups[groupIndex]
-    local groupId = "group" .. groupIndex
-    
-    -- Sync group volume from track
-    globals.Utils.syncGroupVolumeFromTrack(groupIndex)
-    
+function UI_Group.displayGroupSettings(groupPath, width)
+    -- Get group using path-based system
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group then
+        return -- Group not found
+    end
+
+    local groupId = "group" .. globals.Utils.pathToString(groupPath)
+
+    -- Sync group volume, name, mute, and solo from track
+    globals.Utils.syncGroupVolumeFromTrack(groupPath)
+    globals.Utils.syncGroupNameFromTrack(groupPath)
+    globals.Utils.syncGroupMuteFromTrack(groupPath)
+    globals.Utils.syncGroupSoloFromTrack(groupPath)
+
     -- Panel title showing which group is being edited
     imgui.Text(globals.ctx, "Group Settings: " .. group.name)
     imgui.Separator(globals.ctx)
@@ -32,6 +40,8 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     local rv, newGroupName = globals.UndoWrappers.InputText(globals.ctx, "Name##detail_" .. groupId, group.name)
     if rv then
         group.name = newGroupName
+        -- Update track name in REAPER in real-time
+        globals.Utils.setGroupTrackName(groupPath, newGroupName)
     end
     
     -- Group track volume slider
@@ -39,105 +49,34 @@ function UI_Group.displayGroupSettings(groupIndex, width)
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Controls the volume of the group's track in Reaper. Affects all containers in this group.")
 
-    -- Ensure trackVolume is initialized
-    if group.trackVolume == nil then
-        group.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
-    end
-
-    -- Initialize mute/solo states if not set
-    if group.isMuted == nil then group.isMuted = false end
-    if group.isSoloed == nil then group.isSoloed = false end
-
-    -- Solo button (square, same size as mute)
-    local buttonSize = 20
-    local soloColorPushed = 0
-    if group.isSoloed then
-        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFFAA00FF) -- Yellow/orange when active
-        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFFAA00FF) -- Same color on hover (no hover effect)
-        soloColorPushed = 2
-    end
-    if globals.UI.Button(globals.ctx, "S##GroupSolo_" .. groupId, buttonSize, buttonSize) then
-        group.isSoloed = not group.isSoloed
-        if group.isSoloed and group.isMuted then
-            group.isMuted = false
-            globals.Utils.setGroupTrackMute(groupIndex, false)
+    -- Use the shared VolumeControls widget
+    globals.UI_VolumeControls.draw({
+        id = "Group_" .. groupId,
+        item = group,
+        onVolumeChange = function(newVolumeDB)
+            globals.Utils.setGroupTrackVolume(groupPath, newVolumeDB)
+        end,
+        onMuteChange = function(isMuted)
+            if isMuted and group.isSoloed then
+                group.isSoloed = false
+                globals.Utils.setGroupTrackSolo(groupPath, false)
+            end
+            globals.Utils.setGroupTrackMute(groupPath, isMuted)
+        end,
+        onSoloChange = function(isSoloed)
+            if isSoloed and group.isMuted then
+                group.isMuted = false
+                globals.Utils.setGroupTrackMute(groupPath, false)
+            end
+            globals.Utils.setGroupTrackSolo(groupPath, isSoloed)
         end
-        globals.Utils.setGroupTrackSolo(groupIndex, group.isSoloed)
-    end
-    if soloColorPushed > 0 then
-        imgui.PopStyleColor(globals.ctx, soloColorPushed)
-    end
-
-    -- Mute button (square, red when active)
-    imgui.SameLine(globals.ctx, 0, globals.UI.scaleSize(4))
-    local muteColorPushed = 0
-    if group.isMuted then
-        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF) -- Red when active
-        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFF0000FF) -- Same color on hover (no hover effect)
-        muteColorPushed = 2
-    end
-    if globals.UI.Button(globals.ctx, "M##GroupMute_" .. groupId, buttonSize, buttonSize) then
-        group.isMuted = not group.isMuted
-        if group.isMuted and group.isSoloed then
-            group.isSoloed = false
-            globals.Utils.setGroupTrackSolo(groupIndex, false)
-        end
-        globals.Utils.setGroupTrackMute(groupIndex, group.isMuted)
-    end
-    if muteColorPushed > 0 then
-        imgui.PopStyleColor(globals.ctx, muteColorPushed)
-    end
-
-    -- Volume knob
-    imgui.SameLine(globals.ctx, 0, 8)
-
-    -- Convert current dB to normalized for knob display
-    local normalizedVolume = globals.Utils.dbToNormalizedRelative(group.trackVolume)
-    local defaultNormalizedVolume = globals.Utils.dbToNormalizedRelative(globals.Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT)
-
-    local rv, newNormalizedVolume = globals.Knob.Knob({
-        id = "##GroupTrackVolume_" .. groupId,
-        label = "",
-        value = normalizedVolume,
-        min = 0.0,
-        max = 1.0,
-        defaultValue = defaultNormalizedVolume,
-        size = 24,
-        format = "%.2f",
-        showLabel = false
     })
-    if rv then
-        local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
-        group.trackVolume = newVolumeDB
-        -- Apply volume to track in real-time
-        globals.Utils.setGroupTrackVolume(groupIndex, newVolumeDB)
-    end
-
-    -- Manual dB input field
-    imgui.SameLine(globals.ctx, 0, 8)
-    imgui.PushItemWidth(globals.ctx, 65)
-    local displayValue = group.trackVolume <= -144 and -144 or group.trackVolume
-    local rv2, manualDB = globals.UndoWrappers.InputDouble(
-        globals.ctx,
-        "##GroupTrackVolumeInput_" .. groupId,
-        displayValue,
-        0, 0,  -- step, step_fast (not used)
-        "%.1f dB"
-    )
-    if rv2 then
-        -- Clamp to valid range
-        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
-                           math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
-        group.trackVolume = manualDB
-        globals.Utils.setGroupTrackVolume(groupIndex, manualDB)
-    end
-    imgui.PopItemWidth(globals.ctx)
     
     -- Group preset controls
-    globals.UI_Groups.drawGroupPresetControls(groupIndex)
-    
+    globals.UI_Groups.drawGroupPresetControls(groupPath)
+
     -- TRIGGER SETTINGS SECTION
-    globals.UI.displayTriggerSettings(group, groupId, width, true, groupIndex, nil)
+    globals.UI.displayTriggerSettings(group, groupId, width, true, groupPath, nil)
 end
 
 return UI_Group

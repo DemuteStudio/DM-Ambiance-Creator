@@ -71,6 +71,9 @@ function UI.initModule(g)
 
     -- Make UI_Groups accessible to the UI_Group module
     globals.UI_Groups = UI_Groups
+    globals.UI_Group = UI_Group
+    globals.UI_Container = UI_Container
+    globals.UI_MultiSelection = UI_MultiSelection
 
     -- Make Icons accessible to other modules
     globals.Icons = Icons
@@ -2542,21 +2545,8 @@ end
 
 -- Draw the right panel with details for the selected container or group (public function for UI_MainWindow)
 function UI.drawRightPanel(width)
-    if globals.selectedContainers == {} then
-        return
-    end
-
-    if globals.inMultiSelectMode then
-        UI_MultiSelection.drawMultiSelectionPanel(width)
-        return
-    end
-
-    if globals.selectedGroupIndex and globals.selectedContainerIndex then
-        UI_Container.displayContainerSettings(globals.selectedGroupIndex, globals.selectedContainerIndex, width)
-    elseif globals.selectedGroupIndex then
-        UI_Group.displayGroupSettings(globals.selectedGroupIndex, width)
-    end
-    -- Don't show "Select a group..." message to avoid corrupting ImGui context in edge cases
+    -- Delegate to the new modular UI_RightPanel module (path-based system)
+    globals.UI_RightPanel.render(width)
 end
 
 -- Handle popups and force close if a popup is stuck for too long

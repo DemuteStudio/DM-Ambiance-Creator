@@ -17,8 +17,8 @@ end
 function Presets.getPresetsPath(type, groupName)
   local basePath
 
-  if globals.presetsPath ~= "" then 
-    basePath = globals.presetsPath 
+  if globals.presetsPath ~= "" then
+    basePath = globals.presetsPath
   else
     -- Define the base path depending on the OS
     if reaper.GetOS():match("Win") then
@@ -134,17 +134,34 @@ local function serializeTable(val, name, depth)
   return result
 end
 
--- Save a global preset (all groups) to disk
+-- Helper function to recursively process containers in the new folder structure
+local function processContainersRecursive(items)
+  if not items then return end
+
+  for _, item in ipairs(items) do
+    if item.type == "folder" then
+      -- Recursively process folder children
+      if item.children then
+        processContainersRecursive(item.children)
+      end
+    elseif item.type == "group" then
+      -- Process containers in group
+      if item.containers then
+        for _, container in ipairs(item.containers) do
+          globals.Settings.processContainerMedia(container)
+        end
+      end
+    end
+  end
+end
+
+-- Save a global preset (all items - folders and groups) to disk
 function Presets.savePreset(name)
   if name == "" then return false end
 
-  -- If auto-import media is enabled, process all containers in all groups
+  -- If auto-import media is enabled, process all containers recursively
   if globals.Settings and globals.Settings.getSetting("autoImportMedia") then
-    for _, group in ipairs(globals.groups) do
-      for _, container in ipairs(group.containers) do
-        globals.Settings.processContainerMedia(container)
-      end
-    end
+    processContainersRecursive(globals.items)
   end
 
   local path = Presets.getPresetsPath("Global") .. name .. ".lua"
@@ -153,7 +170,7 @@ function Presets.savePreset(name)
   if file then
     file:write("-- Ambiance Creator Global Preset: " .. name .. "\n")
     file:write("-- Created on " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n\n")
-    file:write("return " .. serializeTable(globals.groups) .. "\n")
+    file:write("return " .. serializeTable(globals.items) .. "\n")
     file:close()
 
     -- Refresh the preset list
@@ -164,7 +181,47 @@ function Presets.savePreset(name)
   return false
 end
 
--- Load a global preset from disk and set it as the current groups
+-- Helper function to recursively migrate items in the new folder structure
+local function migrateRecursive(items, parentPath)
+  if not items then return end
+
+  parentPath = parentPath or {}
+
+  for itemIndex, item in ipairs(items) do
+    if item.type == "folder" then
+      -- Recursively migrate folder children
+      if item.children then
+        local newPath = {table.unpack(parentPath)}
+        table.insert(newPath, itemIndex)
+        migrateRecursive(item.children, newPath)
+      end
+    elseif item.type == "group" then
+      -- Apply all existing migrations for groups
+      if item.pitchMode == nil then
+        item.pitchMode = globals.Constants.PITCH_MODES.PITCH
+      end
+
+      -- Migrate containers to UUID system
+      if item.containers then
+        globals.Structures.migrateContainersToUUID({item})
+
+        -- Apply backward compatibility for all containers
+        for _, container in ipairs(item.containers) do
+          if container.pitchMode == nil then
+            container.pitchMode = globals.Constants.PITCH_MODES.PITCH
+          end
+
+          -- Force disable pan randomization for multichannel containers from old presets
+          if container.channelMode and container.channelMode > 0 then
+            container.randomizePan = false
+          end
+        end
+      end
+    end
+  end
+end
+
+-- Load a global preset from disk and set it as the current items
 function Presets.loadPreset(name)
   if name == "" then return false end
 
@@ -174,41 +231,20 @@ function Presets.loadPreset(name)
   local success, presetData = pcall(dofile, path)
 
   if success and type(presetData) == "table" then
-    globals.groups = presetData
+    -- Detect old format: array of groups without type field
+    if presetData[1] and not presetData[1].type then
+      -- Old format: add type field to all groups
+      for _, group in ipairs(presetData) do
+        group.type = "group"
+      end
+      reaper.ShowConsoleMsg("Migrated old preset format to new folder structure.\n")
+    end
+
+    globals.items = presetData
     globals.currentPresetName = name
 
-    -- Migrate containers to UUID system (backward compatibility)
-    local migrated = globals.Structures.migrateContainersToUUID(presetData)
-    if migrated then
-      reaper.ShowConsoleMsg("Migrated containers to UUID system - Please save your presets again.\n")
-    end
-
-    -- Apply backward compatibility and track volumes for all groups and containers
-    for groupIndex, group in ipairs(presetData) do
-      -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
-      if group.pitchMode == nil then
-        group.pitchMode = globals.Constants.PITCH_MODES.PITCH
-      end
-
-      -- Apply group track volume if it exists
-      if group.trackVolume then
-        globals.Utils.setGroupTrackVolume(groupIndex, group.trackVolume)
-      end
-
-      -- Apply container track volumes and backward compatibility
-      if group.containers then
-        for containerIndex, container in ipairs(group.containers) do
-          -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
-          if container.pitchMode == nil then
-            container.pitchMode = globals.Constants.PITCH_MODES.PITCH
-          end
-
-          if container.trackVolume then
-            globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, container.trackVolume)
-          end
-        end
-      end
-    end
+    -- Apply all migrations recursively
+    migrateRecursive(globals.items)
 
     -- Clear history and capture the loaded preset state as the starting point
     if globals.History then
@@ -246,19 +282,48 @@ function Presets.deletePreset(name, type, groupName)
   end
 end
 
+-- Helper function to find a group by index (flattened search across all folders)
+local function findGroupByFlatIndex(items, targetIndex)
+  local currentIndex = 0
+
+  local function searchRecursive(itemList)
+    for _, item in ipairs(itemList) do
+      if item.type == "folder" then
+        if item.children then
+          local found = searchRecursive(item.children)
+          if found then return found end
+        end
+      elseif item.type == "group" then
+        currentIndex = currentIndex + 1
+        if currentIndex == targetIndex then
+          return item
+        end
+      end
+    end
+    return nil
+  end
+
+  return searchRecursive(items)
+end
+
 -- Save a group preset (single group) to disk
 function Presets.saveGroupPreset(name, groupIndex)
   if name == "" then return false end
 
+  -- Find the group in the new folder structure
+  local group = findGroupByFlatIndex(globals.items, groupIndex)
+  if not group then
+    reaper.ShowConsoleMsg("Error: Group not found at index " .. groupIndex .. "\n")
+    return false
+  end
+
   -- If auto-import media is enabled, process all containers in the group
   if globals.Settings and globals.Settings.getSetting("autoImportMedia") then
-    local group = globals.groups[groupIndex]
     for _, container in ipairs(group.containers) do
       globals.Settings.processContainerMedia(container)
     end
   end
 
-  local group = globals.groups[groupIndex]
   local path = Presets.getPresetsPath("Groups") .. name .. ".lua"
   local file = io.open(path, "w")
 
@@ -276,6 +341,68 @@ function Presets.saveGroupPreset(name, groupIndex)
   return false
 end
 
+-- Save a group preset using a groupPath instead of index
+function Presets.saveGroupPresetByPath(name, groupPath)
+  if name == "" then return false end
+
+  -- Get the group using the path
+  local group = globals.Structures.getItemFromPath(groupPath)
+  if not group or group.type ~= "group" then
+    reaper.ShowConsoleMsg("Error: Group not found at path\n")
+    return false
+  end
+
+  -- If auto-import media is enabled, process all containers in the group
+  if globals.Settings and globals.Settings.getSetting("autoImportMedia") then
+    if group.containers then
+      for _, container in ipairs(group.containers) do
+        globals.Settings.processContainerMedia(container)
+      end
+    end
+  end
+
+  local path = Presets.getPresetsPath("Groups") .. name .. ".lua"
+  local file = io.open(path, "w")
+
+  if file then
+    file:write("-- Ambiance Creator Group Preset: " .. name .. "\n")
+    file:write("-- Created on " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n\n")
+    file:write("return " .. serializeTable(group) .. "\n")
+    file:close()
+
+    -- Refresh the preset list
+    Presets.listPresets("Groups", nil, true)
+    return true
+  end
+
+  return false
+end
+
+-- Helper function to replace a group by index in the folder structure
+local function replaceGroupByFlatIndex(items, targetIndex, newGroup)
+  local currentIndex = 0
+
+  local function searchRecursive(itemList)
+    for i, item in ipairs(itemList) do
+      if item.type == "folder" then
+        if item.children then
+          local replaced = searchRecursive(item.children)
+          if replaced then return true end
+        end
+      elseif item.type == "group" then
+        currentIndex = currentIndex + 1
+        if currentIndex == targetIndex then
+          itemList[i] = newGroup
+          return true
+        end
+      end
+    end
+    return false
+  end
+
+  return searchRecursive(items)
+end
+
 -- Load a group preset from disk and assign it to the specified group index
 function Presets.loadGroupPreset(name, groupIndex)
   if name == "" then return false end
@@ -289,6 +416,11 @@ function Presets.loadGroupPreset(name, groupIndex)
   local success, presetData = pcall(dofile, path)
 
   if success and type(presetData) == "table" then
+    -- Ensure type field exists (for backward compatibility)
+    if not presetData.type then
+      presetData.type = "group"
+    end
+
     -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
     if presetData.pitchMode == nil then
       presetData.pitchMode = globals.Constants.PITCH_MODES.PITCH
@@ -299,10 +431,15 @@ function Presets.loadGroupPreset(name, groupIndex)
       globals.Structures.migrateContainersToUUID({presetData})
     end
 
-    globals.groups[groupIndex] = presetData
+    -- Replace the group in the folder structure
+    local replaced = replaceGroupByFlatIndex(globals.items, groupIndex, presetData)
+    if not replaced then
+      reaper.ShowConsoleMsg("Error: Could not find group at index " .. groupIndex .. "\n")
+      return false
+    end
 
     -- Set regeneration flag since preset loading changes parameters
-    globals.groups[groupIndex].needsRegeneration = true
+    presetData.needsRegeneration = true
     if presetData.containers then
       for _, container in ipairs(presetData.containers) do
         -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
@@ -320,19 +457,87 @@ function Presets.loadGroupPreset(name, groupIndex)
 
     -- Areas are now stored directly in items and will be synchronized to waveformAreas by the UI when needed
 
-    -- Apply group track volume if it exists
-    if presetData.trackVolume then
-      globals.Utils.setGroupTrackVolume(groupIndex, presetData.trackVolume)
+    return true
+  else
+    reaper.ShowConsoleMsg("Error loading group preset: " .. tostring(presetData) .. "\n")
+    return false
+  end
+end
+
+-- Load a group preset using a groupPath instead of index
+function Presets.loadGroupPresetByPath(name, groupPath)
+  if name == "" then return false end
+
+  -- Capture state before loading group preset
+  if globals.History then
+    globals.History.captureState("Load group preset: " .. name)
+  end
+
+  local path = Presets.getPresetsPath("Groups") .. name .. ".lua"
+  local success, presetData = pcall(dofile, path)
+
+  if success and type(presetData) == "table" then
+    -- Ensure type field exists (for backward compatibility)
+    if not presetData.type then
+      presetData.type = "group"
     end
 
-    -- Apply track volumes for all containers in the group if they have tracks
+    -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
+    if presetData.pitchMode == nil then
+      presetData.pitchMode = globals.Constants.PITCH_MODES.PITCH
+    end
+
+    -- Migrate containers to UUID system
     if presetData.containers then
-      for containerIndex, container in ipairs(presetData.containers) do
-        if container.trackVolume then
-          globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, container.trackVolume)
+      globals.Structures.migrateContainersToUUID({presetData})
+    end
+
+    -- Set regeneration flag since preset loading changes parameters
+    presetData.needsRegeneration = true
+    if presetData.containers then
+      for _, container in ipairs(presetData.containers) do
+        -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
+        if container.pitchMode == nil then
+          container.pitchMode = globals.Constants.PITCH_MODES.PITCH
+        end
+
+        container.needsRegeneration = true
+        -- Force disable pan randomization for multichannel containers from old presets
+        if container.channelMode and container.channelMode > 0 then
+          container.randomizePan = false
         end
       end
     end
+
+    -- Navigate to the parent and replace the group at the path
+    if not groupPath or #groupPath == 0 then
+      reaper.ShowConsoleMsg("Error: Invalid group path\n")
+      return false
+    end
+
+    local current = globals.items
+    for i = 1, #groupPath - 1 do
+      local item = current[groupPath[i]]
+      if not item then
+        reaper.ShowConsoleMsg("Error: Could not find group at path\n")
+        return false
+      end
+      if item.type == "folder" then
+        current = item.children
+      else
+        reaper.ShowConsoleMsg("Error: Invalid path structure\n")
+        return false
+      end
+    end
+
+    -- Replace the group at the final index
+    local finalIndex = groupPath[#groupPath]
+    if not current[finalIndex] then
+      reaper.ShowConsoleMsg("Error: Could not find group at path\n")
+      return false
+    end
+
+    current[finalIndex] = presetData
 
     return true
   else
@@ -345,14 +550,19 @@ end
 function Presets.saveContainerPreset(name, groupIndex, containerIndex)
   if name == "" then return false end
 
-  -- If auto-import media is enabled, process the container
-  if globals.Settings and globals.Settings.getSetting("autoImportMedia") then
-    local container = globals.groups[groupIndex].containers[containerIndex]
-    globals.Settings.processContainerMedia(container)
+  -- Find the group in the new folder structure
+  local group = findGroupByFlatIndex(globals.items, groupIndex)
+  if not group or not group.containers or not group.containers[containerIndex] then
+    reaper.ShowConsoleMsg("Error: Container not found\n")
+    return false
   end
 
-  -- Remove any reference to track name (if any)
-  local container = globals.groups[groupIndex].containers[containerIndex]
+  local container = group.containers[containerIndex]
+
+  -- If auto-import media is enabled, process the container
+  if globals.Settings and globals.Settings.getSetting("autoImportMedia") then
+    globals.Settings.processContainerMedia(container)
+  end
 
   local path = Presets.getPresetsPath("Containers") .. name .. ".lua"
   local file = io.open(path, "w")
@@ -371,6 +581,74 @@ function Presets.saveContainerPreset(name, groupIndex, containerIndex)
   return false
 end
 
+-- Save a container preset using groupPath and containerIndex
+function Presets.saveContainerPresetByPath(name, groupPath, containerIndex)
+  if name == "" then return false end
+
+  -- Get the group using the path
+  local group = globals.Structures.getItemFromPath(groupPath)
+  if not group or group.type ~= "group" then
+    reaper.ShowConsoleMsg("Error: Group not found at path\n")
+    return false
+  end
+
+  if not group.containers or not group.containers[containerIndex] then
+    reaper.ShowConsoleMsg("Error: Container not found at index " .. tostring(containerIndex) .. "\n")
+    return false
+  end
+
+  local container = group.containers[containerIndex]
+
+  -- If auto-import media is enabled, process the container
+  if globals.Settings and globals.Settings.getSetting("autoImportMedia") then
+    globals.Settings.processContainerMedia(container)
+  end
+
+  local path = Presets.getPresetsPath("Containers") .. name .. ".lua"
+  local file = io.open(path, "w")
+
+  if file then
+    file:write("-- Ambiance Creator Container Preset: " .. name .. "\n")
+    file:write("-- Created on " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n\n")
+    file:write("return " .. serializeTable(container) .. "\n")
+    file:close()
+
+    -- Refresh the preset list (no groupName reference)
+    Presets.listPresets("Containers", nil, true)
+    return true
+  end
+
+  return false
+end
+
+-- Helper function to replace a container by group and container indices
+local function replaceContainerByFlatIndex(items, targetGroupIndex, targetContainerIndex, newContainer)
+  local currentGroupIndex = 0
+
+  local function searchRecursive(itemList)
+    for _, item in ipairs(itemList) do
+      if item.type == "folder" then
+        if item.children then
+          local replaced = searchRecursive(item.children)
+          if replaced then return true end
+        end
+      elseif item.type == "group" then
+        currentGroupIndex = currentGroupIndex + 1
+        if currentGroupIndex == targetGroupIndex then
+          if item.containers and item.containers[targetContainerIndex] then
+            item.containers[targetContainerIndex] = newContainer
+            return true
+          end
+          return false
+        end
+      end
+    end
+    return false
+  end
+
+  return searchRecursive(items)
+end
+
 -- Load a container preset from disk and apply it to the specified container, preserving existing items
 function Presets.loadContainerPreset(name, groupIndex, containerIndex)
   if name == "" then return false end
@@ -380,7 +658,6 @@ function Presets.loadContainerPreset(name, groupIndex, containerIndex)
     globals.History.captureState("Load container preset: " .. name)
   end
 
-  -- Remove any reference to track name (if any)
   local path = Presets.getPresetsPath("Containers") .. name .. ".lua"
   local success, presetData = pcall(dofile, path)
 
@@ -396,21 +673,73 @@ function Presets.loadContainerPreset(name, groupIndex, containerIndex)
       presetData.id = Utils.generateUUID()
     end
 
-    -- Apply the preset data to the container
-    globals.groups[groupIndex].containers[containerIndex] = presetData
-
     -- Set regeneration flag since preset loading changes parameters
-    globals.groups[groupIndex].containers[containerIndex].needsRegeneration = true
+    presetData.needsRegeneration = true
 
     -- Force disable pan randomization for multichannel containers from old presets
     if presetData.channelMode and presetData.channelMode > 0 then
-      globals.groups[groupIndex].containers[containerIndex].randomizePan = false
+      presetData.randomizePan = false
     end
 
-    -- Apply the container track volume if the container track exists
-    if presetData.trackVolume then
-      globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, presetData.trackVolume)
+    -- Replace the container in the folder structure
+    local replaced = replaceContainerByFlatIndex(globals.items, groupIndex, containerIndex, presetData)
+    if not replaced then
+      reaper.ShowConsoleMsg("Error: Could not find container at group " .. tostring(groupIndex) .. " container " .. tostring(containerIndex) .. "\n")
+      return false
     end
+
+    return true
+  else
+    reaper.ShowConsoleMsg("Error loading container preset: " .. tostring(presetData) .. "\n")
+    return false
+  end
+end
+
+-- Load a container preset using groupPath and containerIndex
+function Presets.loadContainerPresetByPath(name, groupPath, containerIndex)
+  if name == "" then return false end
+
+  -- Capture state before loading container preset
+  if globals.History then
+    globals.History.captureState("Load container preset: " .. name)
+  end
+
+  -- Get the group using the path
+  local group = globals.Structures.getItemFromPath(groupPath)
+  if not group or group.type ~= "group" then
+    reaper.ShowConsoleMsg("Error: Group not found at path\n")
+    return false
+  end
+
+  if not group.containers or not group.containers[containerIndex] then
+    reaper.ShowConsoleMsg("Error: Container not found at index " .. tostring(containerIndex) .. "\n")
+    return false
+  end
+
+  local path = Presets.getPresetsPath("Containers") .. name .. ".lua"
+  local success, presetData = pcall(dofile, path)
+
+  if success and type(presetData) == "table" then
+    -- Backward compatibility: Set pitchMode to PITCH if it doesn't exist
+    if presetData.pitchMode == nil then
+      presetData.pitchMode = globals.Constants.PITCH_MODES.PITCH
+    end
+
+    -- Migrate container to UUID system
+    if not presetData.id then
+      presetData.id = globals.Utils.generateUUID()
+    end
+
+    -- Set regeneration flag since preset loading changes parameters
+    presetData.needsRegeneration = true
+
+    -- Force disable pan randomization for multichannel containers from old presets
+    if presetData.channelMode and presetData.channelMode > 0 then
+      presetData.randomizePan = false
+    end
+
+    -- Replace the container directly
+    group.containers[containerIndex] = presetData
 
     return true
   else

@@ -144,7 +144,7 @@ end
 -- Draw the trigger settings section (shared by groups and containers)
 -- dataObj must expose: intervalMode, triggerRate, triggerDrift, fadeIn, fadeOut
 -- callbacks must provide setters for each parameter
-function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, autoRegenCallback, isGroup, groupIndex, containerIndex)
+function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, autoRegenCallback, isGroup, groupPath, containerIndex)
     local imgui = globals.imgui
     local UI = globals.UI
 
@@ -786,11 +786,13 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
 
         -- Check if this is a container whose parent is in auto-bind mode
         local isChildOfAutobindGroup = false
-        if not isGroup and containerIndex and groupIndex then
-            local group = globals.groups[groupIndex]
-            local container = group.containers[containerIndex]
-            if container and container.overrideParent and container.intervalMode == 5 and group.euclideanAutoBindContainers then
-                isChildOfAutobindGroup = true
+        if not isGroup and containerIndex and groupPath then
+            local group = globals.Structures.getGroupByPath(groupPath)
+            if group then
+                local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+                if container and container.overrideParent and container.intervalMode == 5 and group.euclideanAutoBindContainers then
+                    isChildOfAutobindGroup = true
+                end
             end
         end
 
@@ -808,11 +810,14 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
                     local bindingOrder = dataObj.euclideanBindingOrder or {}
                     local selectedUUID = bindingOrder[selectedBindingIndex]
 
-                    if selectedUUID and groupIndex then
-                        for _, container in ipairs(globals.groups[groupIndex].containers) do
-                            if container.id == selectedUUID then
-                                container.needsRegeneration = true
-                                return  -- Don't mark group
+                    if selectedUUID and groupPath then
+                        local group = globals.Structures.getGroupByPath(groupPath)
+                        if group then
+                            for _, container in ipairs(group.containers) do
+                                if container.id == selectedUUID then
+                                    container.needsRegeneration = true
+                                    return  -- Don't mark group
+                                end
                             end
                         end
                     end
@@ -929,12 +934,14 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
 
                 -- Check if this container is in Override Parent mode
                 local isOverrideParent = false
-                if isAutoBind and isGroup and groupIndex and item.uuid then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.id == item.uuid and container.overrideParent and container.intervalMode == 5 then
-                            isOverrideParent = true
-                            break
+                if isAutoBind and isGroup and groupPath and item.uuid then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.id == item.uuid and container.overrideParent and container.intervalMode == 5 then
+                                isOverrideParent = true
+                                break
+                            end
                         end
                     end
                 end
@@ -1046,19 +1053,21 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
         end
 
         -- Warning if selected container is in Override mode
-        if isAutoBind and isGroup and groupIndex then
+        if isAutoBind and isGroup and groupPath then
             local selectedIndex = dataObj.euclideanSelectedBindingIndex or 1
             local bindingOrder = dataObj.euclideanBindingOrder or {}
             local uuid = bindingOrder[selectedIndex]
             if uuid then
-                local group = globals.groups[groupIndex]
-                for _, container in ipairs(group.containers) do
-                    if container.id == uuid and container.overrideParent then
-                        imgui.Spacing(globals.ctx)
-                        imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFFAA00FF)  -- Orange warning
-                        imgui.TextWrapped(globals.ctx, "⚠ This container is in Override Parent mode. Changes here will sync with the container's own settings.")
-                        imgui.PopStyleColor(globals.ctx)
-                        break
+                local group = globals.Structures.getGroupByPath(groupPath)
+                if group then
+                    for _, container in ipairs(group.containers) do
+                        if container.id == uuid and container.overrideParent then
+                            imgui.Spacing(globals.ctx)
+                            imgui.PushStyleColor(globals.ctx, imgui.Col_Text, 0xFFAA00FF)  -- Orange warning
+                            imgui.TextWrapped(globals.ctx, "⚠ This container is in Override Parent mode. Changes here will sync with the container's own settings.")
+                            imgui.PopStyleColor(globals.ctx)
+                            break
+                        end
                     end
                 end
             end
@@ -1234,7 +1243,7 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
 end
 
 -- Display trigger and randomization settings for a group or container
-function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, groupIndex, containerIndex)
+function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, groupPath, containerIndex)
     local imgui = globals.imgui
     local titlePrefix = isGroup and "Default " or ""
     local inheritText = isGroup and "These settings will be inherited by containers unless overridden" or ""
@@ -1244,9 +1253,9 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
     local trackingKey = objId or ""
     if trackingKey == "" then
         if isGroup then
-            trackingKey = "group_" .. (groupIndex or "unknown")
+            trackingKey = "group_" .. (groupPath or "unknown")
         else
-            trackingKey = "container_" .. (groupIndex or "unknown") .. "_" .. (containerIndex or "unknown")
+            trackingKey = "container_" .. (groupPath or "unknown") .. "_" .. (containerIndex or "unknown")
         end
     end
 
@@ -1266,11 +1275,14 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 local bindingOrder = obj.euclideanBindingOrder or {}
                 local selectedUUID = bindingOrder[selectedBindingIndex]
 
-                if selectedUUID and groupIndex then
-                    for _, container in ipairs(globals.groups[groupIndex].containers) do
-                        if container.id == selectedUUID then
-                            container.needsRegeneration = true
-                            return  -- Don't mark group
+                if selectedUUID and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.id == selectedUUID then
+                                container.needsRegeneration = true
+                                return  -- Don't mark group
+                            end
                         end
                     end
                 end
@@ -1306,11 +1318,17 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.intervalMode = v
                 obj.needsRegeneration = true
                 -- Sync euclidean bindings if interval mode changes
-                if isGroup and groupIndex and groupIndex >= 1 and groupIndex <= #globals.groups then
-                    globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
-                elseif not isGroup and groupIndex and groupIndex >= 1 and groupIndex <= #globals.groups then
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        globals.Structures.syncEuclideanBindings(group)
+                    end
+                elseif not isGroup and groupPath then
                     -- Container mode changed - sync parent group
-                    globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        globals.Structures.syncEuclideanBindings(group)
+                    end
                 end
             end,
             setTriggerRate = function(v) obj.triggerRate = v; obj.needsRegeneration = true end,
@@ -1340,12 +1358,14 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanMode = v
 
                 -- If group, sync to all containers in override mode with Euclidean (parent -> children only)
-                if isGroup and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.overrideParent and container.intervalMode == 5 then
-                            container.euclideanMode = v
-                            container.needsRegeneration = true
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.overrideParent and container.intervalMode == 5 then
+                                container.euclideanMode = v
+                                container.needsRegeneration = true
+                            end
                         end
                     end
                 end
@@ -1356,12 +1376,14 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanTempo = v
 
                 -- If group, sync to all containers in override mode with Euclidean (parent -> children only)
-                if isGroup and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.overrideParent and container.intervalMode == 5 then
-                            container.euclideanTempo = v
-                            container.needsRegeneration = true
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.overrideParent and container.intervalMode == 5 then
+                                container.euclideanTempo = v
+                                container.needsRegeneration = true
+                            end
                         end
                     end
                 end
@@ -1372,12 +1394,14 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanUseProjectTempo = v
 
                 -- If group, sync to all containers in override mode with Euclidean (parent -> children only)
-                if isGroup and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.overrideParent and container.intervalMode == 5 then
-                            container.euclideanUseProjectTempo = v
-                            container.needsRegeneration = true
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.overrideParent and container.intervalMode == 5 then
+                                container.euclideanUseProjectTempo = v
+                                container.needsRegeneration = true
+                            end
                         end
                     end
                 end
@@ -1391,15 +1415,17 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanSelectedLayer = #obj.euclideanLayers
 
                 -- If this is a container in override mode with Euclidean, sync to parent binding
-                if not isGroup and containerIndex and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    local container = group.containers[containerIndex]
-                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
-                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            table.insert(group.euclideanLayerBindings[container.id], {pulses = 8, steps = 16, rotation = 0})
-                            -- Sync selected layer index
-                            group.euclideanSelectedLayerPerBinding[container.id] = #group.euclideanLayerBindings[container.id]
-                            -- Don't mark group for regeneration - only the container needs regen
+                if not isGroup and containerIndex and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+                        if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                            if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                                table.insert(group.euclideanLayerBindings[container.id], {pulses = 8, steps = 16, rotation = 0})
+                                -- Sync selected layer index
+                                group.euclideanSelectedLayerPerBinding[container.id] = #group.euclideanLayerBindings[container.id]
+                                -- Don't mark group for regeneration - only the container needs regen
+                            end
                         end
                     end
                 end
@@ -1414,19 +1440,21 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 end
 
                 -- If this is a container in override mode with Euclidean, sync to parent binding
-                if not isGroup and containerIndex and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    local container = group.containers[containerIndex]
-                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
-                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            if #group.euclideanLayerBindings[container.id] > 1 then
-                                table.remove(group.euclideanLayerBindings[container.id], layerIdx)
-                                -- Sync selected layer index
-                                local selectedLayerIdx = group.euclideanSelectedLayerPerBinding[container.id] or 1
-                                if selectedLayerIdx > #group.euclideanLayerBindings[container.id] then
-                                    group.euclideanSelectedLayerPerBinding[container.id] = #group.euclideanLayerBindings[container.id]
+                if not isGroup and containerIndex and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+                        if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                            if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                                if #group.euclideanLayerBindings[container.id] > 1 then
+                                    table.remove(group.euclideanLayerBindings[container.id], layerIdx)
+                                    -- Sync selected layer index
+                                    local selectedLayerIdx = group.euclideanSelectedLayerPerBinding[container.id] or 1
+                                    if selectedLayerIdx > #group.euclideanLayerBindings[container.id] then
+                                        group.euclideanSelectedLayerPerBinding[container.id] = #group.euclideanLayerBindings[container.id]
+                                    end
+                                    -- Don't mark group for regeneration - only the container needs regen
                                 end
-                                -- Don't mark group for regeneration - only the container needs regen
                             end
                         end
                     end
@@ -1439,25 +1467,27 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanLayers[layerIdx].pulses = v
 
                 -- If this is a container in override mode with Euclidean, sync back to parent binding
-                if not isGroup and containerIndex and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    local container = group.containers[containerIndex]
-                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
-                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            -- Ensure parent binding has enough layers by copying from container
-                            while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
-                                local missingIdx = #group.euclideanLayerBindings[container.id] + 1
-                                local containerLayer = container.euclideanLayers[missingIdx]
-                                table.insert(group.euclideanLayerBindings[container.id], {
-                                    pulses = containerLayer.pulses,
-                                    steps = containerLayer.steps,
-                                    rotation = containerLayer.rotation
-                                })
-                            end
+                if not isGroup and containerIndex and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+                        if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                            if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                                -- Ensure parent binding has enough layers by copying from container
+                                while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
+                                    local missingIdx = #group.euclideanLayerBindings[container.id] + 1
+                                    local containerLayer = container.euclideanLayers[missingIdx]
+                                    table.insert(group.euclideanLayerBindings[container.id], {
+                                        pulses = containerLayer.pulses,
+                                        steps = containerLayer.steps,
+                                        rotation = containerLayer.rotation
+                                    })
+                                end
 
-                            -- Sync the changed value
-                            group.euclideanLayerBindings[container.id][layerIdx].pulses = v
-                            -- Don't mark group for regeneration - only the container needs regen
+                                -- Sync the changed value
+                                group.euclideanLayerBindings[container.id][layerIdx].pulses = v
+                                -- Don't mark group for regeneration - only the container needs regen
+                            end
                         end
                     end
                 end
@@ -1469,25 +1499,27 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanLayers[layerIdx].steps = v
 
                 -- If this is a container in override mode with Euclidean, sync back to parent binding
-                if not isGroup and containerIndex and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    local container = group.containers[containerIndex]
-                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
-                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            -- Ensure parent binding has enough layers by copying from container
-                            while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
-                                local missingIdx = #group.euclideanLayerBindings[container.id] + 1
-                                local containerLayer = container.euclideanLayers[missingIdx]
-                                table.insert(group.euclideanLayerBindings[container.id], {
-                                    pulses = containerLayer.pulses,
-                                    steps = containerLayer.steps,
-                                    rotation = containerLayer.rotation
-                                })
-                            end
+                if not isGroup and containerIndex and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+                        if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                            if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                                -- Ensure parent binding has enough layers by copying from container
+                                while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
+                                    local missingIdx = #group.euclideanLayerBindings[container.id] + 1
+                                    local containerLayer = container.euclideanLayers[missingIdx]
+                                    table.insert(group.euclideanLayerBindings[container.id], {
+                                        pulses = containerLayer.pulses,
+                                        steps = containerLayer.steps,
+                                        rotation = containerLayer.rotation
+                                    })
+                                end
 
-                            -- Sync the changed value
-                            group.euclideanLayerBindings[container.id][layerIdx].steps = v
-                            -- Don't mark group for regeneration - only the container needs regen
+                                -- Sync the changed value
+                                group.euclideanLayerBindings[container.id][layerIdx].steps = v
+                                -- Don't mark group for regeneration - only the container needs regen
+                            end
                         end
                     end
                 end
@@ -1499,25 +1531,27 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanLayers[layerIdx].rotation = v
 
                 -- If this is a container in override mode with Euclidean, sync back to parent binding
-                if not isGroup and containerIndex and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    local container = group.containers[containerIndex]
-                    if container and container.overrideParent and container.intervalMode == 5 and container.id then
-                        if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
-                            -- Ensure parent binding has enough layers by copying from container
-                            while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
-                                local missingIdx = #group.euclideanLayerBindings[container.id] + 1
-                                local containerLayer = container.euclideanLayers[missingIdx]
-                                table.insert(group.euclideanLayerBindings[container.id], {
-                                    pulses = containerLayer.pulses,
-                                    steps = containerLayer.steps,
-                                    rotation = containerLayer.rotation
-                                })
-                            end
+                if not isGroup and containerIndex and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+                        if container and container.overrideParent and container.intervalMode == 5 and container.id then
+                            if group.euclideanLayerBindings and group.euclideanLayerBindings[container.id] then
+                                -- Ensure parent binding has enough layers by copying from container
+                                while #group.euclideanLayerBindings[container.id] < #container.euclideanLayers do
+                                    local missingIdx = #group.euclideanLayerBindings[container.id] + 1
+                                    local containerLayer = container.euclideanLayers[missingIdx]
+                                    table.insert(group.euclideanLayerBindings[container.id], {
+                                        pulses = containerLayer.pulses,
+                                        steps = containerLayer.steps,
+                                        rotation = containerLayer.rotation
+                                    })
+                                end
 
-                            -- Sync the changed value
-                            group.euclideanLayerBindings[container.id][layerIdx].rotation = v
-                            -- Don't mark group for regeneration - only the container needs regen
+                                -- Sync the changed value
+                                group.euclideanLayerBindings[container.id][layerIdx].rotation = v
+                                -- Don't mark group for regeneration - only the container needs regen
+                            end
                         end
                     end
                 end
@@ -1528,8 +1562,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
             setEuclideanAutoBindContainers = function(v)
                 obj.euclideanAutoBindContainers = v
                 -- Sync bindings when toggling auto-bind
-                if v and isGroup and groupIndex and groupIndex >= 1 and groupIndex <= #globals.groups then
-                    globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+                if v and isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        globals.Structures.syncEuclideanBindings(group)
+                    end
                 end
                 obj.needsRegeneration = true
             end,
@@ -1551,17 +1588,19 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanSelectedLayerPerBinding[uuid] = #obj.euclideanLayerBindings[uuid]
 
                 -- Sync with container if it's in override mode with Euclidean
-                if isGroup and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
-                            if not container.euclideanLayers then
-                                container.euclideanLayers = {}
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                                if not container.euclideanLayers then
+                                    container.euclideanLayers = {}
+                                end
+                                table.insert(container.euclideanLayers, {pulses = 8, steps = 16, rotation = 0})
+                                container.euclideanSelectedLayer = #container.euclideanLayers
+                                container.needsRegeneration = true
+                                break
                             end
-                            table.insert(container.euclideanLayers, {pulses = 8, steps = 16, rotation = 0})
-                            container.euclideanSelectedLayer = #container.euclideanLayers
-                            container.needsRegeneration = true
-                            break
                         end
                     end
                 end
@@ -1584,18 +1623,20 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 end
 
                 -- Sync with container if it's in override mode with Euclidean
-                if isGroup and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
-                            if container.euclideanLayers and #container.euclideanLayers > 1 then
-                                table.remove(container.euclideanLayers, selectedLayer)
-                                if container.euclideanSelectedLayer > #container.euclideanLayers then
-                                    container.euclideanSelectedLayer = #container.euclideanLayers
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.id == uuid and container.overrideParent and container.intervalMode == 5 then
+                                if container.euclideanLayers and #container.euclideanLayers > 1 then
+                                    table.remove(container.euclideanLayers, selectedLayer)
+                                    if container.euclideanSelectedLayer > #container.euclideanLayers then
+                                        container.euclideanSelectedLayer = #container.euclideanLayers
+                                    end
+                                    container.needsRegeneration = true
                                 end
-                                container.needsRegeneration = true
+                                break
                             end
-                            break
                         end
                     end
                 end
@@ -1615,44 +1656,46 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanLayerBindings[uuid][layerIdx].pulses = v
 
                 -- Sync if container is in override mode (but don't mark for regeneration yet)
-                if isGroup and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.id == uuid then
-                            -- Sync layers if container is in override mode with Euclidean
-                            if container.overrideParent and container.intervalMode == 5 then
-                            -- Ensure container has euclideanLayers array
-                            if not container.euclideanLayers then
-                                container.euclideanLayers = {}
-                            end
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.id == uuid then
+                                -- Sync layers if container is in override mode with Euclidean
+                                if container.overrideParent and container.intervalMode == 5 then
+                                -- Ensure container has euclideanLayers array
+                                if not container.euclideanLayers then
+                                    container.euclideanLayers = {}
+                                end
 
-                            -- Sync ALL layers from parent binding to container
-                            local parentBinding = obj.euclideanLayerBindings[uuid]
-                            for i, bindingLayer in ipairs(parentBinding) do
-                                if not container.euclideanLayers[i] then
-                                    -- Create missing layer by copying from parent binding
-                                    container.euclideanLayers[i] = {
-                                        pulses = bindingLayer.pulses,
-                                        steps = bindingLayer.steps,
-                                        rotation = bindingLayer.rotation
-                                    }
-                                else
-                                    -- Update existing layer with current change
-                                    if i == layerIdx then
-                                        container.euclideanLayers[i].pulses = v
+                                -- Sync ALL layers from parent binding to container
+                                local parentBinding = obj.euclideanLayerBindings[uuid]
+                                for i, bindingLayer in ipairs(parentBinding) do
+                                    if not container.euclideanLayers[i] then
+                                        -- Create missing layer by copying from parent binding
+                                        container.euclideanLayers[i] = {
+                                            pulses = bindingLayer.pulses,
+                                            steps = bindingLayer.steps,
+                                            rotation = bindingLayer.rotation
+                                        }
                                     else
-                                        -- Sync other parameters to stay in sync
-                                        container.euclideanLayers[i].pulses = bindingLayer.pulses
-                                        container.euclideanLayers[i].steps = bindingLayer.steps
-                                        container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                        -- Update existing layer with current change
+                                        if i == layerIdx then
+                                            container.euclideanLayers[i].pulses = v
+                                        else
+                                            -- Sync other parameters to stay in sync
+                                            container.euclideanLayers[i].pulses = bindingLayer.pulses
+                                            container.euclideanLayers[i].steps = bindingLayer.steps
+                                            container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                        end
                                     end
                                 end
-                            end
 
-                            -- Remove extra layers if container has more than parent
-                            while #container.euclideanLayers > #parentBinding do
-                                table.remove(container.euclideanLayers)
-                            end
+                                -- Remove extra layers if container has more than parent
+                                while #container.euclideanLayers > #parentBinding do
+                                    table.remove(container.euclideanLayers)
+                                end
+                                end
                             end
                         end
                     end
@@ -1669,44 +1712,46 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanLayerBindings[uuid][layerIdx].steps = v
 
                 -- Sync if container is in override mode (but don't mark for regeneration yet)
-                if isGroup and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.id == uuid then
-                            -- Sync layers if container is in override mode with Euclidean
-                            if container.overrideParent and container.intervalMode == 5 then
-                            -- Ensure container has euclideanLayers array
-                            if not container.euclideanLayers then
-                                container.euclideanLayers = {}
-                            end
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.id == uuid then
+                                -- Sync layers if container is in override mode with Euclidean
+                                if container.overrideParent and container.intervalMode == 5 then
+                                -- Ensure container has euclideanLayers array
+                                if not container.euclideanLayers then
+                                    container.euclideanLayers = {}
+                                end
 
-                            -- Sync ALL layers from parent binding to container
-                            local parentBinding = obj.euclideanLayerBindings[uuid]
-                            for i, bindingLayer in ipairs(parentBinding) do
-                                if not container.euclideanLayers[i] then
-                                    -- Create missing layer by copying from parent binding
-                                    container.euclideanLayers[i] = {
-                                        pulses = bindingLayer.pulses,
-                                        steps = bindingLayer.steps,
-                                        rotation = bindingLayer.rotation
-                                    }
-                                else
-                                    -- Update existing layer with current change
-                                    if i == layerIdx then
-                                        container.euclideanLayers[i].steps = v
+                                -- Sync ALL layers from parent binding to container
+                                local parentBinding = obj.euclideanLayerBindings[uuid]
+                                for i, bindingLayer in ipairs(parentBinding) do
+                                    if not container.euclideanLayers[i] then
+                                        -- Create missing layer by copying from parent binding
+                                        container.euclideanLayers[i] = {
+                                            pulses = bindingLayer.pulses,
+                                            steps = bindingLayer.steps,
+                                            rotation = bindingLayer.rotation
+                                        }
                                     else
-                                        -- Sync other parameters to stay in sync
-                                        container.euclideanLayers[i].pulses = bindingLayer.pulses
-                                        container.euclideanLayers[i].steps = bindingLayer.steps
-                                        container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                        -- Update existing layer with current change
+                                        if i == layerIdx then
+                                            container.euclideanLayers[i].steps = v
+                                        else
+                                            -- Sync other parameters to stay in sync
+                                            container.euclideanLayers[i].pulses = bindingLayer.pulses
+                                            container.euclideanLayers[i].steps = bindingLayer.steps
+                                            container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                        end
                                     end
                                 end
-                            end
 
-                            -- Remove extra layers if container has more than parent
-                            while #container.euclideanLayers > #parentBinding do
-                                table.remove(container.euclideanLayers)
-                            end
+                                -- Remove extra layers if container has more than parent
+                                while #container.euclideanLayers > #parentBinding do
+                                    table.remove(container.euclideanLayers)
+                                end
+                                end
                             end
                         end
                     end
@@ -1723,44 +1768,46 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.euclideanLayerBindings[uuid][layerIdx].rotation = v
 
                 -- Sync if container is in override mode (but don't mark for regeneration yet)
-                if isGroup and groupIndex then
-                    local group = globals.groups[groupIndex]
-                    for _, container in ipairs(group.containers) do
-                        if container.id == uuid then
-                            -- Sync layers if container is in override mode with Euclidean
-                            if container.overrideParent and container.intervalMode == 5 then
-                            -- Ensure container has euclideanLayers array
-                            if not container.euclideanLayers then
-                                container.euclideanLayers = {}
-                            end
+                if isGroup and groupPath then
+                    local group = globals.Structures.getGroupByPath(groupPath)
+                    if group then
+                        for _, container in ipairs(group.containers) do
+                            if container.id == uuid then
+                                -- Sync layers if container is in override mode with Euclidean
+                                if container.overrideParent and container.intervalMode == 5 then
+                                -- Ensure container has euclideanLayers array
+                                if not container.euclideanLayers then
+                                    container.euclideanLayers = {}
+                                end
 
-                            -- Sync ALL layers from parent binding to container
-                            local parentBinding = obj.euclideanLayerBindings[uuid]
-                            for i, bindingLayer in ipairs(parentBinding) do
-                                if not container.euclideanLayers[i] then
-                                    -- Create missing layer by copying from parent binding
-                                    container.euclideanLayers[i] = {
-                                        pulses = bindingLayer.pulses,
-                                        steps = bindingLayer.steps,
-                                        rotation = bindingLayer.rotation
-                                    }
-                                else
-                                    -- Update existing layer with current change
-                                    if i == layerIdx then
-                                        container.euclideanLayers[i].rotation = v
+                                -- Sync ALL layers from parent binding to container
+                                local parentBinding = obj.euclideanLayerBindings[uuid]
+                                for i, bindingLayer in ipairs(parentBinding) do
+                                    if not container.euclideanLayers[i] then
+                                        -- Create missing layer by copying from parent binding
+                                        container.euclideanLayers[i] = {
+                                            pulses = bindingLayer.pulses,
+                                            steps = bindingLayer.steps,
+                                            rotation = bindingLayer.rotation
+                                        }
                                     else
-                                        -- Sync other parameters to stay in sync
-                                        container.euclideanLayers[i].pulses = bindingLayer.pulses
-                                        container.euclideanLayers[i].steps = bindingLayer.steps
-                                        container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                        -- Update existing layer with current change
+                                        if i == layerIdx then
+                                            container.euclideanLayers[i].rotation = v
+                                        else
+                                            -- Sync other parameters to stay in sync
+                                            container.euclideanLayers[i].pulses = bindingLayer.pulses
+                                            container.euclideanLayers[i].steps = bindingLayer.steps
+                                            container.euclideanLayers[i].rotation = bindingLayer.rotation
+                                        end
                                     end
                                 end
-                            end
 
-                            -- Remove extra layers if container has more than parent
-                            while #container.euclideanLayers > #parentBinding do
-                                table.remove(container.euclideanLayers)
-                            end
+                                -- Remove extra layers if container has more than parent
+                                while #container.euclideanLayers > #parentBinding do
+                                    table.remove(container.euclideanLayers)
+                                end
+                                end
                             end
                         end
                     end
@@ -1773,7 +1820,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
         titlePrefix,
         nil,  -- Don't pass auto-regen callback - let needsRegeneration flag be used instead
         isGroup,         -- Pass isGroup flag
-        groupIndex,      -- Pass group index
+        groupPath,       -- Pass group path
         containerIndex   -- Pass container index
     )
 
@@ -1792,10 +1839,10 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
     if rv then
         obj.randomizePitch = newRandomizePitch
         obj.needsRegeneration = true
-        if groupIndex and containerIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pitch")
-        elseif groupIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pitch")
+        if groupPath and containerIndex then
+            globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "pitch")
+        elseif groupPath then
+            globals.Utils.queueRandomizationUpdate(groupPath, nil, "pitch")
         end
     end
 
@@ -1820,10 +1867,10 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
             obj.needsRegeneration = true
         end,
         onChangeComplete = function()
-            if groupIndex and containerIndex then
-                globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pitch")
-            elseif groupIndex then
-                globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pitch")
+            if groupPath and containerIndex then
+                globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "pitch")
+            elseif groupPath then
+                globals.Utils.queueRandomizationUpdate(groupPath, nil, "pitch")
             end
         end,
         onLinkModeChange = function(newMode)
@@ -1888,16 +1935,22 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
         obj.needsRegeneration = true
 
         -- Sync B_PPITCH on existing items
-        if groupIndex and containerIndex then
-            local group = globals.groups[groupIndex]
-            local container = group.containers[containerIndex]
-            globals.Generation.syncPitchModeOnExistingItems(group, container)
-        elseif groupIndex then
-            -- For group-level toggle, sync all containers
-            local group = globals.groups[groupIndex]
-            for _, container in ipairs(group.containers) do
-                if not container.overrideParent then
+        if groupPath and containerIndex then
+            local group = globals.Structures.getGroupByPath(groupPath)
+            if group then
+                local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+                if container then
                     globals.Generation.syncPitchModeOnExistingItems(group, container)
+                end
+            end
+        elseif groupPath then
+            -- For group-level toggle, sync all containers
+            local group = globals.Structures.getGroupByPath(groupPath)
+            if group then
+                for _, container in ipairs(group.containers) do
+                    if not container.overrideParent then
+                        globals.Generation.syncPitchModeOnExistingItems(group, container)
+                    end
                 end
             end
         end
@@ -1920,10 +1973,10 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
     if rv then
         obj.randomizeVolume = newRandomizeVolume
         obj.needsRegeneration = true
-        if groupIndex and containerIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "volume")
-        elseif groupIndex then
-            globals.Utils.queueRandomizationUpdate(groupIndex, nil, "volume")
+        if groupPath and containerIndex then
+            globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "volume")
+        elseif groupPath then
+            globals.Utils.queueRandomizationUpdate(groupPath, nil, "volume")
         end
     end
 
@@ -1948,10 +2001,10 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
             obj.needsRegeneration = true
         end,
         onChangeComplete = function()
-            if groupIndex and containerIndex then
-                globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "volume")
-            elseif groupIndex then
-                globals.Utils.queueRandomizationUpdate(groupIndex, nil, "volume")
+            if groupPath and containerIndex then
+                globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "volume")
+            elseif groupPath then
+                globals.Utils.queueRandomizationUpdate(groupPath, nil, "volume")
             end
         end,
         onLinkModeChange = function(newMode)
@@ -1969,9 +2022,9 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
 
     -- Pan randomization (only show for stereo containers - hide for multichannel)
     local showPanControls = true
-    if groupIndex and containerIndex then
+    if groupPath and containerIndex then
         -- For containers, check if it's in multichannel mode (non-stereo)
-        local container = globals.groups[groupIndex].containers[containerIndex]
+        local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
         if container and container.channelMode and container.channelMode > 0 then
             showPanControls = false
         end
@@ -1984,10 +2037,10 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
         if rv then
             obj.randomizePan = newRandomizePan
             obj.needsRegeneration = true
-            if groupIndex and containerIndex then
-                globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
-            elseif groupIndex then
-                globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
+            if groupPath and containerIndex then
+                globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "pan")
+            elseif groupPath then
+                globals.Utils.queueRandomizationUpdate(groupPath, nil, "pan")
             end
         end
 
@@ -2012,10 +2065,10 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 obj.needsRegeneration = true
             end,
             onChangeComplete = function()
-                if groupIndex and containerIndex then
-                    globals.Utils.queueRandomizationUpdate(groupIndex, containerIndex, "pan")
-                elseif groupIndex then
-                    globals.Utils.queueRandomizationUpdate(groupIndex, nil, "pan")
+                if groupPath and containerIndex then
+                    globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "pan")
+                elseif groupPath then
+                    globals.Utils.queueRandomizationUpdate(groupPath, nil, "pan")
                 end
             end,
             onLinkModeChange = function(newMode)
@@ -2034,7 +2087,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
     end
 
     -- Fade Settings section
-    globals.UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupIndex, containerIndex)
+    globals.UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupPath, containerIndex)
 end
 
 return TriggerSection

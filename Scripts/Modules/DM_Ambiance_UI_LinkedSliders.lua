@@ -1,3 +1,7 @@
+--[[
+@version 1.0
+@noindex
+--]]
 -- DM_Ambiance_UI_LinkedSliders.lua
 -- Reusable linked sliders component with link/unlink/mirror modes
 -- Provides a generic UI pattern for multiple synchronized sliders

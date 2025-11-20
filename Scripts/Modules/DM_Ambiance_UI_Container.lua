@@ -15,7 +15,7 @@ function UI_Container.initModule(g)
     end
     globals = g
     imgui = globals.imgui  -- Get imgui reference from globals
-    
+
     -- Initialize container expanded states if not already set
     if not globals.containerExpandedStates then
         globals.containerExpandedStates = {}
@@ -23,10 +23,17 @@ function UI_Container.initModule(g)
 end
 
 -- Display the preset controls for a specific container (load/save container presets)
-function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, width, presetDropdownWidth, buttonSpacing)
-    local groupId = "group" .. groupIndex
+function UI_Container.drawContainerPresetControls(groupPath, containerIndex, width, presetDropdownWidth, buttonSpacing)
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or not group.containers or not group.containers[containerIndex] then
+        return
+    end
+
+    local container = group.containers[containerIndex]
+    local pathStr = globals.Utils.pathToString(groupPath)
+    local groupId = "group" .. pathStr
     local containerId = groupId .. "_container" .. containerIndex
-    local presetKey = groupIndex .. "_" .. containerIndex
+    local presetKey = globals.Structures.makeContainerKey(groupPath, containerIndex)
 
     -- Initialize the selected preset index for this container if not already set
     if not globals.selectedContainerPresetIndex[presetKey] then
@@ -42,7 +49,7 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, wi
     end
 
     -- Get a sanitized group name for folder structure (replace non-alphanumeric characters with underscores)
-    local groupName = globals.groups[groupIndex].name:gsub("[^%w]", "_")
+    local groupName = group.name:gsub("[^%w]", "_")
 
     -- Get the list of available container presets (shared across all groups)
     local containerPresetList = globals.Presets.listPresets("Containers")
@@ -73,7 +80,7 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, wi
         and globals.selectedContainerPresetIndex[presetKey] < #containerPresetList then
 
         local presetName = containerPresetList[globals.selectedContainerPresetIndex[presetKey] + 1]
-        globals.Presets.loadContainerPreset(presetName, groupIndex, containerIndex)
+        globals.Presets.loadContainerPresetByPath(presetName, groupPath, containerIndex)
     end
 
     -- Save preset button: opens a popup to save the current container as a preset
@@ -85,8 +92,8 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, wi
             globals.showMediaDirWarning = true
         else
             -- Continue with the normal save popup
-            globals.newContainerPresetName = globals.groups[groupIndex].containers[containerIndex].name
-            globals.currentSaveContainerGroup = groupIndex
+            globals.newContainerPresetName = container.name
+            globals.currentSaveContainerGroup = groupPath
             globals.currentSaveContainerIndex = containerIndex
             globals.Utils.safeOpenPopup("Save Container Preset##" .. containerId)
         end
@@ -99,7 +106,7 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, wi
         if rv then globals.newContainerPresetName = value end
 
         if imgui.Button(globals.ctx, "Save", 120, 0) and globals.newContainerPresetName ~= "" then
-            if globals.Presets.saveContainerPreset(
+            if globals.Presets.saveContainerPresetByPath(
                 globals.newContainerPresetName,
                 globals.currentSaveContainerGroup,
                 globals.currentSaveContainerIndex
@@ -118,16 +125,17 @@ function UI_Container.drawContainerPresetControls(groupIndex, containerIndex, wi
 end
 
 -- Display the settings for a specific container in the right panel
-function UI_Container.displayContainerSettings(groupIndex, containerIndex, width)
-    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
-        -- Don't render anything to avoid corrupting ImGui context
+function UI_Container.displayContainerSettings(groupPath, containerIndex, width)
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or not group.containers or not group.containers[containerIndex] then
         return
     end
-    local group = globals.groups[groupIndex]
+
     local container = group.containers[containerIndex]
-    local groupId = "group" .. groupIndex
+    local pathStr = globals.Utils.pathToString(groupPath)
+    local groupId = "group" .. pathStr
     local containerId = groupId .. "_container" .. containerIndex
-    
+
     -- Retroactive channel count calculation for old items
     for _, item in ipairs(container.items) do
         if not item.numChannels and item.filePath and item.filePath ~= "" then
@@ -141,11 +149,14 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
     -- Sync channel volumes from tracks if in multichannel mode
     if container.channelMode and container.channelMode > 0 then
-        globals.Utils.syncChannelVolumesFromTracks(groupIndex, containerIndex)
+        globals.Utils.syncChannelVolumesFromTracks(groupPath, containerIndex)
     end
 
-    -- Sync container volume from track
-    globals.Utils.syncContainerVolumeFromTrack(groupIndex, containerIndex)
+    -- Sync container volume, name, mute, and solo from track
+    globals.Utils.syncContainerVolumeFromTrack(groupPath, containerIndex)
+    globals.Utils.syncContainerNameFromTrack(groupPath, containerIndex)
+    globals.Utils.syncContainerMuteFromTrack(groupPath, containerIndex)
+    globals.Utils.syncContainerSoloFromTrack(groupPath, containerIndex)
 
     -- Panel title showing which container is being edited
     imgui.Text(globals.ctx, "Container Settings: " .. container.name)
@@ -161,27 +172,29 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     local rv, newContainerName = globals.UndoWrappers.InputText(globals.ctx, "Name##detail_" .. containerId, container.name)
     if rv then
         container.name = newContainerName
+        -- Update track name in REAPER in real-time
+        globals.Utils.setContainerTrackName(groupPath, containerIndex, newContainerName)
     end
     imgui.PopItemWidth(globals.ctx)
 
     -- Container preset controls on same line
     imgui.SameLine(globals.ctx, 0, 8)
-    UI_Container.drawContainerPresetControls(groupIndex, containerIndex, width, presetDropdownWidth, buttonSpacing)
+    UI_Container.drawContainerPresetControls(groupPath, containerIndex, width, presetDropdownWidth, buttonSpacing)
 
     -- Drop zone for importing items from timeline or Media Explorer
-    UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId, width)
+    UI_Container.drawImportDropZone(groupPath, containerIndex, containerId, width)
 
     -- Display imported items with persistent state
     if #container.items > 0 then
         -- Create unique key for this container's expanded state and selection
-        local expandedStateKey = groupIndex .. "_" .. containerIndex .. "_items"
-        local selectionKey = groupIndex .. "_" .. containerIndex
-        
+        local expandedStateKey = globals.Structures.makeContainerKey(groupPath, containerIndex) .. "_items"
+        local selectionKey = globals.Structures.makeContainerKey(groupPath, containerIndex)
+
         -- Initialize expanded state if not set (default to collapsed)
         if globals.containerExpandedStates[expandedStateKey] == nil then
             globals.containerExpandedStates[expandedStateKey] = false
         end
-        
+
         -- Initialize selected item index if not set
         if not globals.selectedItemIndex then
             globals.selectedItemIndex = {}
@@ -189,7 +202,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         if globals.selectedItemIndex[selectionKey] == nil then
             globals.selectedItemIndex[selectionKey] = -1
         end
-        
+
         -- If we need to maintain the open state, set it before the header
         if globals.containerExpandedStates[expandedStateKey] then
             imgui.SetNextItemOpen(globals.ctx, true)
@@ -291,7 +304,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     if imgui.SmallButton(globals.ctx, "⇄##route" .. l) then
                         -- Store item index to trigger popup in main loop
                         globals.routingPopupItemIndex = l
-                        globals.routingPopupGroupIndex = groupIndex
+                        globals.routingPopupGroupPath = groupPath
                         globals.routingPopupContainerIndex = containerIndex
                         globals.routingPopupOpened = nil  -- Reset flag to trigger OpenPopup
                     end
@@ -313,13 +326,13 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             -- Remove the item if the delete button was pressed
             if itemToDelete then
                 -- Get the item data before deletion for cache clearing
-                local itemToDeleteData = globals.groups[groupIndex].containers[containerIndex].items[itemToDelete]
+                local itemToDeleteData = container.items[itemToDelete]
 
                 -- Capture state before deletion
                 globals.History.captureState("Delete item from container")
 
-                -- Directly modify the global container reference to ensure persistence
-                table.remove(globals.groups[groupIndex].containers[containerIndex].items, itemToDelete)
+                -- Directly modify the container reference to ensure persistence
+                table.remove(container.items, itemToDelete)
 
                 -- Keep the header expanded after deletion
                 globals.containerExpandedStates[expandedStateKey] = true
@@ -341,8 +354,8 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     end
 
     -- Waveform Viewer Section (for selected imported items) - only visible in Edit Mode
-    local selectionKey = groupIndex .. "_" .. containerIndex
-    local editModeKey = groupIndex .. "_" .. containerIndex
+    local selectionKey = globals.Structures.makeContainerKey(groupPath, containerIndex)
+    local editModeKey = globals.Structures.makeContainerKey(groupPath, containerIndex)
     local isEditMode = globals.containerEditModes and globals.containerEditModes[editModeKey]
 
     -- Handle spacebar for play/pause when NOT in edit mode (in the item list)
@@ -390,9 +403,9 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     if isEditMode and globals.selectedItemIndex and globals.selectedItemIndex[selectionKey] and
        globals.selectedItemIndex[selectionKey] > 0 and
        globals.selectedItemIndex[selectionKey] <= #container.items then
-        
+
         local selectedItem = container.items[globals.selectedItemIndex[selectionKey]]
-        
+
         imgui.Separator(globals.ctx)
         imgui.Text(globals.ctx, "Waveform Viewer")
 
@@ -401,7 +414,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         -- local _, showPeaks = imgui.Checkbox(globals.ctx, "Peaks##waveform",
         --     globals.waveformShowPeaks ~= false)
         -- globals.waveformShowPeaks = showPeaks
-        
+
         -- imgui.SameLine(globals.ctx)
         -- local _, showRMS = imgui.Checkbox(globals.ctx, "RMS##waveform",
         --     globals.waveformShowRMS ~= false)
@@ -572,7 +585,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
 
             -- Auto-trigger area creation when any parameter changes
             if itemChanged and globals.Waveform then
-                local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
+                local itemKey = globals.Structures.makeItemKey(groupPath, containerIndex, globals.selectedItemIndex[selectionKey])
 
                 if buttonPressed then
                     -- Button was pressed: immediate area creation (no debouncing)
@@ -625,7 +638,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 end
             end
         end
-        
+
         -- Note: We don't clear the marker when switching files anymore
         -- Each file keeps its own marker until explicitly cleared with double-click
         -- The marker will only show on the file it belongs to (checked in drawWaveform)
@@ -637,7 +650,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
             local waveformData = nil
             if fileExists then
                 -- Create unique itemKey for this item
-                local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
+                local itemKey = globals.Structures.makeItemKey(groupPath, containerIndex, globals.selectedItemIndex[selectionKey])
 
                 -- Initialize waveform height if not set
                 if not globals.waveformHeights then
@@ -807,7 +820,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 end
             else
                 -- Create unique itemKey for this item even if file doesn't exist
-                local itemKey = string.format("g%d_c%d_i%d", groupIndex, containerIndex, globals.selectedItemIndex[selectionKey])
+                local itemKey = globals.Structures.makeItemKey(groupPath, containerIndex, globals.selectedItemIndex[selectionKey])
 
                 -- Initialize waveform height if not set
                 if not globals.waveformHeights then
@@ -876,7 +889,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                     imgui.SetMouseCursor(globals.ctx, imgui.MouseCursor_ResizeNS)
                 end
             end
-            
+
             -- Audio playback controls
             imgui.Separator(globals.ctx)
 
@@ -1016,99 +1029,28 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker("Controls the volume of the container's track in Reaper. Affects all items in this container.")
 
-    -- Ensure trackVolume is initialized
-    if container.trackVolume == nil then
-        container.trackVolume = Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT
-    end
-
-    -- Initialize mute/solo states if not set
-    if container.isMuted == nil then container.isMuted = false end
-    if container.isSoloed == nil then container.isSoloed = false end
-
-    -- Solo button (square, same size as mute)
-    local buttonSize = 20
-    local soloColorPushed = 0
-    if container.isSoloed then
-        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFFAA00FF) -- Yellow/orange when active
-        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFFAA00FF) -- Same color on hover (no hover effect)
-        soloColorPushed = 2
-    end
-    if globals.UI.Button(globals.ctx, "S##ContainerSolo_" .. containerId, buttonSize, buttonSize) then
-        container.isSoloed = not container.isSoloed
-        if container.isSoloed and container.isMuted then
-            container.isMuted = false
-            globals.Utils.setContainerTrackMute(groupIndex, containerIndex, false)
+    -- Use the shared VolumeControls widget
+    globals.UI_VolumeControls.draw({
+        id = "Container_" .. containerId,
+        item = container,
+        onVolumeChange = function(newVolumeDB)
+            globals.Utils.setContainerTrackVolume(groupPath, containerIndex, newVolumeDB)
+        end,
+        onMuteChange = function(isMuted)
+            if isMuted and container.isSoloed then
+                container.isSoloed = false
+                globals.Utils.setContainerTrackSolo(groupPath, containerIndex, false)
+            end
+            globals.Utils.setContainerTrackMute(groupPath, containerIndex, isMuted)
+        end,
+        onSoloChange = function(isSoloed)
+            if isSoloed and container.isMuted then
+                container.isMuted = false
+                globals.Utils.setContainerTrackMute(groupPath, containerIndex, false)
+            end
+            globals.Utils.setContainerTrackSolo(groupPath, containerIndex, isSoloed)
         end
-        globals.Utils.setContainerTrackSolo(groupIndex, containerIndex, container.isSoloed)
-    end
-    if soloColorPushed > 0 then
-        imgui.PopStyleColor(globals.ctx, soloColorPushed)
-    end
-
-    -- Mute button (square, red when active)
-    imgui.SameLine(globals.ctx, 0, globals.UI.scaleSize(4))
-    local muteColorPushed = 0
-    if container.isMuted then
-        imgui.PushStyleColor(globals.ctx, imgui.Col_Button, 0xFF0000FF) -- Red when active
-        imgui.PushStyleColor(globals.ctx, imgui.Col_ButtonHovered, 0xFF0000FF) -- Same color on hover (no hover effect)
-        muteColorPushed = 2
-    end
-    if globals.UI.Button(globals.ctx, "M##ContainerMute_" .. containerId, buttonSize, buttonSize) then
-        container.isMuted = not container.isMuted
-        if container.isMuted and container.isSoloed then
-            container.isSoloed = false
-            globals.Utils.setContainerTrackSolo(groupIndex, containerIndex, false)
-        end
-        globals.Utils.setContainerTrackMute(groupIndex, containerIndex, container.isMuted)
-    end
-    if muteColorPushed > 0 then
-        imgui.PopStyleColor(globals.ctx, muteColorPushed)
-    end
-
-    -- Convert current dB to normalized
-    local normalizedVolume = globals.Utils.dbToNormalizedRelative(container.trackVolume)
-
-    -- Volume knob
-    imgui.SameLine(globals.ctx, 0, 8)
-    local defaultNormalizedVolume = globals.Utils.dbToNormalizedRelative(globals.Constants.DEFAULTS.CONTAINER_VOLUME_DEFAULT)
-    local rv, newNormalizedVolume = globals.Knob.Knob({
-        id = "##TrackVolume_" .. containerId,
-        label = "",
-        value = normalizedVolume,
-        min = 0.0,
-        max = 1.0,
-        defaultValue = defaultNormalizedVolume,
-        size = 24,
-        format = "%.2f",
-        showLabel = false
     })
-    if rv then
-        local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
-        container.trackVolume = newVolumeDB
-        -- Apply volume to track in real-time (no regeneration needed)
-        globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, newVolumeDB)
-    end
-
-    -- Manual dB input field
-    imgui.SameLine(globals.ctx, 0, 8)
-    imgui.PushItemWidth(globals.ctx, 85)
-    local displayValue = container.trackVolume <= -144 and -144 or container.trackVolume
-    local rv2, manualDB = globals.UndoWrappers.InputDouble(
-        globals.ctx,
-        "##TrackVolumeInput_" .. containerId,
-        displayValue,
-        0, 0,  -- step, step_fast (not used)
-        "%.1f dB"
-    )
-    if rv2 then
-        -- Clamp to valid range
-        manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
-                           math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
-        container.trackVolume = manualDB
-        -- Apply volume to track in real-time (no regeneration needed)
-        globals.Utils.setContainerTrackVolume(groupIndex, containerIndex, manualDB)
-    end
-    imgui.PopItemWidth(globals.ctx)
 
     -- Multi-Channel Configuration
     imgui.Separator(globals.ctx)
@@ -1580,7 +1522,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 local newVolumeDB = globals.Utils.normalizedToDbRelative(newNormalizedVolume)
                 container.channelVolumes[i] = newVolumeDB
                 -- Apply volume to channel track in real-time
-                globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, newVolumeDB)
+                globals.Utils.setChannelTrackVolume(groupPath, containerIndex, i, newVolumeDB)
             end
 
             -- Manual dB input field with consistent spacing
@@ -1599,7 +1541,7 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
                 manualDB = math.max(Constants.AUDIO.VOLUME_RANGE_DB_MIN,
                                    math.min(Constants.AUDIO.VOLUME_RANGE_DB_MAX, manualDB))
                 container.channelVolumes[i] = manualDB
-                globals.Utils.setChannelTrackVolume(groupIndex, containerIndex, i, manualDB)
+                globals.Utils.setChannelTrackVolume(groupPath, containerIndex, i, manualDB)
             end
             imgui.PopItemWidth(globals.ctx)
 
@@ -1620,21 +1562,26 @@ function UI_Container.displayContainerSettings(groupIndex, containerIndex, width
         container.overrideParent = newOverrideParent
         container.needsRegeneration = true
         -- Sync euclidean bindings after override mode change
-        if groupIndex and groupIndex >= 1 and groupIndex <= #globals.groups then
-            globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+        if group then
+            globals.Structures.syncEuclideanBindings(group)
         end
     end
 
     -- Display trigger/randomization settings or inheritance info
     if container.overrideParent then
         -- Display the trigger and randomization settings for this container
-        globals.UI.displayTriggerSettings(container, containerId, width, false, groupIndex, containerIndex)
+        globals.UI.displayTriggerSettings(container, containerId, width, false, groupPath, containerIndex)
     end
 end
 
 -- Draw import drop zone for importing items from timeline or Media Explorer
-function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId, width)
-    local container = globals.groups[groupIndex].containers[containerIndex]
+function UI_Container.drawImportDropZone(groupPath, containerIndex, containerId, width)
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or not group.containers or not group.containers[containerIndex] then
+        return
+    end
+
+    local container = group.containers[containerIndex]
     local dropZoneHeight = 60
     local buttonWidth = 90
     local dropZoneWidth = width * 0.75 - buttonWidth - 12 -- Optimized space usage
@@ -1829,7 +1776,10 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
     if not globals.containerEditModes then
         globals.containerEditModes = {}
     end
-    local editModeKey = groupIndex .. "_" .. containerIndex
+
+    -- Create key using path-based system
+    local editModeKey = globals.Structures.makeContainerKey(groupPath, containerIndex)
+
     if globals.containerEditModes[editModeKey] == nil then
         globals.containerEditModes[editModeKey] = false
     end
@@ -1850,17 +1800,22 @@ function UI_Container.drawImportDropZone(groupIndex, containerIndex, containerId
 end
 
 -- Show routing matrix popup for configuring item channel routing
-function UI_Container.showRoutingMatrixPopup(groupIndex, containerIndex, containerId)
+function UI_Container.showRoutingMatrixPopup(groupPath, containerIndex, containerId)
     if not globals.routingPopupItemIndex then
         return
     end
 
     -- Check if we're viewing the correct container
-    if globals.routingPopupGroupIndex ~= groupIndex or globals.routingPopupContainerIndex ~= containerIndex then
+    if globals.routingPopupGroupPath ~= groupPath or globals.routingPopupContainerIndex ~= containerIndex then
         return
     end
 
-    local container = globals.groups[groupIndex].containers[containerIndex]
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or not group.containers or not group.containers[containerIndex] then
+        return
+    end
+
+    local container = group.containers[containerIndex]
     local itemIdx = globals.routingPopupItemIndex
     local item = container.items[itemIdx]
 
@@ -1990,7 +1945,7 @@ function UI_Container.showRoutingMatrixPopup(groupIndex, containerIndex, contain
         imgui.SameLine(globals.ctx, 0, 10)
         if imgui.Button(globals.ctx, "Close", 120, 0) then
             globals.routingPopupItemIndex = nil
-            globals.routingPopupGroupIndex = nil
+            globals.routingPopupGroupPath = nil
             globals.routingPopupContainerIndex = nil
             globals.routingPopupOpened = nil
             imgui.CloseCurrentPopup(globals.ctx)
@@ -2003,7 +1958,7 @@ function UI_Container.showRoutingMatrixPopup(groupIndex, containerIndex, contain
     -- If we have routing data but popup is not visible, clean up
     if not popupVisible and globals.routingPopupItemIndex then
         globals.routingPopupItemIndex = nil
-        globals.routingPopupGroupIndex = nil
+        globals.routingPopupGroupPath = nil
         globals.routingPopupContainerIndex = nil
         globals.routingPopupOpened = nil
     end

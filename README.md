@@ -133,12 +133,48 @@ Select the "Birds - Generic Bed Chirps" container and check the "Override Parent
 Here is a quick explanation of each parameters:
 
 **Trigger Settings**
-- Interval Mode: Choice between Absolute, Relative, or Coverage
-- Absolute: Fixed interval in seconds (can be negative to create overlaps)
-- Relative: Interval expressed as a percentage of the time selection
-- Coverage: Percentage of the time selection to fill
-- Interval: Time interval between sounds (in seconds or percentage depending on the mode)
-- Random variation (%): Percentage of random variation applied to the interval
+
+The tool offers **six interval modes** for maximum creative flexibility:
+
+**1. Absolute Mode**
+- Fixed interval in seconds (can be negative to create overlaps)
+- **Interval**: Time between items in seconds
+- **Random variation (%)**: Percentage of random variation applied to the interval
+- Perfect for: Precise timing, crossfaded beds, overlapping textures
+
+**2. Relative Mode**
+- Interval expressed as a percentage of item duration
+- **Interval**: Percentage of the current item's length before triggering the next
+- Example: 150% means next item starts at 1.5x the duration of current item
+- Perfect for: Adaptive spacing based on source file length
+
+**3. Coverage Mode**
+- Fill a percentage of the time selection with sound
+- **Coverage (%)**: Target percentage of timeline to fill (0-100%)
+- Automatically calculates intervals to reach target coverage
+- **Drift (%)**: Random variation in coverage density
+- Perfect for: Consistent sound density, sparse ambiances
+
+**4. Chunk Mode**
+- Alternate between structured sound/silence periods
+- **Chunk Duration**: Length of sound period in seconds
+- **Chunk Silence**: Length of silence period in seconds
+- Both support variation percentages
+- Perfect for: Rhythmic patterns, structured ambiances, intermittent sounds
+
+**5. Euclidean Mode**
+- Mathematical rhythm distribution using Euclidean algorithms
+- **Steps**: Total timeline divisions
+- **Pulses**: Number of sound events to distribute
+- **Rotation**: Shift pattern start point
+- Multi-layer support for polyrhythmic textures
+- Perfect for: Rhythmic industrial sounds, musical elements, complex patterns
+
+**6. Noise Mode**
+- Organic placement using mathematical noise functions
+- Deterministic but natural-sounding distribution
+- Visual 60-second preview of placement pattern
+- Perfect for: Natural-sounding sparse ambiances, avoiding clustering
 
 **Randomize Parameters**
 - Randomize Pitch: Enables pitch randomization
@@ -193,12 +229,168 @@ If you change the time selection, only that time selection will be generated. If
 **Tadaaaa**
 ---
 
-All right, that’s the whole loop! Now let’s populate our database, play around with the parameters to create reusable containers and modular ambiances!
+All right, that's the whole loop! Now let's populate our database, play around with the parameters to create reusable containers and modular ambiances!
 Once you're done, you can save the whole structure as one single preset "Winter Forest" that can be recalled at any time. You can also save the groups to reuse them in other contexts, or just use the containers to manually build another type of ambiance. The possibilities are endless.
 
 
 <img width="984" height="610" alt="image" src="https://github.com/user-attachments/assets/25269ea8-96a1-4e42-a3f8-4667257855b5" />
 
+
+## Advanced Features
+
+**Euclidean Rhythm System**
+---
+
+Want to create complex rhythmic patterns? The Euclidean Rhythm System lets you distribute items according to mathematical rhythm patterns.
+
+Instead of using traditional interval modes (Absolute, Relative, Coverage), you can switch to **Euclidean Mode** to create polyrhythmic ambiances.
+
+Key features:
+- **Multi-layer rhythm generation**: Stack multiple euclidean patterns on top of each other
+- **Visual preview**: See your rhythm pattern before generating
+- **Pattern library**: Access famous traditional rhythm patterns from around the world
+- **Auto-bind mode**: Synchronize child layers with parent patterns
+- **Rotation control**: Shift patterns to create variations
+
+This is particularly useful for creating:
+- Rhythmic industrial ambiances (machinery, construction)
+- Musical ambiances (bells, percussion elements)
+- Structured nature sounds (dripping water, ticking clocks)
+
+**Interactive Waveform Editor & Advanced File Splitting**
+---
+
+The Waveform Editor provides a visual way to work with your audio items and automatically split them into variations.
+
+**Three Split Modes:**
+
+1. **Auto Detect Mode** - Intelligently detect sound regions using gate analysis
+   - **Gate Open Threshold** (dB): Level to trigger sound detection
+   - **Gate Close Threshold** (dB): Level to end sound region
+   - **Min Length** (ms): Minimum duration for detected regions
+   - **Start/End Offset** (ms): Extend region boundaries
+   - Perfect for: Splitting field recordings with natural silences, isolating individual sounds
+
+2. **Split Count Mode** - Divide audio into equal parts
+   - **Number of Areas**: Choose how many equal divisions (1-100)
+   - Creates areas of identical length
+   - Perfect for: Evenly dividing loops, creating systematic variations
+
+3. **Split Time Mode** - Create fixed-duration segments
+   - **Area Duration** (seconds): Set the length of each segment
+   - Creates as many areas as fit within the file
+   - Perfect for: Time-based variations, consistent segment lengths
+
+**Interactive Features:**
+
+The waveform is divided into **two interaction zones** for intuitive control:
+
+**Upper Half - Area Manipulation:**
+- **Create areas**: Shift+Click+Drag to draw custom regions
+- **Resize areas**: Click and drag the edges to adjust boundaries
+- **Move areas**: Click and drag the center to reposition
+- **Delete areas**: Ctrl+Click to remove unwanted regions
+
+**Lower Half - Playback Control:**
+- **Set playback position**: Click to jump to any position in the audio
+- **Scrub audio**: Click and drag to preview different parts of the file
+- **Playback marker**: Visual indicator shows current playback position
+
+**Additional Features:**
+- **Visual waveform display**: See the audio content with peak data visualization
+- **Real-time updates**: Parameters update instantly with debouncing
+- **Zoom and pan**: Navigate through long audio files easily
+
+**Workflow:**
+1. Import audio files into a container
+2. Select an item to view its waveform
+3. Choose a split mode (Auto Detect, Split Count, or Split Time)
+4. Adjust parameters and click "Generate" to create areas
+5. Fine-tune areas manually if needed
+6. Generate your ambiance - the tool randomly selects from all defined areas
+
+Use cases:
+- Extract multiple variations from a single long recording
+- Isolate individual bird calls from a field recording
+- Create multiple versions from one sound effect
+- Build evolving soundscapes from fewer source files
+
+**Undo/Redo System**
+---
+
+Mistakes happen. That's why we added a complete undo/redo system.
+
+- **Full history window**: View all your previous actions with icons
+- **Jump to any state**: Click any entry to go back to that moment
+- **Works with everything**: Parameters, drag & drop, item imports, generation
+- **Keyboard shortcuts**: Ctrl+Z (undo) and Ctrl+Shift+Z (redo)
+
+Never fear experimenting again!
+
+**Multi-Channel Audio Support**
+---
+
+Create immersive surround ambiances with advanced multi-channel support.
+
+Supported formats:
+- **Stereo** (2.0) - Standard stereo
+- **Quad** (4.0) - L, R, LS, RS
+- **5.0 Surround** - ITU/Dolby and SMPTE formats
+- **7.0 Surround** - ITU/Dolby and SMPTE formats
+
+Features:
+- **Per-track routing**: Each container can target specific speaker channels
+- **Channel conflict resolver**: Automatic detection and fixing of routing issues
+- **Channel volume controls**: Individual volume control per channel with dB input
+- **Stereo pair mapping**: Extract stereo pairs from multi-channel files
+- **Split-stereo selection**: Use specific channels from multi-channel sources
+
+The tool handles all the track creation, routing, and channel management automatically.
+
+**Noise Generation Mode**
+---
+
+Sometimes randomness isn't random enough. The Noise Generation Mode uses mathematical noise functions to create organic, evolving placements.
+
+Instead of pure random intervals, this mode:
+- Uses **deterministic noise algorithms** for reproducible results
+- Creates **natural-sounding distributions** that avoid clustering
+- Provides a **60-second visual preview** of item placement
+- Works great for sparse ambiances (distant birds, occasional creaks)
+
+**Folder and Group Hierarchy**
+---
+
+Organize complex ambiances with nested folders and groups.
+
+- **Path-based system**: Groups can now live inside folders
+- **Unique name generation**: Automatically prevents naming conflicts
+- **Drag and drop**: Reorganize your structure effortlessly
+- **Track hierarchy**: Generated tracks mirror your folder structure
+
+This makes managing large ambiances (50+ containers) much more practical.
+
+**Copy/Paste System**
+---
+
+Speed up your workflow by duplicating groups and containers.
+
+- **Keyboard shortcuts**: Ctrl+C to copy, Ctrl+V to paste
+- **Preserves all settings**: Parameters, items, routing—everything
+- **Works across groups**: Copy a container from one group to another
+- **Multi-selection support**: Copy multiple containers at once (Ctrl+Click to select multiple)
+
+**Auto-Regeneration**
+---
+
+Change parameters and see results immediately with auto-regeneration.
+
+- **Real-time updates**: Changes trigger automatic regeneration
+- **Visual indicators**: See which containers need regeneration
+- **Smart updates**: Only regenerates what changed
+- **Toggle on/off**: Disable when experimenting, enable for final tweaks
+
+Perfect for fine-tuning during the final stages of ambiance creation.
 
 **Settings**
 ---
@@ -208,31 +400,102 @@ You can also customize the interface in the Settings.
 <img width="463" height="171" alt="image" src="https://github.com/user-attachments/assets/f954cf56-6a0b-432b-b81f-57399b83d41c" />
 
 
+## Quick Reference Guide
+
+**Keyboard Shortcuts:**
+- **Ctrl+C** - Copy selected group or container(s)
+- **Ctrl+V** - Paste copied group or container(s)
+- **Ctrl+Z** - Undo last action
+- **Ctrl+Shift+Z** - Redo action
+- **Space** - Play/pause from current position (in waveform editor)
+- **Shift+Click+Drag** - Create new area on waveform (upper half)
+- **Ctrl+Click** - Delete area on waveform (upper half)
+
+**Linked Faders Control (Override Link Mode):**
+- **Ctrl+Drag** - Force "Link" mode (move min/max together)
+- **Shift+Drag** - Force "Mirror" mode (mirror values around zero)
+- **Alt+Drag** - Force "Unlink" mode (move independently)
+- Override the button-defined link mode temporarily while dragging
+
+**Multi-Selection:**
+- **Ctrl+Click** - Toggle individual container selection
+- **Shift+Click** - Range selection (select all containers between anchor and current)
+- Works with copy/paste, drag & drop, and batch operations
+
+**Advanced UI Interactions:**
+- **Fade Controls:**
+  - **Click label** - Toggle between seconds (sec) and percentage (%)
+  - **Drag fade curve** - Adjust fade shape interactively
+  - **Right-click fade** - Choose from predefined slope presets
+- **Pitch Controls:**
+  - **Click "Pitch" label** - Switch to "Stretch" mode (time-stretching instead of pitch-shifting)
+  - **Click "Stretch" label** - Switch back to "Pitch" mode
+
+**Waveform Editor Interaction:**
+- **Upper Half** - Area manipulation (create, resize, move, delete)
+- **Lower Half** - Playback control (click to jump, drag to scrub)
+- **Click area edges** - Resize area boundaries
+- **Click area center** - Move entire area
+- **Mouse wheel** - Zoom in/out
+- **Middle-click+Drag** - Pan through waveform
+
+**Drag & Drop:**
+- Drag containers between groups
+- Drag groups to reorder
+- Drag audio files from Media Explorer directly into containers
+- Drag items from REAPER timeline into containers
+- Multi-container drag support (select multiple, drag any one)
+
+**Generation Tips:**
+- Use **Coverage Mode** for consistent sound density
+- Use **Euclidean Mode** for rhythmic patterns
+- Use **Noise Mode** for organic, natural-sounding distributions
+- Use **Auto Detect** split mode for field recordings with natural silences
+- Enable **Auto-Regeneration** for real-time parameter tweaking
+
+
 ## Planned future additions:
 
 - **Preview Listening for Containers/Groups**: A new function will enable you to preview the sound of a container or an entire group directly within the interface before generating it in REAPER, saving time in the creative process.
-- **Advanced File Splitting**: The ability to split longer audio files into multiple segments and randomize their in/out points. This will allow for more variation from a single source file and enable creating evolving soundscapes from fewer original assets.
 - **Flexible Group Generation Options**: The ability to generate content into a new group, a specific existing group chosen from a list, or directly into the currently selected group, providing more workflow flexibility and integration with existing projects.
-- **Master Group**: A group to rule them all. Allows you to create a master group for better group organization.
-- **Settings Menu**: Introduce a user settings menu to offer a certain level of customization, allowing users to tailor the tool to their preferences and workflow needs.
-- **UI Improvements**: Once the core features are complete, the overall user interface will be polished to ensure a cleaner, more intuitive, and visually appealing experience.
 - **Action List**: Adds some Reaper actions to manipulate containers outside of the tool interface.
-- **Drag and Drop**: Be able to drag and drop items directly into a container instead of using the "Import" button.
 - **Export**: For video games, allow the extraction of one instance of each item variation, so they can be exported and used to replicate the generated behavior in an audio middleware.
 - **Middleware API**: Directly create Random or Sequence containers from the tool in your preferred audio middleware.
-- **Multi Channel Management**: Be able to create quad/ambisonic containers
+- **Ambisonic Support**: Extend multi-channel support to include ambisonic formats for spatial audio.
 
 
 ## Known Issues
 
-- Startup and loading can be long on some setup.
 
+## Change log
 
-##Change log
+### 0.10.0-beta (Major Feature Release)
 
-    0.9.0
-        Initial Release
-    0.9.1
-        Fix crashes
-    0.9.2
-        Fix time selection
+**New Features:**
+- Euclidean Rhythm System with multi-layer generation and pattern library
+- Interactive Waveform Editor with drawable zones and playback
+- Complete Undo/Redo System with history window
+- Multi-Channel Audio Support (Quad, 5.0, 7.0 surround with ITU/SMPTE)
+- Channel Volume Controls with per-channel management
+- Noise Generation Mode with visual preview
+- Folder/Group Hierarchy with path-based organization
+- Copy/Paste System with keyboard shortcuts
+- Auto-Regeneration System with visual indicators
+- Advanced UI Components (rotating knobs, S-curve fades, enhanced sliders)
+- Improved drag & drop from media explorer and timeline
+- UI Scaling Support and modular architecture
+
+**Bug Fixes:**
+- Fixed multiple ImGui crashes on window resize and mode changes
+- Fixed multi-channel routing and fade issues
+- Fixed various generation and parameter synchronization bugs
+- Improved overall stability and performance
+
+### 0.9.2
+- Fix time selection crash
+
+### 0.9.1
+- Fix crashes when switching window modes
+
+### 0.9.0
+- Initial Release

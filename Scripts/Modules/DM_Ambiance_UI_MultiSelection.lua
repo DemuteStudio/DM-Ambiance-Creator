@@ -18,12 +18,14 @@ local function showMixedValues()
     imgui.TextColored(globals.ctx, 0xFFAA00FF, "(Mixed values)")
 end
 
--- Function to get all selected containers as a table of {groupIndex, containerIndex} pairs
+-- Function to get all selected containers as a table of {groupPath, containerIndex} pairs
 function UI_MultiSelection.getSelectedContainersList()
     local containers = {}
     for key in pairs(globals.selectedContainers) do
-        local t, c = key:match("(%d+)_(%d+)")
-        table.insert(containers, {groupIndex = tonumber(t), containerIndex = tonumber(c)})
+        local groupPath, containerIndex = globals.Structures.parseContainerKey(key)
+        if groupPath and containerIndex then
+            table.insert(containers, {groupPath = groupPath, containerIndex = containerIndex})
+        end
     end
     return containers
 end
@@ -50,7 +52,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     -- Button to regenerate all selected containers
     if imgui.Button(globals.ctx, "Regenerate All", width * 0.5, 30) then
         for _, c in ipairs(containers) do
-            globals.Generation.generateSingleContainer(c.groupIndex, c.containerIndex)
+            globals.Generation.generateSingleContainer(c.groupPath, c.containerIndex)
         end
     end
 
@@ -62,9 +64,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
     -- Check all containers for override parent setting
     for _, c in ipairs(containers) do
-        local groupIndex = c.groupIndex
-        local containerIndex = c.containerIndex
-        local container = globals.groups[groupIndex].containers[containerIndex]
+        local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+        if not container then
+            goto continue
+        end
 
         -- Override parent status
         if container.overrideParent then
@@ -72,6 +75,8 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         else
             allOverrideParent = false
         end
+
+        ::continue::
     end
 
     -- Override Parent checkbox (three-state checkbox for mixed values)
@@ -95,14 +100,19 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         -- Apply to all selected containers
         local affectedGroups = {}
         for _, c in ipairs(containers) do
-            globals.groups[c.groupIndex].containers[c.containerIndex].overrideParent = newOverrideParent
-            affectedGroups[c.groupIndex] = true
+            local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+            if container then
+                container.overrideParent = newOverrideParent
+                local pathStr = globals.Utils.pathToString(c.groupPath)
+                affectedGroups[pathStr] = c.groupPath
+            end
         end
 
         -- Sync euclidean bindings for all affected groups
-        for groupIndex, _ in pairs(affectedGroups) do
-            if groupIndex >= 1 and groupIndex <= #globals.groups then
-                globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+        for pathStr, groupPath in pairs(affectedGroups) do
+            local group = globals.Structures.getGroupFromPath(groupPath)
+            if group then
+                globals.Structures.syncEuclideanBindings(group)
             end
         end
 
@@ -159,9 +169,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
     -- Check all containers to determine common settings
     for _, c in ipairs(containers) do
-        local groupIndex = c.groupIndex
-        local containerIndex = c.containerIndex
-        local container = globals.groups[groupIndex].containers[containerIndex]
+        local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+        if not container then
+            goto continue_check
+        end
 
         -- Check if this container is multichannel (non-stereo)
         if container.channelMode and container.channelMode > 0 then
@@ -218,26 +229,26 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if math.abs(commonPanMin - container.panRange.min) > 0.001 then commonPanMin = -999 end
             if math.abs(commonPanMax - container.panRange.max) > 0.001 then commonPanMax = -999 end
         end
-        
+
         -- Chunk mode parameters
         if commonChunkDuration == nil then
             commonChunkDuration = container.chunkDuration or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_DURATION
         elseif math.abs(commonChunkDuration - (container.chunkDuration or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_DURATION)) > 0.001 then
             commonChunkDuration = -999 -- Mixed values
         end
-        
+
         if commonChunkSilence == nil then
             commonChunkSilence = container.chunkSilence or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_SILENCE
         elseif math.abs(commonChunkSilence - (container.chunkSilence or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_SILENCE)) > 0.001 then
             commonChunkSilence = -999 -- Mixed values
         end
-        
+
         if commonChunkDurationVariation == nil then
             commonChunkDurationVariation = container.chunkDurationVariation or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_DURATION_VARIATION
         elseif commonChunkDurationVariation ~= (container.chunkDurationVariation or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_DURATION_VARIATION) then
             commonChunkDurationVariation = -1 -- Mixed values
         end
-        
+
         if commonChunkSilenceVariation == nil then
             commonChunkSilenceVariation = container.chunkSilenceVariation or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_SILENCE_VARIATION
         elseif commonChunkSilenceVariation ~= (container.chunkSilenceVariation or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_SILENCE_VARIATION) then
@@ -299,31 +310,46 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         elseif commonDensityLinkMode ~= (container.densityLinkMode or "unlink") then
             commonDensityLinkMode = "mixed" -- Mixed values
         end
+
+        ::continue_check::
     end
 
     -- TRIGGER SETTINGS SECTION
-    
+
     -- Check if we have mixed values for any trigger settings
     local hasMixedTriggerValues = (commonIntervalMode == -1 or commonTriggerRate == -999 or commonTriggerDrift == -1)
-    
+
     if hasMixedTriggerValues then
         -- Handle mixed values case by case
         imgui.Separator(globals.ctx)
         imgui.Text(globals.ctx, "Trigger Settings")
-        
+
         -- Interval Mode - handle mixed values
         if commonIntervalMode == -1 then
             imgui.Text(globals.ctx, "Interval Mode:")
             showMixedValues()
-            
+
             -- Add a dropdown to set all values to the same value
             imgui.PushItemWidth(globals.ctx, width * 0.5)
             local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0"
             local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "Set all to##IntervalMode", 0, intervalModes)
             if rv then
                 -- Apply to all selected containers
+                local affectedGroups = {}
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].intervalMode = newIntervalMode
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.intervalMode = newIntervalMode
+                        local pathStr = globals.Utils.pathToString(c.groupPath)
+                        affectedGroups[pathStr] = c.groupPath
+                    end
+                end
+                -- Sync euclidean bindings for all affected groups
+                for pathStr, groupPath in pairs(affectedGroups) do
+                    local group = globals.Structures.getGroupFromPath(groupPath)
+                    if group then
+                        globals.Structures.syncEuclideanBindings(group)
+                    end
                 end
                 -- Update state for UI refresh
                 commonIntervalMode = newIntervalMode
@@ -333,17 +359,17 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             local modeText = "Absolute"
             if commonIntervalMode == 1 then modeText = "Relative"
             elseif commonIntervalMode == 2 then modeText = "Coverage" end
-            
+
             imgui.Text(globals.ctx, "Interval Mode: " .. modeText)
         end
-        
+
         -- Trigger rate - handle mixed values
         if commonTriggerRate == -999 then
             -- Different labels based on mode
             local triggerRateLabel = "Interval (sec)"
             local triggerRateMin = -10.0
             local triggerRateMax = 60.0
-            
+
             if commonIntervalMode == 1 then
                 triggerRateLabel = "Interval (%)"
                 triggerRateMin = 0.1
@@ -353,10 +379,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
                 triggerRateMin = 0.1
                 triggerRateMax = 100.0
             end
-            
+
             imgui.Text(globals.ctx, triggerRateLabel .. ":")
             showMixedValues()
-            
+
             -- Add a slider to set all values to the same value
             local rv, newTriggerRate = globals.SliderEnhanced.SliderDouble({
                 id = "Set all to##TriggerRate",
@@ -370,7 +396,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].triggerRate = newTriggerRate
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.triggerRate = newTriggerRate
+                    end
                 end
                 -- Update state for UI refresh
                 commonTriggerRate = newTriggerRate
@@ -395,7 +424,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].triggerDrift = newTriggerDrift
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.triggerDrift = newTriggerDrift
+                    end
                 end
                 -- Update state for UI refresh
                 commonTriggerDrift = newTriggerDrift
@@ -423,67 +455,90 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             noiseThreshold = commonNoiseThreshold,
             densityLinkMode = commonDensityLinkMode
         }
-        
+
         local callbacks = {
             setIntervalMode = function(newValue)
                 local affectedGroups = {}
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].intervalMode = newValue
-                    affectedGroups[c.groupIndex] = true
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.intervalMode = newValue
+                        local pathStr = globals.Utils.pathToString(c.groupPath)
+                        affectedGroups[pathStr] = c.groupPath
+                    end
                 end
                 -- Sync euclidean bindings for all affected groups
-                for groupIndex, _ in pairs(affectedGroups) do
-                    if groupIndex >= 1 and groupIndex <= #globals.groups then
-                        globals.Structures.syncEuclideanBindings(globals.groups[groupIndex])
+                for pathStr, groupPath in pairs(affectedGroups) do
+                    local group = globals.Structures.getGroupFromPath(groupPath)
+                    if group then
+                        globals.Structures.syncEuclideanBindings(group)
                     end
                 end
                 -- Update state for UI refresh
                 commonIntervalMode = newValue
             end,
-            
+
             setTriggerRate = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].triggerRate = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.triggerRate = newValue
+                    end
                 end
                 -- Update state for UI refresh
                 commonTriggerRate = newValue
             end,
-            
+
             setTriggerDrift = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].triggerDrift = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.triggerDrift = newValue
+                    end
                 end
                 -- Update state for UI refresh
                 commonTriggerDrift = newValue
             end,
-            
+
             -- Chunk mode callbacks
             setChunkDuration = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].chunkDuration = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.chunkDuration = newValue
+                    end
                 end
                 -- Update state for UI refresh
                 commonChunkDuration = newValue
             end,
-            
+
             setChunkSilence = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].chunkSilence = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.chunkSilence = newValue
+                    end
                 end
                 -- Update state for UI refresh
                 commonChunkSilence = newValue
             end,
-            
+
             setChunkDurationVariation = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].chunkDurationVariation = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.chunkDurationVariation = newValue
+                    end
                 end
                 -- Update state for UI refresh
                 commonChunkDurationVariation = newValue
             end,
             setChunkSilenceVariation = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].chunkSilenceVariation = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.chunkSilenceVariation = newValue
+                    end
                 end
                 -- Update state for UI refresh
                 commonChunkSilenceVariation = newValue
@@ -492,61 +547,85 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             -- Noise mode callbacks
             setNoiseSeed = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseSeed = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseSeed = newValue
+                    end
                 end
                 commonNoiseSeed = newValue
             end,
 
             setNoiseFrequency = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseFrequency = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseFrequency = newValue
+                    end
                 end
                 commonNoiseFrequency = newValue
             end,
 
             setNoiseAmplitude = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseAmplitude = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseAmplitude = newValue
+                    end
                 end
                 commonNoiseAmplitude = newValue
             end,
 
             setNoiseOctaves = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseOctaves = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseOctaves = newValue
+                    end
                 end
                 commonNoiseOctaves = newValue
             end,
 
             setNoisePersistence = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].noisePersistence = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noisePersistence = newValue
+                    end
                 end
                 commonNoisePersistence = newValue
             end,
 
             setNoiseLacunarity = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseLacunarity = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseLacunarity = newValue
+                    end
                 end
                 commonNoiseLacunarity = newValue
             end,
 
             setNoiseDensity = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseDensity = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseDensity = newValue
+                    end
                 end
                 commonNoiseDensity = newValue
             end,
 
             setNoiseThreshold = function(newValue)
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].noiseThreshold = newValue
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseThreshold = newValue
+                    end
                 end
                 commonNoiseThreshold = newValue
             end
         }
-        
+
         -- Use the common trigger settings function
         -- Multi-selection doesn't support auto-bind (not a group context)
         globals.UI.drawTriggerSettingsSection(dataObj, callbacks, width, "", nil, false, nil, nil)
@@ -573,7 +652,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     if rv then
         -- Apply to all selected containers
         for _, c in ipairs(containers) do
-            globals.groups[c.groupIndex].containers[c.containerIndex].randomizePitch = newRandomizePitch
+            local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+            if container then
+                container.randomizePitch = newRandomizePitch
+            end
         end
 
         -- Update state for UI refresh
@@ -592,14 +674,17 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     imgui.SameLine(globals.ctx)
 
     -- Determine common pitch mode
-    local commonPitchMode = containers[1] and globals.groups[containers[1].groupIndex].containers[containers[1].containerIndex].pitchMode or Constants.PITCH_MODES.PITCH
+    local firstContainer = containers[1] and globals.Structures.getContainerFromGroup(containers[1].groupPath, containers[1].containerIndex)
+    local commonPitchMode = firstContainer and firstContainer.pitchMode or Constants.PITCH_MODES.PITCH
     local hasMixedPitchModes = false
     for _, c in ipairs(containers) do
-        local container = globals.groups[c.groupIndex].containers[c.containerIndex]
-        if not container.pitchMode then container.pitchMode = Constants.PITCH_MODES.PITCH end
-        if container.pitchMode ~= commonPitchMode then
-            hasMixedPitchModes = true
-            break
+        local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+        if container then
+            if not container.pitchMode then container.pitchMode = Constants.PITCH_MODES.PITCH end
+            if container.pitchMode ~= commonPitchMode then
+                hasMixedPitchModes = true
+                break
+            end
         end
     end
 
@@ -651,13 +736,15 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         -- Toggle all selected containers
         local newMode = (commonPitchMode == Constants.PITCH_MODES.PITCH) and Constants.PITCH_MODES.STRETCH or Constants.PITCH_MODES.PITCH
         for _, c in ipairs(containers) do
-            local group = globals.groups[c.groupIndex]
-            local container = group.containers[c.containerIndex]
-            container.pitchMode = newMode
-            container.needsRegeneration = true
+            local group = globals.Structures.getGroupFromPath(c.groupPath)
+            local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+            if group and container then
+                container.pitchMode = newMode
+                container.needsRegeneration = true
 
-            -- Sync B_PPITCH on existing items
-            globals.Generation.syncPitchModeOnExistingItems(group, container)
+                -- Sync B_PPITCH on existing items
+                globals.Generation.syncPitchModeOnExistingItems(group, container)
+            end
         end
         if globals.History then
             globals.History.captureState("Toggle pitch mode (multi-selection)")
@@ -683,8 +770,11 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].pitchRange.min = newPitchMin
-                    globals.groups[c.groupIndex].containers[c.containerIndex].pitchRange.max = newPitchMax
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.pitchRange.min = newPitchMin
+                        container.pitchRange.max = newPitchMax
+                    end
                 end
 
                 -- Update state for UI refresh
@@ -700,8 +790,11 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].pitchRange.min = newPitchMin
-                    globals.groups[c.groupIndex].containers[c.containerIndex].pitchRange.max = newPitchMax
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.pitchRange.min = newPitchMin
+                        container.pitchRange.max = newPitchMax
+                    end
                 end
 
                 -- Update state for UI refresh
@@ -728,7 +821,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     if rv then
         -- Apply to all selected containers
         for _, c in ipairs(containers) do
-            globals.groups[c.groupIndex].containers[c.containerIndex].randomizeVolume = newRandomizeVolume
+            local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+            if container then
+                container.randomizeVolume = newRandomizeVolume
+            end
         end
 
         -- Update state for UI refresh
@@ -756,8 +852,11 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].volumeRange.min = newVolumeMin
-                    globals.groups[c.groupIndex].containers[c.containerIndex].volumeRange.max = newVolumeMax
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.volumeRange.min = newVolumeMin
+                        container.volumeRange.max = newVolumeMax
+                    end
                 end
 
                 -- Update state for UI refresh
@@ -773,8 +872,11 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].volumeRange.min = newVolumeMin
-                    globals.groups[c.groupIndex].containers[c.containerIndex].volumeRange.max = newVolumeMax
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.volumeRange.min = newVolumeMin
+                        container.volumeRange.max = newVolumeMax
+                    end
                 end
 
                 -- Update state for UI refresh
@@ -803,7 +905,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         if rv then
             -- Apply to all selected containers
             for _, c in ipairs(containers) do
-                globals.groups[c.groupIndex].containers[c.containerIndex].randomizePan = newRandomizePan
+                local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                if container then
+                    container.randomizePan = newRandomizePan
+                end
             end
 
             -- Update state for UI refresh
@@ -831,8 +936,11 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].panRange.min = newPanMin
-                    globals.groups[c.groupIndex].containers[c.containerIndex].panRange.max = newPanMax
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.panRange.min = newPanMin
+                        container.panRange.max = newPanMax
+                    end
                 end
 
                 -- Update state for UI refresh
@@ -848,8 +956,11 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
-                    globals.groups[c.groupIndex].containers[c.containerIndex].panRange.min = newPanMin
-                    globals.groups[c.groupIndex].containers[c.containerIndex].panRange.max = newPanMax
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.panRange.min = newPanMin
+                        container.panRange.max = newPanMax
+                    end
                 end
 
                 -- Update state for UI refresh

@@ -1,3 +1,7 @@
+--[[
+@version 1.0
+@noindex
+--]]
 -- DM_Ambiance_UI_FadeWidget.lua
 -- Interactive fade widget combining visualization, shape selection, and curve adjustment
 --

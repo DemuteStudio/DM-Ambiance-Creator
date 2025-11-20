@@ -42,6 +42,9 @@ function Utils.deepCopy(orig)
     return copy
 end
 
+-- Alias for deepCopy (for consistency with other codebases)
+Utils.copyTable = Utils.deepCopy
+
 -- Display a help marker "(?)" with a tooltip containing the provided description
 function Utils.HelpMarker(desc)
     if not desc or desc == "" then
@@ -58,25 +61,33 @@ function Utils.HelpMarker(desc)
     end
 end
 
--- Search for a track group by its name and return the track and its index if found
--- @param name string: The name of the group to find
+-- Search for a track by its name (generic function)
+-- @param name string: The name of the track to find
 -- @return MediaTrack|nil, number: The track object and its index, or nil and -1 if not found
-function Utils.findGroupByName(name)
+function Utils.findTrackByName(name)
     if not name or name == "" then
         return nil, -1
     end
-    
+
     local trackCount = reaper.CountTracks(0)
     for i = 0, trackCount - 1 do
         local track = reaper.GetTrack(0, i)
         if track then
-            local success, groupName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
-            if success and groupName == name then
+            local success, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
+            if success and trackName == name then
                 return track, i
             end
         end
     end
     return nil, -1
+end
+
+-- Search for a track group by its name and return the track and its index if found
+-- @param name string: The name of the group to find
+-- @return MediaTrack|nil, number: The track object and its index, or nil and -1 if not found
+function Utils.findGroupByName(name)
+    -- Use the generic function
+    return Utils.findTrackByName(name)
 end
 
 -- Search for a container group by name within a parent group, considering folder depth
@@ -1094,104 +1105,112 @@ function Utils.dbToNormalizedRelative(volumeDB)
 end
 
 -- Set the volume of a container's track in Reaper
--- @param groupIndex number: Index of the group containing the container
+-- @param groupPath table: Path to the group containing the container
 -- @param containerIndex number: Index of the container within the group
 -- @param volumeDB number: Volume in decibels
 -- @return boolean: true if successful, false otherwise
-function Utils.setContainerTrackVolume(groupIndex, containerIndex, volumeDB)
-    if not groupIndex or groupIndex < 1 then
-        error("Utils.setContainerTrackVolume: valid groupIndex is required")
+function Utils.setContainerTrackVolume(groupPath, containerIndex, volumeDB)
+    if not groupPath or type(groupPath) ~= "table" then
+        error("Utils.setContainerTrackVolume: valid groupPath is required")
     end
-    
+
     if not containerIndex or containerIndex < 1 then
         error("Utils.setContainerTrackVolume: valid containerIndex is required")
     end
-    
+
     if type(volumeDB) ~= "number" then
         error("Utils.setContainerTrackVolume: volumeDB must be a number")
     end
-    
-    -- Validate that the group and container exist
-    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
+
+    -- Get the group using path-based system
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
         return false
     end
-    
-    local group = globals.groups[groupIndex]
-    local container = group.containers[containerIndex]
-    
+
+    -- Get the container from the group
+    local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+    if not container then
+        return false
+    end
+
     -- Find the group track
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
     if not groupTrack then
         return false
     end
-    
+
     -- Find the container track within the group
     local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
     if not containerTrack then
         return false
     end
-    
+
     -- Convert dB to linear factor and apply to track
     local linearVolume = Utils.dbToLinear(volumeDB)
     reaper.SetMediaTrackInfo_Value(containerTrack, "D_VOL", linearVolume)
-    
+
     -- Update arrange view to reflect changes
     reaper.UpdateArrange()
-    
+
     return true
 end
 
 -- Set the volume of a specific channel track within a multichannel container
--- @param groupIndex number: Index of the group containing the container
+-- @param groupPath table: Path to the group containing the container
 -- @param containerIndex number: Index of the container within the group
 -- @param channelIndex number: Index of the channel within the container (1-based)
 -- @param volumeDB number: Volume in decibels
 -- @return boolean: true if successful, false otherwise
-function Utils.setChannelTrackVolume(groupIndex, containerIndex, channelIndex, volumeDB)
-    if not groupIndex or groupIndex < 1 then
-        error("Utils.setChannelTrackVolume: valid groupIndex is required")
+function Utils.setChannelTrackVolume(groupPath, containerIndex, channelIndex, volumeDB)
+    if not groupPath or type(groupPath) ~= "table" then
+        error("Utils.setChannelTrackVolume: valid groupPath is required")
     end
-    
+
     if not containerIndex or containerIndex < 1 then
         error("Utils.setChannelTrackVolume: valid containerIndex is required")
     end
-    
+
     if not channelIndex or channelIndex < 1 then
         error("Utils.setChannelTrackVolume: valid channelIndex is required")
     end
-    
+
     if type(volumeDB) ~= "number" then
         error("Utils.setChannelTrackVolume: volumeDB must be a number")
     end
-    
-    -- Validate that the group and container exist
-    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
+
+    -- Get the group using path-based system
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
         return false
     end
-    
-    local group = globals.groups[groupIndex]
-    local container = group.containers[containerIndex]
-    
+
+    -- Get the container from the group
+    local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+    if not container then
+        return false
+    end
+
     -- Only apply if container is in multichannel mode
     if not container.channelMode or container.channelMode == 0 then
         return false
     end
-    
+
     -- Find the group track
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
     if not groupTrack then
         return false
     end
-    
+
     -- Find the container track within the group
     local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
     if not containerTrack then
         return false
     end
-    
+
     -- Get the number of tracks in the project
     local trackCount = reaper.CountTracks(0)
-    
+
     -- Find the channel track (it should be a child of the container track)
     local foundChannelCount = 0
     for i = containerTrackIdx + 1, trackCount - 1 do
@@ -1206,7 +1225,7 @@ function Utils.setChannelTrackVolume(groupIndex, containerIndex, channelIndex, v
                     -- Convert dB to linear factor and apply to track
                     local linearVolume = Utils.dbToLinear(volumeDB)
                     reaper.SetMediaTrackInfo_Value(track, "D_VOL", linearVolume)
-                    
+
                     -- Update arrange view to reflect changes
                     reaper.UpdateArrange()
                     return true
@@ -1217,7 +1236,7 @@ function Utils.setChannelTrackVolume(groupIndex, containerIndex, channelIndex, v
             end
         end
     end
-    
+
     return false
 end
 
@@ -1227,17 +1246,30 @@ end
 -- @param channelIndex number: Index of the channel within the container (1-based)
 -- @return number|nil: Volume in decibels, or nil if track not found
 function Utils.getChannelTrackVolume(groupIndex, containerIndex, channelIndex)
-    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 or not channelIndex or channelIndex < 1 then
+    if not groupIndex or not containerIndex or not channelIndex then
         return nil
     end
-    
-    -- Validate that the group and container exist
-    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
-        return nil
+
+    -- Handle both path-based and index-based systems
+    local group, container
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        group = Utils.getItemFromPath(groupIndex)
+        if not group or not group.containers or not group.containers[containerIndex] then
+            return nil
+        end
+        container = group.containers[containerIndex]
+    else
+        -- Legacy index-based system
+        if groupIndex < 1 or containerIndex < 1 or channelIndex < 1 then
+            return nil
+        end
+        if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
+            return nil
+        end
+        group = globals.groups[groupIndex]
+        container = group.containers[containerIndex]
     end
-    
-    local group = globals.groups[groupIndex]
-    local container = group.containers[containerIndex]
     
     -- Only apply if container is in multichannel mode
     if not container.channelMode or container.channelMode == 0 then
@@ -1287,27 +1319,40 @@ end
 -- @param groupIndex number: Index of the group containing the container
 -- @param containerIndex number: Index of the container within the group
 function Utils.syncChannelVolumesFromTracks(groupIndex, containerIndex)
-    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 then
+    if not groupIndex or not containerIndex then
         return
     end
-    
-    -- Validate that the group and container exist
-    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
-        return
+
+    -- Handle both path-based and index-based systems
+    local group, container
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        group = Utils.getItemFromPath(groupIndex)
+        if not group or not group.containers or not group.containers[containerIndex] then
+            return
+        end
+        container = group.containers[containerIndex]
+    else
+        -- Legacy index-based system
+        if groupIndex < 1 or containerIndex < 1 then
+            return
+        end
+        if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
+            return
+        end
+        container = globals.groups[groupIndex].containers[containerIndex]
     end
-    
-    local container = globals.groups[groupIndex].containers[containerIndex]
-    
+
     -- Only sync if container is in multichannel mode
     if not container.channelMode or container.channelMode == 0 then
         return
     end
-    
+
     local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
     if not config then
         return
     end
-    
+
     -- Sync each channel's volume
     for i = 1, config.channels do
         local volumeDB = Utils.getChannelTrackVolume(groupIndex, containerIndex, i)
@@ -1318,21 +1363,34 @@ function Utils.syncChannelVolumesFromTracks(groupIndex, containerIndex)
 end
 
 -- Get the current volume of a container's track from Reaper
--- @param groupIndex number: Index of the group containing the container
+-- @param groupIndex number|table: Index of the group or path to the group
 -- @param containerIndex number: Index of the container within the group
 -- @return number|nil: Volume in decibels, or nil if track not found
 function Utils.getContainerTrackVolume(groupIndex, containerIndex)
-    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 then
+    if not groupIndex or not containerIndex then
         return nil
     end
-    
-    -- Validate that the group and container exist
-    if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
-        return nil
+
+    -- Handle both path-based and index-based systems
+    local group, container
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        group = Utils.getItemFromPath(groupIndex)
+        if not group or not group.containers or not group.containers[containerIndex] then
+            return nil
+        end
+        container = group.containers[containerIndex]
+    else
+        -- Legacy index-based system
+        if groupIndex < 1 or containerIndex < 1 then
+            return nil
+        end
+        if not globals.groups[groupIndex] or not globals.groups[groupIndex].containers[containerIndex] then
+            return nil
+        end
+        group = globals.groups[groupIndex]
+        container = group.containers[containerIndex]
     end
-    
-    local group = globals.groups[groupIndex]
-    local container = group.containers[containerIndex]
     
     -- Find the group track
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
@@ -1352,38 +1410,50 @@ function Utils.getContainerTrackVolume(groupIndex, containerIndex)
 end
 
 -- Set the volume of a group's track in Reaper
--- @param groupIndex number: Index of the group
+-- @param groupIndex number|table: Index of the group or path to the group
 -- @param volumeDB number: Volume in decibels
 -- @return boolean: true if successful, false otherwise
 function Utils.setGroupTrackVolume(groupIndex, volumeDB)
-    if not groupIndex or groupIndex < 1 then
+    if not groupIndex then
         error("Utils.setGroupTrackVolume: valid groupIndex is required")
     end
-    
+
     if type(volumeDB) ~= "number" then
         error("Utils.setGroupTrackVolume: volumeDB must be a number")
     end
-    
-    -- Validate that the group exists
-    if not globals.groups[groupIndex] then
-        return false
+
+    -- Handle both path-based and index-based systems
+    local group
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        group = Utils.getItemFromPath(groupIndex)
+        if not group then
+            return false
+        end
+    else
+        -- Legacy index-based system
+        if groupIndex < 1 then
+            error("Utils.setGroupTrackVolume: valid groupIndex is required")
+        end
+        if not globals.groups[groupIndex] then
+            return false
+        end
+        group = globals.groups[groupIndex]
     end
-    
-    local group = globals.groups[groupIndex]
-    
+
     -- Find the group track
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
     if not groupTrack then
         return false
     end
-    
+
     -- Convert dB to linear factor and apply to track
     local linearVolume = Utils.dbToLinear(volumeDB)
     reaper.SetMediaTrackInfo_Value(groupTrack, "D_VOL", linearVolume)
-    
+
     -- Update arrange view to reflect changes
     reaper.UpdateArrange()
-    
+
     return true
 end
 
@@ -1391,59 +1461,351 @@ end
 -- @param groupIndex number: Index of the group
 -- @return number|nil: Volume in decibels, or nil if track not found
 function Utils.getGroupTrackVolume(groupIndex)
-    if not groupIndex or groupIndex < 1 then
+    if not groupIndex then
         return nil
     end
-    
-    -- Validate that the group exists
-    if not globals.groups[groupIndex] then
-        return nil
+
+    -- Handle both path-based and index-based systems
+    local group
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        group = Utils.getItemFromPath(groupIndex)
+        if not group then
+            return nil
+        end
+    else
+        -- Legacy index-based system
+        if groupIndex < 1 then
+            return nil
+        end
+        if not globals.groups[groupIndex] then
+            return nil
+        end
+        group = globals.groups[groupIndex]
     end
-    
-    local group = globals.groups[groupIndex]
-    
+
     -- Find the group track
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
     if not groupTrack then
         return nil
     end
-    
+
     -- Get linear volume and convert to dB
     local linearVolume = reaper.GetMediaTrackInfo_Value(groupTrack, "D_VOL")
     return Utils.linearToDb(linearVolume)
 end
 
+-- Get the current mute state of a container's track from Reaper
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container within the group
+-- @return boolean|nil: Mute state, or nil if track not found
+function Utils.getContainerTrackMute(groupPath, containerIndex)
+    if not groupPath or not containerIndex then
+        return nil
+    end
+
+    local group = Utils.getItemFromPath(groupPath)
+    if not group or not group.containers or not group.containers[containerIndex] then
+        return nil
+    end
+
+    local container = group.containers[containerIndex]
+
+    -- Find the group track
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return nil
+    end
+
+    -- Find the container track within the group
+    local containerTrack = Utils.findContainerGroup(groupTrackIdx, container.name)
+    if not containerTrack then
+        return nil
+    end
+
+    -- Get mute state from REAPER (returns 1 for muted, 0 for unmuted)
+    local muteValue = reaper.GetMediaTrackInfo_Value(containerTrack, "B_MUTE")
+    return muteValue == 1
+end
+
+-- Get the current solo state of a container's track from Reaper
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container within the group
+-- @return boolean|nil: Solo state, or nil if track not found
+function Utils.getContainerTrackSolo(groupPath, containerIndex)
+    if not groupPath or not containerIndex then
+        return nil
+    end
+
+    local group = Utils.getItemFromPath(groupPath)
+    if not group or not group.containers or not group.containers[containerIndex] then
+        return nil
+    end
+
+    local container = group.containers[containerIndex]
+
+    -- Find the group track
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return nil
+    end
+
+    -- Find the container track within the group
+    local containerTrack = Utils.findContainerGroup(groupTrackIdx, container.name)
+    if not containerTrack then
+        return nil
+    end
+
+    -- Get solo state from REAPER (returns non-zero for soloed)
+    local soloValue = reaper.GetMediaTrackInfo_Value(containerTrack, "I_SOLO")
+    return soloValue ~= 0
+end
+
+-- Get the current name of a container's track from Reaper
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container within the group
+-- @return string|nil: Track name, or nil if track not found
+function Utils.getContainerTrackName(groupPath, containerIndex)
+    if not groupPath or not containerIndex then
+        return nil
+    end
+
+    local group = Utils.getItemFromPath(groupPath)
+    if not group or not group.containers or not group.containers[containerIndex] then
+        return nil
+    end
+
+    local container = group.containers[containerIndex]
+
+    -- Find the group track
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return nil
+    end
+
+    -- Find the container track within the group
+    local containerTrack = Utils.findContainerGroup(groupTrackIdx, container.name)
+    if not containerTrack then
+        return nil
+    end
+
+    -- Get track name from REAPER
+    local success, trackName = reaper.GetSetMediaTrackInfo_String(containerTrack, "P_NAME", "", false)
+    if success then
+        return trackName
+    end
+    return nil
+end
+
 -- Sync container volume from Reaper track to container data
--- @param groupIndex number: Index of the group containing the container
+-- @param groupIndex number|table: Index of the group or path to the group
 -- @param containerIndex number: Index of the container within the group
 function Utils.syncContainerVolumeFromTrack(groupIndex, containerIndex)
     local volumeDB = Utils.getContainerTrackVolume(groupIndex, containerIndex)
     if volumeDB then
-        globals.groups[groupIndex].containers[containerIndex].trackVolume = volumeDB
+        if type(groupIndex) == "table" then
+            -- New path-based system
+            local group = Utils.getItemFromPath(groupIndex)
+            if group and group.containers and group.containers[containerIndex] then
+                group.containers[containerIndex].trackVolume = volumeDB
+            end
+        else
+            -- Legacy index-based system
+            if globals.groups[groupIndex] and globals.groups[groupIndex].containers[containerIndex] then
+                globals.groups[groupIndex].containers[containerIndex].trackVolume = volumeDB
+            end
+        end
     end
 end
 
+-- Sync container name from Reaper track to container data
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container within the group
+function Utils.syncContainerNameFromTrack(groupPath, containerIndex)
+    local trackName = Utils.getContainerTrackName(groupPath, containerIndex)
+    if trackName then
+        local group = Utils.getItemFromPath(groupPath)
+        if group and group.containers and group.containers[containerIndex] then
+            group.containers[containerIndex].name = trackName
+        end
+    end
+end
+
+-- Sync container mute from Reaper track to container data
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container within the group
+function Utils.syncContainerMuteFromTrack(groupPath, containerIndex)
+    local isMuted = Utils.getContainerTrackMute(groupPath, containerIndex)
+    if isMuted ~= nil then
+        local group = Utils.getItemFromPath(groupPath)
+        if group and group.containers and group.containers[containerIndex] then
+            group.containers[containerIndex].isMuted = isMuted
+        end
+    end
+end
+
+-- Sync container solo from Reaper track to container data
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container within the group
+function Utils.syncContainerSoloFromTrack(groupPath, containerIndex)
+    local isSoloed = Utils.getContainerTrackSolo(groupPath, containerIndex)
+    if isSoloed ~= nil then
+        local group = Utils.getItemFromPath(groupPath)
+        if group and group.containers and group.containers[containerIndex] then
+            group.containers[containerIndex].isSoloed = isSoloed
+        end
+    end
+end
+
+-- Get the current mute state of a group's track from Reaper
+-- @param groupPath table: Path to the group
+-- @return boolean|nil: Mute state, or nil if track not found
+function Utils.getGroupTrackMute(groupPath)
+    if not groupPath then
+        return nil
+    end
+
+    local group = Utils.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
+        return nil
+    end
+
+    -- Find the group track
+    local groupTrack = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return nil
+    end
+
+    -- Get mute state from REAPER (returns 1 for muted, 0 for unmuted)
+    local muteValue = reaper.GetMediaTrackInfo_Value(groupTrack, "B_MUTE")
+    return muteValue == 1
+end
+
+-- Get the current solo state of a group's track from Reaper
+-- @param groupPath table: Path to the group
+-- @return boolean|nil: Solo state, or nil if track not found
+function Utils.getGroupTrackSolo(groupPath)
+    if not groupPath then
+        return nil
+    end
+
+    local group = Utils.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
+        return nil
+    end
+
+    -- Find the group track
+    local groupTrack = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return nil
+    end
+
+    -- Get solo state from REAPER (returns non-zero for soloed)
+    local soloValue = reaper.GetMediaTrackInfo_Value(groupTrack, "I_SOLO")
+    return soloValue ~= 0
+end
+
+-- Get the current name of a group's track from Reaper
+-- @param groupPath table: Path to the group
+-- @return string|nil: Track name, or nil if track not found
+function Utils.getGroupTrackName(groupPath)
+    if not groupPath then
+        return nil
+    end
+
+    local group = Utils.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
+        return nil
+    end
+
+    -- Find the group track
+    local groupTrack = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return nil
+    end
+
+    -- Get track name from REAPER
+    local success, trackName = reaper.GetSetMediaTrackInfo_String(groupTrack, "P_NAME", "", false)
+    if success then
+        return trackName
+    end
+    return nil
+end
+
 -- Sync group volume from Reaper track to group data
--- @param groupIndex number: Index of the group
-function Utils.syncGroupVolumeFromTrack(groupIndex)
-    local volumeDB = Utils.getGroupTrackVolume(groupIndex)
+-- @param groupPath table: Path to the group
+function Utils.syncGroupVolumeFromTrack(groupPath)
+    local volumeDB = Utils.getGroupTrackVolume(groupPath)
     if volumeDB then
-        globals.groups[groupIndex].trackVolume = volumeDB
+        local group = globals.Structures.getItemFromPath(groupPath)
+        if group and group.type == "group" then
+            group.trackVolume = volumeDB
+        end
+    end
+end
+
+-- Sync group name from Reaper track to group data
+-- @param groupPath table: Path to the group
+function Utils.syncGroupNameFromTrack(groupPath)
+    local trackName = Utils.getGroupTrackName(groupPath)
+    if trackName then
+        local group = Utils.getItemFromPath(groupPath)
+        if group and group.type == "group" then
+            group.name = trackName
+        end
+    end
+end
+
+-- Sync group mute from Reaper track to group data
+-- @param groupPath table: Path to the group
+function Utils.syncGroupMuteFromTrack(groupPath)
+    local isMuted = Utils.getGroupTrackMute(groupPath)
+    if isMuted ~= nil then
+        local group = Utils.getItemFromPath(groupPath)
+        if group and group.type == "group" then
+            group.isMuted = isMuted
+        end
+    end
+end
+
+-- Sync group solo from Reaper track to group data
+-- @param groupPath table: Path to the group
+function Utils.syncGroupSoloFromTrack(groupPath)
+    local isSoloed = Utils.getGroupTrackSolo(groupPath)
+    if isSoloed ~= nil then
+        local group = Utils.getItemFromPath(groupPath)
+        if group and group.type == "group" then
+            group.isSoloed = isSoloed
+        end
     end
 end
 
 -- Set the mute state of a group's track in Reaper
--- @param groupIndex number: Index of the group
+-- @param groupIndex number|table: Index of the group or path to the group
 -- @param isMuted boolean: true to mute, false to unmute
 -- @return boolean: true if successful, false otherwise
 function Utils.setGroupTrackMute(groupIndex, isMuted)
-    if not groupIndex or groupIndex < 1 then
+    if not groupIndex then
         return false
     end
 
-    local group = globals.groups[groupIndex]
-    if not group then
-        return false
+    -- Handle both path-based and index-based systems
+    local group
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        group = Utils.getItemFromPath(groupIndex)
+        if not group then
+            return false
+        end
+    else
+        -- Legacy index-based system
+        if groupIndex < 1 then
+            return false
+        end
+        group = globals.groups[groupIndex]
+        if not group then
+            return false
+        end
     end
 
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
@@ -1457,17 +1819,31 @@ function Utils.setGroupTrackMute(groupIndex, isMuted)
 end
 
 -- Set the solo state of a group's track in Reaper
--- @param groupIndex number: Index of the group
+-- @param groupIndex number|table: Index of the group or path to the group
 -- @param isSoloed boolean: true to solo, false to unsolo
 -- @return boolean: true if successful, false otherwise
 function Utils.setGroupTrackSolo(groupIndex, isSoloed)
-    if not groupIndex or groupIndex < 1 then
+    if not groupIndex then
         return false
     end
 
-    local group = globals.groups[groupIndex]
-    if not group then
-        return false
+    -- Handle both path-based and index-based systems
+    local group
+    if type(groupIndex) == "table" then
+        -- New path-based system
+        group = Utils.getItemFromPath(groupIndex)
+        if not group then
+            return false
+        end
+    else
+        -- Legacy index-based system
+        if groupIndex < 1 then
+            return false
+        end
+        group = globals.groups[groupIndex]
+        if not group then
+            return false
+        end
     end
 
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
@@ -1480,22 +1856,400 @@ function Utils.setGroupTrackSolo(groupIndex, isSoloed)
     return true
 end
 
+-- Set the name of a group's track in Reaper
+-- @param groupPath table: Path to the group in the items hierarchy
+-- @param newName string: New name for the group
+-- @return boolean: true if successful, false otherwise
+function Utils.setGroupTrackName(groupPath, newName)
+    if not groupPath then
+        return false
+    end
+
+    if not newName or newName == "" then
+        return false
+    end
+
+    -- Handle both path-based and index-based systems
+    local group
+    if type(groupPath) == "table" then
+        -- New path-based system
+        group = Utils.getItemFromPath(groupPath)
+        if not group then
+            return false
+        end
+    else
+        -- Legacy index-based system
+        if groupPath < 1 then
+            return false
+        end
+        if not globals.groups[groupPath] then
+            return false
+        end
+        group = globals.groups[groupPath]
+    end
+
+    -- Find the group track
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return false
+    end
+
+    -- Update track name in REAPER
+    reaper.GetSetMediaTrackInfo_String(groupTrack, "P_NAME", newName, true)
+    reaper.UpdateArrange()
+    return true
+end
+
+
+-- ============================================================================
+-- FOLDER TRACK CONTROLS (for new globals.items structure with folders)
+-- ============================================================================
+
+-- Get the current volume of a folder's track from Reaper
+-- @param folderPath table: Path to the folder in the items hierarchy
+-- @return number|nil: Volume in decibels, or nil if track not found
+function Utils.getFolderTrackVolume(folderPath)
+    if not folderPath then
+        return nil
+    end
+
+    local folder = Utils.getItemFromPath(folderPath)
+    if not folder or folder.type ~= "folder" then
+        return nil
+    end
+
+    -- Try GUID first
+    local folderTrack = nil
+    if folder.trackGUID and globals.Generation then
+        folderTrack = globals.Generation.findTrackByGUID(folder.trackGUID)
+    end
+
+    -- Fallback to name search
+    if not folderTrack then
+        folderTrack = Utils.findTrackByName(folder.name)
+    end
+
+    if not folderTrack then
+        return nil
+    end
+
+    -- Get linear volume and convert to dB
+    local linearVolume = reaper.GetMediaTrackInfo_Value(folderTrack, "D_VOL")
+    return Utils.linearToDb(linearVolume)
+end
+
+-- Set the volume of a folder's track in Reaper
+-- @param folderPath table: Path to the folder in the items hierarchy
+-- @param volumeDB number: Volume in decibels
+-- @return boolean: true if successful, false otherwise
+function Utils.setFolderTrackVolume(folderPath, volumeDB)
+    if not folderPath or type(folderPath) ~= "table" then
+        return false
+    end
+
+    if type(volumeDB) ~= "number" then
+        return false
+    end
+
+    -- Get the folder from the path
+    local folder = Utils.getItemFromPath(folderPath)
+    if not folder or folder.type ~= "folder" then
+        return false
+    end
+
+    -- Find the folder track (try GUID first, then fallback to name)
+    local folderTrack = nil
+    if folder.trackGUID and globals.Generation then
+        folderTrack = globals.Generation.findTrackByGUID(folder.trackGUID)
+    end
+    if not folderTrack then
+        folderTrack = Utils.findTrackByName(folder.name)
+    end
+    if not folderTrack then
+        return false
+    end
+
+    -- Convert dB to linear factor and apply to track
+    local linearVolume = Utils.dbToLinear(volumeDB)
+    reaper.SetMediaTrackInfo_Value(folderTrack, "D_VOL", linearVolume)
+
+    -- Update arrange view to reflect changes
+    reaper.UpdateArrange()
+
+    return true
+end
+
+-- Set the mute state of a folder's track in Reaper
+-- @param folderPath table: Path to the folder in the items hierarchy
+-- @param isMuted boolean: true to mute, false to unmute
+-- @return boolean: true if successful, false otherwise
+function Utils.setFolderTrackMute(folderPath, isMuted)
+    if not folderPath or type(folderPath) ~= "table" then
+        return false
+    end
+
+    -- Get the folder from the path
+    local folder = Utils.getItemFromPath(folderPath)
+    if not folder or folder.type ~= "folder" then
+        return false
+    end
+
+    -- Find the folder track (try GUID first, then fallback to name)
+    local folderTrack = nil
+    if folder.trackGUID and globals.Generation then
+        folderTrack = globals.Generation.findTrackByGUID(folder.trackGUID)
+    end
+    if not folderTrack then
+        folderTrack = Utils.findTrackByName(folder.name)
+    end
+    if not folderTrack then
+        return false
+    end
+
+    reaper.SetMediaTrackInfo_Value(folderTrack, "B_MUTE", isMuted and 1 or 0)
+    reaper.UpdateArrange()
+    return true
+end
+
+-- Set the solo state of a folder's track in Reaper
+-- @param folderPath table: Path to the folder in the items hierarchy
+-- @param isSoloed boolean: true to solo, false to unsolo
+-- @return boolean: true if successful, false otherwise
+function Utils.setFolderTrackSolo(folderPath, isSoloed)
+    if not folderPath or type(folderPath) ~= "table" then
+        return false
+    end
+
+    -- Get the folder from the path
+    local folder = Utils.getItemFromPath(folderPath)
+    if not folder or folder.type ~= "folder" then
+        return false
+    end
+
+    -- Find the folder track (try GUID first, then fallback to name)
+    local folderTrack = nil
+    if folder.trackGUID and globals.Generation then
+        folderTrack = globals.Generation.findTrackByGUID(folder.trackGUID)
+    end
+    if not folderTrack then
+        folderTrack = Utils.findTrackByName(folder.name)
+    end
+    if not folderTrack then
+        return false
+    end
+
+    reaper.SetMediaTrackInfo_Value(folderTrack, "I_SOLO", isSoloed and 1 or 0)
+    reaper.UpdateArrange()
+    return true
+end
+
+-- Set the name of a folder's track in Reaper
+-- @param folderPath table: Path to the folder in the items hierarchy
+-- @param newName string: New name for the folder
+-- @return boolean: true if successful, false otherwise
+function Utils.setFolderTrackName(folderPath, newName)
+    if not folderPath or type(folderPath) ~= "table" then
+        return false
+    end
+
+    if not newName or newName == "" then
+        return false
+    end
+
+    -- Get the folder from the path
+    local folder = Utils.getItemFromPath(folderPath)
+    if not folder or folder.type ~= "folder" then
+        return false
+    end
+
+    -- Find the folder track (try GUID first, then fallback to name)
+    local folderTrack = nil
+    if folder.trackGUID and globals.Generation then
+        folderTrack = globals.Generation.findTrackByGUID(folder.trackGUID)
+    end
+    if not folderTrack then
+        folderTrack = Utils.findTrackByName(folder.name)
+    end
+    if not folderTrack then
+        return false
+    end
+
+    -- Update track name in REAPER
+    reaper.GetSetMediaTrackInfo_String(folderTrack, "P_NAME", newName, true)
+    reaper.UpdateArrange()
+    return true
+end
+
+-- Get the current mute state of a folder's track from Reaper
+-- @param folderPath table: Path to the folder in the items hierarchy
+-- @return boolean|nil: Mute state, or nil if track not found
+function Utils.getFolderTrackMute(folderPath)
+    if not folderPath then
+        return nil
+    end
+
+    local folder = Utils.getItemFromPath(folderPath)
+    if not folder or folder.type ~= "folder" then
+        return nil
+    end
+
+    -- Try GUID first
+    local folderTrack = nil
+    if folder.trackGUID and globals.Generation then
+        folderTrack = globals.Generation.findTrackByGUID(folder.trackGUID)
+    end
+
+    -- Fallback to name search
+    if not folderTrack then
+        folderTrack = Utils.findTrackByName(folder.name)
+    end
+
+    if not folderTrack then
+        return nil
+    end
+
+    -- Get mute state from REAPER (returns 1 for muted, 0 for unmuted)
+    local muteValue = reaper.GetMediaTrackInfo_Value(folderTrack, "B_MUTE")
+    return muteValue == 1
+end
+
+-- Get the current solo state of a folder's track from Reaper
+-- @param folderPath table: Path to the folder in the items hierarchy
+-- @return boolean|nil: Solo state, or nil if track not found
+function Utils.getFolderTrackSolo(folderPath)
+    if not folderPath then
+        return nil
+    end
+
+    local folder = Utils.getItemFromPath(folderPath)
+    if not folder or folder.type ~= "folder" then
+        return nil
+    end
+
+    -- Try GUID first
+    local folderTrack = nil
+    if folder.trackGUID and globals.Generation then
+        folderTrack = globals.Generation.findTrackByGUID(folder.trackGUID)
+    end
+
+    -- Fallback to name search
+    if not folderTrack then
+        folderTrack = Utils.findTrackByName(folder.name)
+    end
+
+    if not folderTrack then
+        return nil
+    end
+
+    -- Get solo state from REAPER (returns non-zero for soloed)
+    local soloValue = reaper.GetMediaTrackInfo_Value(folderTrack, "I_SOLO")
+    return soloValue ~= 0
+end
+
+-- Get the current name of a folder's track from Reaper
+-- @param folderPath table: Path to the folder in the items hierarchy
+-- @return string|nil: Track name, or nil if track not found
+function Utils.getFolderTrackName(folderPath)
+    if not folderPath then
+        return nil
+    end
+
+    local folder = Utils.getItemFromPath(folderPath)
+    if not folder or folder.type ~= "folder" then
+        return nil
+    end
+
+    -- Try GUID first
+    local folderTrack = nil
+    if folder.trackGUID and globals.Generation then
+        folderTrack = globals.Generation.findTrackByGUID(folder.trackGUID)
+    end
+
+    -- Fallback to name search
+    if not folderTrack then
+        folderTrack = Utils.findTrackByName(folder.name)
+    end
+
+    if not folderTrack then
+        return nil
+    end
+
+    -- Get track name from REAPER
+    local success, trackName = reaper.GetSetMediaTrackInfo_String(folderTrack, "P_NAME", "", false)
+    if success then
+        return trackName
+    end
+    return nil
+end
+
+-- Sync folder volume from Reaper track to folder data
+-- @param folderPath table: Path to the folder
+function Utils.syncFolderVolumeFromTrack(folderPath)
+    local volumeDB = Utils.getFolderTrackVolume(folderPath)
+    if volumeDB then
+        local folder = Utils.getItemFromPath(folderPath)
+        if folder and folder.type == "folder" then
+            folder.trackVolume = volumeDB
+        end
+    end
+end
+
+-- Sync folder name from Reaper track to folder data
+-- @param folderPath table: Path to the folder
+function Utils.syncFolderNameFromTrack(folderPath)
+    local trackName = Utils.getFolderTrackName(folderPath)
+    if trackName then
+        local folder = Utils.getItemFromPath(folderPath)
+        if folder and folder.type == "folder" then
+            folder.name = trackName
+        end
+    end
+end
+
+-- Sync folder mute from Reaper track to folder data
+-- @param folderPath table: Path to the folder
+function Utils.syncFolderMuteFromTrack(folderPath)
+    local isMuted = Utils.getFolderTrackMute(folderPath)
+    if isMuted ~= nil then
+        local folder = Utils.getItemFromPath(folderPath)
+        if folder and folder.type == "folder" then
+            folder.isMuted = isMuted
+        end
+    end
+end
+
+-- Sync folder solo from Reaper track to folder data
+-- @param folderPath table: Path to the folder
+function Utils.syncFolderSoloFromTrack(folderPath)
+    local isSoloed = Utils.getFolderTrackSolo(folderPath)
+    if isSoloed ~= nil then
+        local folder = Utils.getItemFromPath(folderPath)
+        if folder and folder.type == "folder" then
+            folder.isSoloed = isSoloed
+        end
+    end
+end
+
+
 -- Set the mute state of a container's track in Reaper
--- @param groupIndex number: Index of the group
+-- @param groupPath table: Path to the group
 -- @param containerIndex number: Index of the container
 -- @param isMuted boolean: true to mute, false to unmute
 -- @return boolean: true if successful, false otherwise
-function Utils.setContainerTrackMute(groupIndex, containerIndex, isMuted)
-    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 then
+function Utils.setContainerTrackMute(groupPath, containerIndex, isMuted)
+    if not groupPath or type(groupPath) ~= "table" or not containerIndex or containerIndex < 1 then
         return false
     end
 
-    local group = globals.groups[groupIndex]
-    if not group or not group.containers[containerIndex] then
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
         return false
     end
 
-    local container = group.containers[containerIndex]
+    local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+    if not container then
+        return false
+    end
 
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
     if not groupTrack then
@@ -1513,21 +2267,24 @@ function Utils.setContainerTrackMute(groupIndex, containerIndex, isMuted)
 end
 
 -- Set the solo state of a container's track in Reaper
--- @param groupIndex number: Index of the group
+-- @param groupPath table: Path to the group
 -- @param containerIndex number: Index of the container
 -- @param isSoloed boolean: true to solo, false to unsolo
 -- @return boolean: true if successful, false otherwise
-function Utils.setContainerTrackSolo(groupIndex, containerIndex, isSoloed)
-    if not groupIndex or groupIndex < 1 or not containerIndex or containerIndex < 1 then
+function Utils.setContainerTrackSolo(groupPath, containerIndex, isSoloed)
+    if not groupPath or type(groupPath) ~= "table" or not containerIndex or containerIndex < 1 then
         return false
     end
 
-    local group = globals.groups[groupIndex]
-    if not group or not group.containers[containerIndex] then
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
         return false
     end
 
-    local container = group.containers[containerIndex]
+    local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+    if not container then
+        return false
+    end
 
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
     if not groupTrack then
@@ -1540,6 +2297,46 @@ function Utils.setContainerTrackSolo(groupIndex, containerIndex, isSoloed)
     end
 
     reaper.SetMediaTrackInfo_Value(containerTrack, "I_SOLO", isSoloed and 1 or 0)
+    reaper.UpdateArrange()
+    return true
+end
+
+-- Set the name of a container's track in Reaper
+-- @param groupPath table: Path to the group
+-- @param containerIndex number: Index of the container
+-- @param newName string: New name for the container
+-- @return boolean: true if successful, false otherwise
+function Utils.setContainerTrackName(groupPath, containerIndex, newName)
+    if not groupPath or type(groupPath) ~= "table" or not containerIndex or containerIndex < 1 then
+        return false
+    end
+
+    if not newName or newName == "" then
+        return false
+    end
+
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
+        return false
+    end
+
+    local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+    if not container then
+        return false
+    end
+
+    local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
+    if not groupTrack then
+        return false
+    end
+
+    local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
+    if not containerTrack then
+        return false
+    end
+
+    -- Update track name in REAPER
+    reaper.GetSetMediaTrackInfo_String(containerTrack, "P_NAME", newName, true)
     reaper.UpdateArrange()
     return true
 end
@@ -1572,13 +2369,13 @@ end
 local fadeUpdateQueue = {}
 
 -- Add a fade update request to the queue
--- @param groupIndex number: Index of the group
+-- @param groupPath table: Path to the group
 -- @param containerIndex number: Index of the container (nil for group-wide update)
 -- @param modifiedFade string: Which fade was modified ("fadeIn", "fadeOut", or nil for both)
-function Utils.queueFadeUpdate(groupIndex, containerIndex, modifiedFade)
-    local key = groupIndex .. "_" .. (containerIndex or "all")
+function Utils.queueFadeUpdate(groupPath, containerIndex, modifiedFade)
+    local key = Utils.pathToString(groupPath) .. "_" .. (containerIndex or "all")
     fadeUpdateQueue[key] = {
-        groupIndex = groupIndex,
+        groupPath = groupPath,
         containerIndex = containerIndex,
         modifiedFade = modifiedFade,
         timestamp = os.clock()
@@ -1589,9 +2386,9 @@ end
 function Utils.processQueuedFadeUpdates()
     for key, update in pairs(fadeUpdateQueue) do
         if update.containerIndex then
-            Utils.applyFadeSettingsToContainerItems(update.groupIndex, update.containerIndex, update.modifiedFade)
+            Utils.applyFadeSettingsToContainerItems(update.groupPath, update.containerIndex, update.modifiedFade)
         else
-            Utils.applyFadeSettingsToGroupItems(update.groupIndex, update.modifiedFade)
+            Utils.applyFadeSettingsToGroupItems(update.groupPath, update.modifiedFade)
         end
     end
     -- Clear the queue
@@ -1599,27 +2396,28 @@ function Utils.processQueuedFadeUpdates()
 end
 
 -- Apply fade settings to all media items in a specific container in real-time
--- @param groupIndex number: Index of the group
+-- @param groupPath table: Path to the group
 -- @param containerIndex number: Index of the container
 -- @param modifiedFade string: Which fade was modified ("fadeIn", "fadeOut", or nil for both)
-function Utils.applyFadeSettingsToContainerItems(groupIndex, containerIndex, modifiedFade)
-    if not globals.groups or not globals.groups[groupIndex] then
+function Utils.applyFadeSettingsToContainerItems(groupPath, containerIndex, modifiedFade)
+    -- Get the group using path-based system
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
         return
     end
-    
-    local group = globals.groups[groupIndex]
-    if not group.containers or not group.containers[containerIndex] then
+
+    -- Get the container from the group
+    local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+    if not container then
         return
     end
-    
-    local container = group.containers[containerIndex]
-    
+
     -- Find the group track first
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
     if not groupTrack or not groupTrackIdx then
         return -- Group track not found
     end
-    
+
     -- Find the container track within the group
     local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
     if not containerTrack then
@@ -1734,47 +2532,50 @@ function Utils.applyFadeSettingsToContainerItems(groupIndex, containerIndex, mod
 end
 
 -- Apply fade settings to all containers in a group in real-time
--- @param groupIndex number: Index of the group
+-- @param groupPath table: Path to the group
 -- @param modifiedFade string: Which fade was modified ("fadeIn", "fadeOut", or nil for both)
-function Utils.applyFadeSettingsToGroupItems(groupIndex, modifiedFade)
-    if not globals.groups or not globals.groups[groupIndex] then
+function Utils.applyFadeSettingsToGroupItems(groupPath, modifiedFade)
+    -- Get the group using path-based system
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
         return
     end
-    
-    local group = globals.groups[groupIndex]
+
     if not group.containers then
         return
     end
-    
+
     -- Apply fade settings to all containers in this group
     for containerIndex, container in ipairs(group.containers) do
-        Utils.applyFadeSettingsToContainerItems(groupIndex, containerIndex, modifiedFade)
+        Utils.applyFadeSettingsToContainerItems(groupPath, containerIndex, modifiedFade)
     end
 end
 
 -- Apply randomization settings to all media items in a specific container in real-time
--- @param groupIndex number: Index of the group
+-- @param groupPath table: Path to the group
 -- @param containerIndex number: Index of the container
 -- @param modifiedParam string: Which parameter was modified ("pitch", "volume", "pan", or nil for all)
-function Utils.applyRandomizationSettingsToContainerItems(groupIndex, containerIndex, modifiedParam)
-    if not globals.groups or not globals.groups[groupIndex] then
+function Utils.applyRandomizationSettingsToContainerItems(groupPath, containerIndex, modifiedParam)
+    -- Get the group using path-based system
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
         return
     end
-    
-    local group = globals.groups[groupIndex]
-    if not group.containers or not group.containers[containerIndex] then
+
+    -- Get the container from the group
+    local container = globals.Structures.getContainerFromGroup(groupPath, containerIndex)
+    if not container then
         return
     end
-    
-    local container = group.containers[containerIndex]
+
     local effectiveParams = globals.Structures.getEffectiveContainerParams(group, container)
-    
+
     -- Find the container track
     local groupTrack, groupTrackIdx = Utils.findGroupByName(group.name)
     if not groupTrack then
         return
     end
-    
+
     local containerTrack, containerTrackIdx = Utils.findContainerGroup(groupTrackIdx, container.name)
     if not containerTrack then
         return
@@ -1913,21 +2714,22 @@ function Utils.applyRandomizationSettingsToContainerItems(groupIndex, containerI
 end
 
 -- Apply randomization settings to all containers in a group in real-time
--- @param groupIndex number: Index of the group
+-- @param groupPath table: Path to the group
 -- @param modifiedParam string: Which parameter was modified ("pitch", "volume", "pan", or nil for all)
-function Utils.applyRandomizationSettingsToGroupItems(groupIndex, modifiedParam)
-    if not globals.groups or not globals.groups[groupIndex] then
+function Utils.applyRandomizationSettingsToGroupItems(groupPath, modifiedParam)
+    -- Get the group using path-based system
+    local group = globals.Structures.getItemFromPath(groupPath)
+    if not group or group.type ~= "group" then
         return
     end
-    
-    local group = globals.groups[groupIndex]
+
     if not group.containers then
         return
     end
-    
+
     -- Apply randomization settings to all containers in this group
     for containerIndex, container in ipairs(group.containers) do
-        Utils.applyRandomizationSettingsToContainerItems(groupIndex, containerIndex, modifiedParam)
+        Utils.applyRandomizationSettingsToContainerItems(groupPath, containerIndex, modifiedParam)
     end
 end
 
@@ -2073,13 +2875,13 @@ end
 local randomizationUpdateQueue = {}
 
 -- Add a randomization update request to the queue
--- @param groupIndex number: Index of the group
+-- @param groupPath table: Path to the group
 -- @param containerIndex number: Index of the container (nil for group-wide update)
 -- @param modifiedParam string: Which parameter was modified ("pitch", "volume", "pan", or nil for all)
-function Utils.queueRandomizationUpdate(groupIndex, containerIndex, modifiedParam)
-    local key = groupIndex .. "_" .. (containerIndex or "all") .. "_randomization"
+function Utils.queueRandomizationUpdate(groupPath, containerIndex, modifiedParam)
+    local key = Utils.pathToString(groupPath) .. "_" .. (containerIndex or "all") .. "_randomization"
     randomizationUpdateQueue[key] = {
-        groupIndex = groupIndex,
+        groupPath = groupPath,
         containerIndex = containerIndex,
         modifiedParam = modifiedParam,
         timestamp = os.clock()
@@ -2090,9 +2892,9 @@ end
 function Utils.processQueuedRandomizationUpdates()
     for key, update in pairs(randomizationUpdateQueue) do
         if update.containerIndex then
-            Utils.applyRandomizationSettingsToContainerItems(update.groupIndex, update.containerIndex, update.modifiedParam)
+            Utils.applyRandomizationSettingsToContainerItems(update.groupPath, update.containerIndex, update.modifiedParam)
         else
-            Utils.applyRandomizationSettingsToGroupItems(update.groupIndex, update.modifiedParam)
+            Utils.applyRandomizationSettingsToGroupItems(update.groupPath, update.modifiedParam)
         end
     end
     -- Clear the queue
@@ -2721,6 +3523,297 @@ function Utils.combineEuclideanLayers(layers)
     end
 
     return combinedPattern, lcmSteps
+end
+
+-- ===================================================================
+-- PATH-BASED NAVIGATION FOR RECURSIVE FOLDER STRUCTURE
+-- ===================================================================
+
+-- Get an item from globals.items using a path array
+-- Path format: {1, 2, 3} means items[1].children[2].containers[3]
+-- @param path table: Array of indices representing the path to the item
+-- @return any, string: The item at the path, and its type ("folder", "group", "container", or nil)
+function Utils.getItemFromPath(path)
+    if not path or #path == 0 then
+        return nil, nil
+    end
+
+    local current = globals.items
+    local currentType = nil
+
+    for i = 1, #path do
+        local index = path[i]
+
+        if not current or not current[index] then
+            return nil, nil
+        end
+
+        local item = current[index]
+
+        if i == #path then
+            -- Last element in path - return the item and its type
+            currentType = item.type
+            return item, currentType
+        end
+
+        -- Navigate deeper based on item type
+        if item.type == "folder" then
+            current = item.children
+        elseif item.type == "group" then
+            current = item.containers
+        else
+            -- Reached a container or unknown type - can't navigate further
+            return nil, nil
+        end
+    end
+
+    return nil, nil
+end
+
+-- Get the parent item from a path
+-- @param path table: Array of indices
+-- @return any, string, table: Parent item, parent type, parent path
+function Utils.getParentFromPath(path)
+    if not path or #path <= 1 then
+        return nil, nil, nil
+    end
+
+    local parentPath = {}
+    for i = 1, #path - 1 do
+        parentPath[i] = path[i]
+    end
+
+    local parent, parentType = Utils.getItemFromPath(parentPath)
+    return parent, parentType, parentPath
+end
+
+-- Compare two paths for equality
+-- @param p1 table: First path
+-- @param p2 table: Second path
+-- @return boolean: true if paths are equal
+function Utils.pathsEqual(p1, p2)
+    if not p1 or not p2 then
+        return p1 == p2
+    end
+
+    if #p1 ~= #p2 then
+        return false
+    end
+
+    for i = 1, #p1 do
+        if p1[i] ~= p2[i] then
+            return false
+        end
+    end
+
+    return true
+end
+
+-- Deep copy a path
+-- @param path table: Path to copy
+-- @return table: Copied path
+function Utils.copyPath(path)
+    if not path then
+        return nil
+    end
+
+    local copy = {}
+    for i = 1, #path do
+        copy[i] = path[i]
+    end
+    return copy
+end
+
+-- Convert path array to string for use as key
+-- @param path table: Path array like {1, 2, 3}
+-- @return string: Path string like "1,2,3"
+function Utils.pathToString(path)
+    if not path or #path == 0 then
+        return ""
+    end
+    return table.concat(path, ",")
+end
+
+-- Convert path string back to array
+-- @param pathString string: Path string like "1,2,3"
+-- @return table: Path array like {1, 2, 3}
+function Utils.pathFromString(pathString)
+    if not pathString or pathString == "" then
+        return {}
+    end
+
+    local path = {}
+    for num in pathString:gmatch("[^,]+") do
+        table.insert(path, tonumber(num))
+    end
+    return path
+end
+
+-- Remove an item at a given path and return it
+-- @param path table: Path to the item to remove
+-- @return any: The removed item, or nil if not found
+function Utils.removeItemAtPath(path)
+    if not path or #path == 0 then
+        return nil
+    end
+
+    local parent, parentType, parentPath = Utils.getParentFromPath(path)
+    local index = path[#path]
+
+    if not parent then
+        -- Removing from root level
+        local item = globals.items[index]
+        table.remove(globals.items, index)
+        return item
+    end
+
+    -- Remove from parent's children or containers
+    local collection = nil
+    if parentType == "folder" then
+        collection = parent.children
+    elseif parentType == "group" then
+        collection = parent.containers
+    end
+
+    if collection and collection[index] then
+        local item = collection[index]
+        table.remove(collection, index)
+        return item
+    end
+
+    return nil
+end
+
+-- Insert an item at a given path (after the item at that path)
+-- @param path table: Path where to insert (inserts after this position)
+-- @param item any: Item to insert
+-- @return boolean: true if successful
+function Utils.insertItemAtPath(path, item)
+    if not path or #path == 0 then
+        -- Insert at root level
+        table.insert(globals.items, item)
+        return true
+    end
+
+    local parent, parentType, parentPath = Utils.getParentFromPath(path)
+    local index = path[#path]
+
+    if not parent then
+        -- Insert at root level
+        table.insert(globals.items, index + 1, item)
+        return true
+    end
+
+    -- Insert into parent's children or containers
+    local collection = nil
+    if parentType == "folder" then
+        collection = parent.children
+    elseif parentType == "group" then
+        collection = parent.containers
+    end
+
+    if collection then
+        table.insert(collection, index + 1, item)
+        return true
+    end
+
+    return false
+end
+
+-- Get the collection (array) that contains the item at a path
+-- @param path table: Path to the item
+-- @return table, number: The collection and the index within it
+function Utils.getCollectionFromPath(path)
+    if not path or #path == 0 then
+        return nil, nil
+    end
+
+    if #path == 1 then
+        -- Top-level item
+        return globals.items, path[1]
+    end
+
+    local parent, parentType = Utils.getParentFromPath(path)
+    local index = path[#path]
+
+    if not parent then
+        return nil, nil
+    end
+
+    if parentType == "folder" then
+        return parent.children, index
+    elseif parentType == "group" then
+        return parent.containers, index
+    end
+
+    return nil, nil
+end
+
+-- Create a container selection key from path and container index
+-- @param path table: Path to the parent group
+-- @param containerIndex number: Index of the container
+-- @return string: Container key like "1_2_3_5" (path + container index)
+function Utils.makeContainerKey(path, containerIndex)
+    if not path or not containerIndex then
+        return nil
+    end
+
+    local pathStr = Utils.pathToString(path)
+    if pathStr == "" then
+        return tostring(containerIndex)
+    end
+    return pathStr .. "_" .. tostring(containerIndex)
+end
+
+-- Parse a container selection key back to path and container index
+-- @param key string: Container key like "1_2_3_5"
+-- @return table, number: Path array and container index
+function Utils.parseContainerKey(key)
+    if not key or key == "" then
+        return nil, nil
+    end
+
+    local parts = {}
+    for part in key:gmatch("[^_]+") do
+        table.insert(parts, tonumber(part))
+    end
+
+    if #parts == 0 then
+        return nil, nil
+    end
+
+    -- Last part is container index, rest is path
+    local containerIndex = parts[#parts]
+    local path = {}
+    for i = 1, #parts - 1 do
+        path[i] = parts[i]
+    end
+
+    return path, containerIndex
+end
+
+-- Check if sourcePath is an ancestor of targetPath (prevents circular nesting)
+-- @param sourcePath table: Source path array
+-- @param targetPath table: Target path array
+-- @return boolean: true if source is ancestor of target
+function Utils.isPathAncestor(sourcePath, targetPath)
+    if not sourcePath or not targetPath then
+        return false
+    end
+
+    -- Source can't be ancestor if it's longer or equal
+    if #sourcePath >= #targetPath then
+        return false
+    end
+
+    -- Check if all elements of sourcePath match start of targetPath
+    for i = 1, #sourcePath do
+        if sourcePath[i] ~= targetPath[i] then
+            return false
+        end
+    end
+
+    return true
 end
 
 return Utils

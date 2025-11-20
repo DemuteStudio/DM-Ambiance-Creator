@@ -31,6 +31,7 @@ local defaultSettings = {
     leftPanelWidth = nil, -- Width of the left panel (nil = use default percentage)
     uiScale = 1.0, -- UI scale factor (1.0 = 100%)
     showKnobIndicator = true, -- Show indicator line on knobs
+    generateFolderTracks = true, -- Generate folder tracks in REAPER for groups
 }
 
 -- Initialize the module with global references and load settings
@@ -278,9 +279,24 @@ function Settings.showSettingsWindow(open)
                 end
             end
         end
-        
+
         imgui.Separator(ctx)
-        
+        imgui.TextColored(ctx, 0xFFAA00FF, "REAPER Track Generation")
+        imgui.Separator(ctx)
+
+        local rv, val = imgui.Checkbox(ctx, "Generate folder tracks in REAPER",
+            Settings.getSetting("generateFolderTracks"))
+        if rv then
+            Settings.setSetting("generateFolderTracks", val)
+            Settings.saveSettings()
+        end
+
+        imgui.SameLine(ctx)
+        globals.Utils.HelpMarker("When enabled: Folders are created as track folders in REAPER.\n"..
+            "When disabled: Folders are only used for UI organization.")
+
+        imgui.Separator(ctx)
+
         -- Crossfade settings section
         Settings.showCrossfadeSettings()
         
