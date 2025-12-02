@@ -142,7 +142,7 @@ function Generation_MultiChannel.recalculateChannelRequirements()
     end
 
     -- STEP 0: Detect orphaned container tracks (tracks without matching tool containers)
-    Generation_MultiChannel.detectOrphanedContainerTracks()
+    Generation_TrackManagement.detectOrphanedContainerTracks()
 
     -- reaper.ShowConsoleMsg("INFO: Starting bottom-up channel recalculation (REAL tracks)...\n")
 
@@ -795,52 +795,6 @@ function Generation_MultiChannel.stabilizeProjectConfiguration(lightMode)
     Generation_MultiChannel.checkAndResolveConflicts()
 
     return not hasChanges  -- Return true if fully stabilized
-end
-
--- Detect orphaned container tracks that no longer have corresponding containers in the tool
--- This is critical for handling cases where containers were deleted from the tool
-function Generation_MultiChannel.detectOrphanedContainerTracks()
-    -- Build a set of all container names that should exist
-    local validContainerNames = {}
-    for _, group in ipairs(globals.groups or {}) do
-        for _, container in ipairs(group.containers or {}) do
-            if container.name then
-                validContainerNames[container.name] = true
-            end
-        end
-    end
-
-    -- Scan all tracks to find container tracks that aren't in our tool
-    for i = 0, reaper.CountTracks(0) - 1 do
-        local track = reaper.GetTrack(0, i)
-        if track then
-            local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
-
-            -- Check if this looks like a container track
-            local hasChildren = false
-            local parentTrack = reaper.GetParentTrack(track)
-            if parentTrack then
-                -- Check if any tracks are children of this track
-                for j = 0, reaper.CountTracks(0) - 1 do
-                    local childTrack = reaper.GetTrack(0, j)
-                    if reaper.GetParentTrack(childTrack) == track then
-                        hasChildren = true
-                        break
-                    end
-                end
-            end
-
-            -- If track has children but no corresponding container in tool, it's orphaned
-            if hasChildren and trackName and trackName ~= "" and not validContainerNames[trackName] then
-                -- This is an orphaned container track - it should be ignored in calculations
-                -- Mark it somehow or just skip it in getExistingChildTrackCount
-                if not globals.orphanedContainers then
-                    globals.orphanedContainers = {}
-                end
-                globals.orphanedContainers[trackName] = track
-            end
-        end
-    end
 end
 
 -- Capture current project state for comparison
