@@ -456,10 +456,10 @@ function Generation_Core.generateGroups()
     if not globals.skipRoutingValidation then
         if globals.keepExistingTracks then
             -- Force full stabilization when regenerating (container deletion case)
-            Generation_TrackManagement.stabilizeProjectConfiguration(false)  -- Full mode, not light
+            Generation_MultiChannel.stabilizeProjectConfiguration(false)  -- Full mode, not light
         else
             -- Normal generation - use light stabilization
-            Generation_TrackManagement.stabilizeProjectConfiguration(true)   -- Light mode
+            Generation_MultiChannel.stabilizeProjectConfiguration(true)   -- Light mode
         end
     else
         -- Clear the skip flag for next time
@@ -628,7 +628,7 @@ function Generation_Core.generateSingleGroup(groupIndex)
     -- CRITICAL: Force full stabilization after single group regeneration
     -- This handles the case where containers were deleted from the tool
     if not globals.skipRoutingValidation then
-        Generation_TrackManagement.stabilizeProjectConfiguration(false)  -- Full stabilization
+        Generation_MultiChannel.stabilizeProjectConfiguration(false)  -- Full stabilization
     end
 
     -- Clear regeneration flag for the group and all its containers
@@ -840,7 +840,7 @@ function Generation_Core.generateSingleGroupByPath(groupPath)
     -- CRITICAL: Force full stabilization after single group regeneration
     -- This handles the case where containers were deleted from the tool
     if not globals.skipRoutingValidation then
-        Generation_TrackManagement.stabilizeProjectConfiguration(false)  -- Full stabilization
+        Generation_MultiChannel.stabilizeProjectConfiguration(false)  -- Full stabilization
     end
 
     -- Clear regeneration flag for the group and all its containers
