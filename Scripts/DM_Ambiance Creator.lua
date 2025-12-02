@@ -31,7 +31,7 @@ package.path = script_path .. "Modules/?.lua;" .. package.path
 
 -- Import all project modules using dofile for better performance
 local Constants = dofile(script_path .. "Modules/DM_Ambiance_Constants.lua")
-local Utils = dofile(script_path .. "Modules/DM_Ambiance_Utils.lua")
+local Utils = dofile(script_path .. "Modules/Utils/init.lua")
 local Structures = dofile(script_path .. "Modules/DM_Ambiance_Structures.lua")
 local Items = dofile(script_path .. "Modules/DM_Ambiance_Items.lua")
 local Presets = dofile(script_path .. "Modules/DM_Ambiance_Presets.lua")
