@@ -51,7 +51,7 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
 
     -- Analyze items and determine track structure
     local itemsAnalysis = Generation_MultiChannel.analyzeContainerItems(container)
-    local trackStructure = Generation_MultiChannel.determineTrackStructure(container, itemsAnalysis)
+    local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
 
     local hasChildTracks = reaper.GetMediaTrackInfo_Value(containerGroup, "I_FOLDERDEPTH") == 1
     local isLastInGroup = (containerIndex == #group.containers)
@@ -184,7 +184,7 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
 
         -- Analyze items and determine track structure for placement logic
         local itemsAnalysis = Generation_MultiChannel.analyzeContainerItems(container)
-        local trackStructure = Generation_MultiChannel.determineTrackStructure(container, itemsAnalysis)
+        local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
 
         -- SPECIAL CASE: Independent generation for "All Tracks" mode
         -- Must be checked BEFORE entering the main loop
