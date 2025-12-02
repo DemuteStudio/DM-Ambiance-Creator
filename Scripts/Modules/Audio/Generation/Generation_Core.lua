@@ -1029,7 +1029,7 @@ function Generation_Core.generateSingleContainer(groupIndex, containerIndex)
     end
 
     -- Check for routing conflicts after generating single container
-    Generation_TrackManagement.checkAndResolveConflicts()
+    Generation_MultiChannel.checkAndResolveConflicts()
 
     -- Clear regeneration flag for the container
     container.needsRegeneration = false
