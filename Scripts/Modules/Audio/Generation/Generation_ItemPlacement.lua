@@ -160,21 +160,21 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             -- For multi-channel, generate on each track
             if container.channelMode and container.channelMode > 0 then
                 for _, channelTrack in ipairs(channelTracks) do
-                    Generation_MultiChannel.placeItemsNoiseMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
+                    globals.Generation.placeItemsNoiseMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
                 end
                 return
             else
-                return Generation_MultiChannel.placeItemsNoiseMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
+                return globals.Generation.placeItemsNoiseMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
             end
         elseif effectiveParams.intervalMode == 5 then
             -- Euclidean Rhythm mode
             if container.channelMode and container.channelMode > 0 then
                 for _, channelTrack in ipairs(channelTracks) do
-                    Generation_MultiChannel.placeItemsEuclideanMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
+                    globals.Generation.placeItemsEuclideanMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
                 end
                 return
             else
-                return Generation_MultiChannel.placeItemsEuclideanMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
+                return globals.Generation.placeItemsEuclideanMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
             end
         end
 
