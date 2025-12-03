@@ -112,11 +112,11 @@ local function restoreState(snapshot)
     end
 
     -- Restore selection if indices are still valid
-    if savedSelectedGroupIndex and savedSelectedGroupIndex <= #globals.groups then
+    if savedSelectedGroupIndex and type(savedSelectedGroupIndex) == "number" and savedSelectedGroupIndex <= #globals.groups then
         globals.selectedGroupIndex = savedSelectedGroupIndex
 
         -- Check if container index is still valid
-        if savedSelectedContainerIndex and
+        if savedSelectedContainerIndex and type(savedSelectedContainerIndex) == "number" and
            globals.groups[savedSelectedGroupIndex] and
            savedSelectedContainerIndex <= #globals.groups[savedSelectedGroupIndex].containers then
             globals.selectedContainerIndex = savedSelectedContainerIndex
