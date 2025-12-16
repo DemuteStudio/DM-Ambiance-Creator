@@ -142,8 +142,13 @@ local function drawSliderWithVariation(params)
         if rvVar and variationCallbacks.setValue then variationCallbacks.setValue(math.floor(newVar + 0.5)) end
 
         -- Only check auto-regen if NOT a reset
+        -- Note: Knob uses InvisibleButton, so use IsItemDeactivated instead of IsItemDeactivatedAfterEdit
         if not wasResetVar then
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[varKey] then
+            local wasActive = globals.autoRegenTracking[varKey] ~= nil
+            local isActive = imgui.IsItemActive(globals.ctx)
+
+            -- Detect transition from active to inactive (release)
+            if wasActive and not isActive then
                 local oldValue = globals.autoRegenTracking[varKey]
                 local newValue = math.floor(newVar + 0.5)  -- Use the actual new value from the knob
                 if oldValue ~= newValue and globals.timeSelectionValid and autoRegenCallback then
@@ -394,9 +399,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 end
             end
             -- Default: mark group (if not in AutoBind mode)
+            reaper.ShowConsoleMsg("[checkAutoRegen] Marking GROUP for regeneration\n")
             obj.needsRegeneration = true
         else
             -- Mark container
+            reaper.ShowConsoleMsg("[checkAutoRegen] Marking CONTAINER for regeneration\n")
             obj.needsRegeneration = true
         end
     end

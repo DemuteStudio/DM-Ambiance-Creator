@@ -73,8 +73,8 @@ function RegenManager.checkAndRegenerate()
     -- Get current time for throttling
     local currentTime = reaper.time_precise()
 
-    -- Reset throttle map if enough time has passed (0.1 second minimum between regenerations)
-    if currentTime - lastFrameTime > 0.1 then
+    -- Reset throttle map if enough time has passed (0.025 second minimum between regenerations)
+    if currentTime - lastFrameTime > 0.025 then
         regeneratedThisFrame = {}
         lastFrameTime = currentTime
     end

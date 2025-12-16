@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.10.4-beta
+@version 0.10.5-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -13,17 +13,27 @@
     [nomain] Modules/UI/*.lua
     Icons/*.png
 @changelog
-  # Version 0.10.4-beta - Multi-Selection Fixes
+  # Version 0.10.5-beta - Multi-Selection & Auto-Regeneration Fixes
 
   ## New Features
-  + Added version display next to Settings button
+  + Added version display next to Settings button in main window header
 
   ## Bug Fixes
-  + Fixed crash when using Shift+Click multi-selection
+  + Fixed crash when using Shift+Click multi-selection (table comparison error)
   + Fixed randomization sliders not appearing in multi-selection panel
   + Fixed interval mode dropdown not working in multi-selection
   + Fixed pan controls hidden when any selected container was multichannel
-  + Fixed ReaPack package installation for new module structure
+  + Fixed ReaPack package installation for new module structure (@provides for subdirectories)
+  + Fixed auto-regeneration system for path-based architecture (migrated from globals.groups to globals.items)
+  + Fixed variation button not marking containers for regeneration
+  + Fixed callback parameter mismatches in TriggerSection_Noise
+  + Fixed nil error when clicking variation button (globals.autoRegenTracking initialization)
+  + Reduced auto-regeneration throttle to 0.025 seconds for more responsive updates
+
+  ## Technical Changes
+  + Modular refactoring: Utils, Waveform, Generation, RoutingValidator split into sub-modules
+  + Added RegenManager helpers: collectAllGroups() and findGroupPath() for folder hierarchy
+  + Fixed Knob widget to use manual active/inactive detection instead of IsItemDeactivatedAfterEdit
 --]]
 
 -- Check if ReaImGui is available; display an error and exit if not
@@ -77,7 +87,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.10.4-beta",          -- Script version (sync with @version header)
+    version = "0.10.5-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
