@@ -139,7 +139,7 @@ local function drawSliderWithVariation(params)
         if not wasResetVar then
             if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and autoRegenCallback and globals.autoRegenTracking[varKey] then
                 if checkAutoRegen then
-                    checkAutoRegen(varKey, varKey, globals.autoRegenTracking[varKey], variationValue)
+                    checkAutoRegen(varKey, globals.autoRegenTracking[varKey], variationValue)
                 end
                 globals.autoRegenTracking[varKey] = nil
             end
@@ -170,7 +170,8 @@ function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, ti
     local trackingKey = stableId or ((titlePrefix and titlePrefix ~= "") and titlePrefix or tostring(dataObj))
 
     -- Helper function for auto-regeneration check
-    local function checkAutoRegen(paramName, paramKey, oldValue, newValue)
+    -- Called from onChangeComplete with (paramName, oldValue, newValue)
+    local function checkAutoRegen(paramName, oldValue, newValue)
         if autoRegenCallback and oldValue ~= newValue and globals.timeSelectionValid then
             autoRegenCallback(paramName, oldValue, newValue)
         end
@@ -428,28 +429,29 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                     end
                 end
             end,
-            setTriggerRate = function(v) obj.triggerRate = v; obj.needsRegeneration = true end,
-            setTriggerDrift = function(v) obj.triggerDrift = v; obj.needsRegeneration = true end,
-            setTriggerDriftDirection = function(v) obj.triggerDriftDirection = v; obj.needsRegeneration = true end,
-            setFadeIn = function(v) obj.fadeIn = math.max(0, v); obj.needsRegeneration = true end,
-            setFadeOut = function(v) obj.fadeOut = math.max(0, v); obj.needsRegeneration = true end,
+            -- Note: needsRegeneration is set by checkAutoRegen callback on slider release, not here
+            setTriggerRate = function(v) obj.triggerRate = v end,
+            setTriggerDrift = function(v) obj.triggerDrift = v end,
+            setTriggerDriftDirection = function(v) obj.triggerDriftDirection = v end,
+            setFadeIn = function(v) obj.fadeIn = math.max(0, v) end,
+            setFadeOut = function(v) obj.fadeOut = math.max(0, v) end,
             -- Chunk mode callbacks
-            setChunkDuration = function(v) obj.chunkDuration = v; obj.needsRegeneration = true end,
-            setChunkSilence = function(v) obj.chunkSilence = v; obj.needsRegeneration = true end,
-            setChunkDurationVariation = function(v) obj.chunkDurationVariation = v; obj.needsRegeneration = true end,
-            setChunkDurationVarDirection = function(v) obj.chunkDurationVarDirection = v; obj.needsRegeneration = true end,
-            setChunkSilenceVariation = function(v) obj.chunkSilenceVariation = v; obj.needsRegeneration = true end,
-            setChunkSilenceVarDirection = function(v) obj.chunkSilenceVarDirection = v; obj.needsRegeneration = true end,
+            setChunkDuration = function(v) obj.chunkDuration = v end,
+            setChunkSilence = function(v) obj.chunkSilence = v end,
+            setChunkDurationVariation = function(v) obj.chunkDurationVariation = v end,
+            setChunkDurationVarDirection = function(v) obj.chunkDurationVarDirection = v end,
+            setChunkSilenceVariation = function(v) obj.chunkSilenceVariation = v end,
+            setChunkSilenceVarDirection = function(v) obj.chunkSilenceVarDirection = v end,
             -- Noise mode callbacks
-            setNoiseSeed = function(v) obj.noiseSeed = v; obj.needsRegeneration = true end,
-            setNoiseAlgorithm = function(v) obj.noiseAlgorithm = v; obj.needsRegeneration = true end,
-            setNoiseFrequency = function(v) obj.noiseFrequency = v; obj.needsRegeneration = true end,
-            setNoiseAmplitude = function(v) obj.noiseAmplitude = v; obj.needsRegeneration = true end,
-            setNoiseOctaves = function(v) obj.noiseOctaves = v; obj.needsRegeneration = true end,
-            setNoisePersistence = function(v) obj.noisePersistence = v; obj.needsRegeneration = true end,
-            setNoiseLacunarity = function(v) obj.noiseLacunarity = v; obj.needsRegeneration = true end,
-            setNoiseDensity = function(v) obj.noiseDensity = v; obj.needsRegeneration = true end,
-            setNoiseThreshold = function(v) obj.noiseThreshold = v; obj.needsRegeneration = true end,
+            setNoiseSeed = function(v) obj.noiseSeed = v end,
+            setNoiseAlgorithm = function(v) obj.noiseAlgorithm = v end,
+            setNoiseFrequency = function(v) obj.noiseFrequency = v end,
+            setNoiseAmplitude = function(v) obj.noiseAmplitude = v end,
+            setNoiseOctaves = function(v) obj.noiseOctaves = v end,
+            setNoisePersistence = function(v) obj.noisePersistence = v end,
+            setNoiseLacunarity = function(v) obj.noiseLacunarity = v end,
+            setNoiseDensity = function(v) obj.noiseDensity = v end,
+            setNoiseThreshold = function(v) obj.noiseThreshold = v end,
             -- Euclidean mode callbacks
             setEuclideanMode = function(v)
                 obj.euclideanMode = v
@@ -472,20 +474,20 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
             setEuclideanTempo = function(v)
                 obj.euclideanTempo = v
 
-                -- If group, sync to all containers in override mode with Euclidean (parent -> children only)
+                -- If group, sync value to all containers in override mode with Euclidean
+                -- Note: Don't mark containers for regeneration here (during drag)
+                -- They will be regenerated when the group is regenerated on slider release
                 if isGroup and groupPath then
                     local group = globals.Structures.getGroupByPath(groupPath)
                     if group then
                         for _, container in ipairs(group.containers) do
                             if container.overrideParent and container.intervalMode == 5 then
                                 container.euclideanTempo = v
-                                container.needsRegeneration = true
                             end
                         end
                     end
                 end
-
-                obj.needsRegeneration = true
+                -- Note: obj.needsRegeneration is set by checkAutoRegen on slider release
             end,
             setEuclideanUseProjectTempo = function(v)
                 obj.euclideanUseProjectTempo = v
@@ -588,8 +590,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                         end
                     end
                 end
-
-                obj.needsRegeneration = true
+                -- Note: obj.needsRegeneration is set by checkAutoRegen on slider release
             end,
             setEuclideanLayerSteps = function(layerIdx, v)
                 if not obj.euclideanLayers or not obj.euclideanLayers[layerIdx] then return end
@@ -620,8 +621,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                         end
                     end
                 end
-
-                obj.needsRegeneration = true
+                -- Note: obj.needsRegeneration is set by checkAutoRegen on slider release
             end,
             setEuclideanLayerRotation = function(layerIdx, v)
                 if not obj.euclideanLayers or not obj.euclideanLayers[layerIdx] then return end
@@ -652,8 +652,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                         end
                     end
                 end
-
-                obj.needsRegeneration = true
+                -- Note: obj.needsRegeneration is set by checkAutoRegen on slider release
             end,
             -- Euclidean auto-bind mode callbacks
             setEuclideanAutoBindContainers = function(v)
@@ -915,7 +914,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
         },
         width,
         titlePrefix,
-        nil,  -- Don't pass auto-regen callback - let needsRegeneration flag be used instead
+        checkAutoRegen,  -- Pass auto-regen callback to trigger regeneration on slider release
         isGroup,         -- Pass isGroup flag
         groupPath,       -- Pass group path
         containerIndex   -- Pass container index
@@ -961,9 +960,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
         onChange = function(values)
             obj.pitchRange.min = values[1]
             obj.pitchRange.max = values[2]
-            obj.needsRegeneration = true
+            -- Note: needsRegeneration set in onChangeComplete, not during drag
         end,
         onChangeComplete = function()
+            -- Note: Randomization parameters don't require full regeneration
+            -- They only affect values applied to existing items
             if groupPath and containerIndex then
                 globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "pitch")
             elseif groupPath then
@@ -1095,9 +1096,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
         onChange = function(values)
             obj.volumeRange.min = values[1]
             obj.volumeRange.max = values[2]
-            obj.needsRegeneration = true
+            -- Note: needsRegeneration set in onChangeComplete, not during drag
         end,
         onChangeComplete = function()
+            -- Note: Randomization parameters don't require full regeneration
+            -- They only affect values applied to existing items
             if groupPath and containerIndex then
                 globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "volume")
             elseif groupPath then
@@ -1159,9 +1162,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
             onChange = function(values)
                 obj.panRange.min = values[1]
                 obj.panRange.max = values[2]
-                obj.needsRegeneration = true
+                -- Note: needsRegeneration set in onChangeComplete, not during drag
             end,
             onChangeComplete = function()
+                -- Note: Randomization parameters don't require full regeneration
+                -- They only affect values applied to existing items
                 if groupPath and containerIndex then
                     globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "pan")
                 elseif groupPath then
