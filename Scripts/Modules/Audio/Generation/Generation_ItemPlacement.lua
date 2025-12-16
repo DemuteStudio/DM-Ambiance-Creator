@@ -390,8 +390,25 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                 local maxLen = globals.endTime - position
                 local actualLen = math.min(itemData.length, maxLen)
 
-                -- Coverage mode: calculate interval based on ACTUAL item length (after trimming)
-                -- This ensures accurate coverage even when items are trimmed at timeline end
+                -- Pre-calculate pitch and adjust length if using STRETCH mode
+                -- This must happen BEFORE coverage calculation to use adjusted length
+                local randomPitch = nil
+                local playrate = nil
+                if effectiveParams.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
+                    if effectiveParams.randomizePitch then
+                        randomPitch = itemData.originalPitch + globals.Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+                    else
+                        randomPitch = itemData.originalPitch
+                    end
+                    playrate = globals.Utils.semitonesToPlayrate(randomPitch)
+
+                    -- Adjust length for playrate (slower playrate = longer item)
+                    actualLen = actualLen / playrate
+                    actualLen = math.min(actualLen, maxLen)  -- Re-clamp to timeline bounds
+                end
+
+                -- Coverage mode: calculate interval based on ACTUAL item length (after trimming and playrate adjustment)
+                -- This ensures accurate coverage even when items are trimmed at timeline end or stretched
                 if effectiveParams.intervalMode == 2 and trackIdx == 1 then
                     local coveragePercent = effectiveParams.triggerRate
                     if coveragePercent > 0 then
@@ -402,31 +419,31 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                 end
 
                 reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
-                reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
                 reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
 
                 -- Apply randomizations using effective parameters
                 if effectiveParams.randomizePitch then
-                    local randomPitch = itemData.originalPitch + globals.Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
-
                     if effectiveParams.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
-                        -- Use time stretch (D_PLAYRATE)
-                        local playrate = globals.Utils.semitonesToPlayrate(randomPitch)
+                        -- Use time stretch (D_PLAYRATE) - already calculated above
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
                         reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
                     else
                         -- Use standard pitch shift (D_PITCH)
-                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+                        local pitchValue = itemData.originalPitch + globals.Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", pitchValue)
                     end
                 else
                     if effectiveParams.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
-                        local playrate = globals.Utils.semitonesToPlayrate(itemData.originalPitch)
+                        -- Use time stretch (D_PLAYRATE) - already calculated above
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
                         reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
                     else
                         reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
                     end
                 end
+
+                -- Set D_LENGTH with adjusted value (after playrate adjustment if STRETCH mode)
+                reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
 
                 -- Apply gain from item settings
                 local gainDB = itemData.gainDB or 0.0
@@ -714,6 +731,22 @@ function Generation_ItemPlacement.generateItemsInTimeRange(effectiveParams, cont
         local maxLength = rangeEnd - position
         local actualLength = math.min(itemData.length, maxLength)
 
+        -- Pre-calculate pitch and adjust length if using STRETCH mode
+        local randomPitch = nil
+        local playrate = nil
+        if effectiveParams.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
+            if effectiveParams.randomizePitch then
+                randomPitch = itemData.originalPitch + globals.Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+            else
+                randomPitch = itemData.originalPitch
+            end
+            playrate = globals.Utils.semitonesToPlayrate(randomPitch)
+
+            -- Adjust length for playrate (slower playrate = longer item)
+            actualLength = actualLength / playrate
+            actualLength = math.min(actualLength, maxLength)  -- Re-clamp to chunk bounds
+        end
+
         if actualLength <= 0 then
             break
         end
@@ -728,31 +761,31 @@ function Generation_ItemPlacement.generateItemsInTimeRange(effectiveParams, cont
         reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
 
         reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
-        reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLength)
         reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
 
         -- Apply randomizations using effective parameters
         if effectiveParams.randomizePitch then
-            local randomPitch = itemData.originalPitch + globals.Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
-
             if effectiveParams.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
-                -- Use time stretch (D_PLAYRATE)
-                local playrate = globals.Utils.semitonesToPlayrate(randomPitch)
+                -- Use time stretch (D_PLAYRATE) - already calculated above
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
                 reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
             else
                 -- Use standard pitch shift (D_PITCH)
-                reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", randomPitch)
+                local pitchValue = itemData.originalPitch + globals.Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+                reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", pitchValue)
             end
         else
             if effectiveParams.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
-                local playrate = globals.Utils.semitonesToPlayrate(itemData.originalPitch)
+                -- Use time stretch (D_PLAYRATE) - already calculated above
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_PLAYRATE", playrate)
                 reaper.SetMediaItemTakeInfo_Value(newTake, "B_PPITCH", 0)  -- Disable preserve pitch for stretch mode
             else
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH", itemData.originalPitch)
             end
         end
+
+        -- Set D_LENGTH with adjusted value (after playrate adjustment if STRETCH mode)
+        reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLength)
 
         -- Apply gain from item settings
         local gainDB = itemData.gainDB or 0.0
@@ -1050,12 +1083,29 @@ function Generation_ItemPlacement.generateIndependentTrack(targetTrack, trackIdx
         local maxLen = globals.endTime - position
         local actualLen = math.min(itemData.length, maxLen)
 
+        -- Pre-calculate pitch and adjust length if using STRETCH mode
+        if effectiveParams.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
+            local randomPitch
+            if effectiveParams.randomizePitch then
+                randomPitch = itemData.originalPitch + globals.Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+            else
+                randomPitch = itemData.originalPitch
+            end
+            local playrate = globals.Utils.semitonesToPlayrate(randomPitch)
+
+            -- Adjust length for playrate (slower playrate = longer item)
+            actualLen = actualLen / playrate
+            actualLen = math.min(actualLen, maxLen)  -- Re-clamp to timeline bounds
+        end
+
         reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
-        reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
         reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
 
         -- Apply randomization (pitch, volume, pan)
         Generation_ItemPlacement.applyRandomization(newItem, newTake, effectiveParams, itemData, trackStructure)
+
+        -- Set D_LENGTH with adjusted value (after playrate adjustment if STRETCH mode)
+        reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
 
         -- Apply fades if enabled
         if effectiveParams.fadeInEnabled or effectiveParams.fadeOutEnabled then
