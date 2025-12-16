@@ -22,7 +22,8 @@ end
 function UI_MultiSelection.getSelectedContainersList()
     local containers = {}
     for key in pairs(globals.selectedContainers) do
-        local groupPath, containerIndex = globals.Structures.parseContainerKey(key)
+        -- Use Utils.parseContainerKey to match the format created by Utils.makeContainerKey
+        local groupPath, containerIndex = globals.Utils.parseContainerKey(key)
         if groupPath and containerIndex then
             table.insert(containers, {groupPath = groupPath, containerIndex = containerIndex})
         end
@@ -143,11 +144,13 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     local anyRandomizePan = false
     local allRandomizePan = true
     local anyMultiChannel = false  -- Track if any container is multichannel
+    local anyStereo = false        -- Track if any container supports pan (is NOT multichannel)
 
     -- Default values for common parameters
     local commonIntervalMode = nil
     local commonTriggerRate = nil
     local commonTriggerDrift = nil
+    local commonTriggerDriftDirection = nil
     local commonPitchMin, commonPitchMax = nil, nil
     local commonVolumeMin, commonVolumeMax = nil, nil
     local commonPanMin, commonPanMax = nil, nil
@@ -156,6 +159,8 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
     local commonChunkSilence = nil
     local commonChunkDurationVariation = nil
     local commonChunkSilenceVariation = nil
+    local commonChunkDurationVarDirection = nil
+    local commonChunkSilenceVarDirection = nil
     -- Noise mode parameters
     local commonNoiseSeed = nil
     local commonNoiseFrequency = nil
@@ -177,6 +182,8 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         -- Check if this container is multichannel (non-stereo)
         if container.channelMode and container.channelMode > 0 then
             anyMultiChannel = true
+        else
+            anyStereo = true  -- This container supports pan
         end
 
         -- Randomization settings
@@ -203,31 +210,43 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             commonTriggerDrift = -1 -- Mixed values
         end
 
-        -- Pitch range
-        if commonPitchMin == nil then
-            commonPitchMin = container.pitchRange.min
-            commonPitchMax = container.pitchRange.max
-        else
-            if math.abs(commonPitchMin - container.pitchRange.min) > 0.001 then commonPitchMin = -999 end
-            if math.abs(commonPitchMax - container.pitchRange.max) > 0.001 then commonPitchMax = -999 end
+        if commonTriggerDriftDirection == nil then
+            commonTriggerDriftDirection = container.triggerDriftDirection or 0
+        elseif commonTriggerDriftDirection ~= (container.triggerDriftDirection or 0) then
+            commonTriggerDriftDirection = -1 -- Mixed values
         end
 
-        -- Volume range
-        if commonVolumeMin == nil then
-            commonVolumeMin = container.volumeRange.min
-            commonVolumeMax = container.volumeRange.max
-        else
-            if math.abs(commonVolumeMin - container.volumeRange.min) > 0.001 then commonVolumeMin = -999 end
-            if math.abs(commonVolumeMax - container.volumeRange.max) > 0.001 then commonVolumeMax = -999 end
+        -- Pitch range (with nil check)
+        if container.pitchRange then
+            if commonPitchMin == nil then
+                commonPitchMin = container.pitchRange.min
+                commonPitchMax = container.pitchRange.max
+            else
+                if math.abs(commonPitchMin - container.pitchRange.min) > 0.001 then commonPitchMin = -999 end
+                if math.abs(commonPitchMax - container.pitchRange.max) > 0.001 then commonPitchMax = -999 end
+            end
         end
 
-        -- Pan range
-        if commonPanMin == nil then
-            commonPanMin = container.panRange.min
-            commonPanMax = container.panRange.max
-        else
-            if math.abs(commonPanMin - container.panRange.min) > 0.001 then commonPanMin = -999 end
-            if math.abs(commonPanMax - container.panRange.max) > 0.001 then commonPanMax = -999 end
+        -- Volume range (with nil check)
+        if container.volumeRange then
+            if commonVolumeMin == nil then
+                commonVolumeMin = container.volumeRange.min
+                commonVolumeMax = container.volumeRange.max
+            else
+                if math.abs(commonVolumeMin - container.volumeRange.min) > 0.001 then commonVolumeMin = -999 end
+                if math.abs(commonVolumeMax - container.volumeRange.max) > 0.001 then commonVolumeMax = -999 end
+            end
+        end
+
+        -- Pan range (with nil check)
+        if container.panRange then
+            if commonPanMin == nil then
+                commonPanMin = container.panRange.min
+                commonPanMax = container.panRange.max
+            else
+                if math.abs(commonPanMin - container.panRange.min) > 0.001 then commonPanMin = -999 end
+                if math.abs(commonPanMax - container.panRange.max) > 0.001 then commonPanMax = -999 end
+            end
         end
 
         -- Chunk mode parameters
@@ -253,6 +272,18 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             commonChunkSilenceVariation = container.chunkSilenceVariation or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_SILENCE_VARIATION
         elseif commonChunkSilenceVariation ~= (container.chunkSilenceVariation or require("DM_Ambiance_Constants").DEFAULTS.CHUNK_SILENCE_VARIATION) then
             commonChunkSilenceVariation = -1 -- Mixed values
+        end
+
+        if commonChunkDurationVarDirection == nil then
+            commonChunkDurationVarDirection = container.chunkDurationVarDirection or 0
+        elseif commonChunkDurationVarDirection ~= (container.chunkDurationVarDirection or 0) then
+            commonChunkDurationVarDirection = -1 -- Mixed values
+        end
+
+        if commonChunkSilenceVarDirection == nil then
+            commonChunkSilenceVarDirection = container.chunkSilenceVarDirection or 0
+        elseif commonChunkSilenceVarDirection ~= (container.chunkSilenceVarDirection or 0) then
+            commonChunkSilenceVarDirection = -1 -- Mixed values
         end
 
         -- Noise mode parameters
@@ -316,134 +347,58 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
     -- TRIGGER SETTINGS SECTION
 
-    -- Check if we have mixed values for any trigger settings
-    local hasMixedTriggerValues = (commonIntervalMode == -1 or commonTriggerRate == -999 or commonTriggerDrift == -1)
-
-    if hasMixedTriggerValues then
-        -- Handle mixed values case by case
+    -- Only show mixed values UI when interval MODE is mixed
+    -- When mode is unified, drawTriggerSettingsSection handles everything (including rate/drift)
+    if commonIntervalMode == -1 then
+        -- Mode is mixed - show combo to unify
         imgui.Separator(globals.ctx)
         imgui.Text(globals.ctx, "Trigger Settings")
+        imgui.Text(globals.ctx, "Interval Mode:")
+        showMixedValues()
 
-        -- Interval Mode - handle mixed values
-        if commonIntervalMode == -1 then
-            imgui.Text(globals.ctx, "Interval Mode:")
-            showMixedValues()
-
-            -- Add a dropdown to set all values to the same value
-            imgui.PushItemWidth(globals.ctx, width * 0.5)
-            local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0"
-            local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "Set all to##IntervalMode", 0, intervalModes)
-            if rv then
-                -- Apply to all selected containers
-                local affectedGroups = {}
-                for _, c in ipairs(containers) do
-                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
-                    if container then
-                        container.intervalMode = newIntervalMode
-                        local pathStr = globals.Utils.pathToString(c.groupPath)
-                        affectedGroups[pathStr] = c.groupPath
-                    end
+        -- Add a dropdown to set all values to the same value
+        imgui.PushItemWidth(globals.ctx, width * 0.5)
+        local intervalModes = "Absolute\0Relative\0Coverage\0Chunk\0Noise\0Euclidean\0"
+        local rv, newIntervalMode = globals.UndoWrappers.Combo(globals.ctx, "Set all to##IntervalMode", 0, intervalModes)
+        imgui.PopItemWidth(globals.ctx)
+        if rv then
+            -- Apply to all selected containers
+            local affectedGroups = {}
+            for _, c in ipairs(containers) do
+                local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                if container then
+                    container.intervalMode = newIntervalMode
+                    local pathStr = globals.Utils.pathToString(c.groupPath)
+                    affectedGroups[pathStr] = c.groupPath
                 end
-                -- Sync euclidean bindings for all affected groups
-                for pathStr, groupPath in pairs(affectedGroups) do
-                    local group = globals.Structures.getGroupFromPath(groupPath)
-                    if group then
-                        globals.Structures.syncEuclideanBindings(group)
-                    end
-                end
-                -- Update state for UI refresh
-                commonIntervalMode = newIntervalMode
             end
-        else
-            -- Display current mode as text
-            local modeText = "Absolute"
-            if commonIntervalMode == 1 then modeText = "Relative"
-            elseif commonIntervalMode == 2 then modeText = "Coverage" end
-
-            imgui.Text(globals.ctx, "Interval Mode: " .. modeText)
+            -- Sync euclidean bindings for all affected groups
+            for pathStr, groupPath in pairs(affectedGroups) do
+                local group = globals.Structures.getGroupFromPath(groupPath)
+                if group then
+                    globals.Structures.syncEuclideanBindings(group)
+                end
+            end
+            -- Update state for UI refresh
+            commonIntervalMode = newIntervalMode
         end
+    end
 
-        -- Trigger rate - handle mixed values
-        if commonTriggerRate == -999 then
-            -- Different labels based on mode
-            local triggerRateLabel = "Interval (sec)"
-            local triggerRateMin = -10.0
-            local triggerRateMax = 60.0
-
-            if commonIntervalMode == 1 then
-                triggerRateLabel = "Interval (%)"
-                triggerRateMin = 0.1
-                triggerRateMax = 100.0
-            elseif commonIntervalMode == 2 then
-                triggerRateLabel = "Coverage (%)"
-                triggerRateMin = 0.1
-                triggerRateMax = 100.0
-            end
-
-            imgui.Text(globals.ctx, triggerRateLabel .. ":")
-            showMixedValues()
-
-            -- Add a slider to set all values to the same value
-            local rv, newTriggerRate = globals.SliderEnhanced.SliderDouble({
-                id = "Set all to##TriggerRate",
-                value = 0,
-                min = triggerRateMin,
-                max = triggerRateMax,
-                defaultValue = globals.Constants.DEFAULTS.TRIGGER_RATE,
-                format = "%.1f",
-                width = width * 0.5
-            })
-            if rv then
-                -- Apply to all selected containers
-                for _, c in ipairs(containers) do
-                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
-                    if container then
-                        container.triggerRate = newTriggerRate
-                    end
-                end
-                -- Update state for UI refresh
-                commonTriggerRate = newTriggerRate
-            end
-        end
-
-        -- Trigger drift - handle mixed values
-        if commonTriggerDrift == -1 then
-            imgui.Text(globals.ctx, "Random variation (%):")
-            showMixedValues()
-
-            -- Add a slider to set all values to the same value
-            local rv, newTriggerDrift = globals.SliderEnhanced.SliderInt({
-                id = "Set all to##TriggerDrift",
-                value = 0,
-                min = 0,
-                max = 100,
-                defaultValue = globals.Constants.DEFAULTS.TRIGGER_DRIFT,
-                format = "%d",
-                width = width * 0.5
-            })
-            if rv then
-                -- Apply to all selected containers
-                for _, c in ipairs(containers) do
-                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
-                    if container then
-                        container.triggerDrift = newTriggerDrift
-                    end
-                end
-                -- Update state for UI refresh
-                commonTriggerDrift = newTriggerDrift
-            end
-        end
-    else
+    -- When interval mode is unified (not -1), use the standard trigger settings UI
+    if commonIntervalMode ~= -1 then
         -- No mixed values - use the common UI for trigger settings
         local dataObj = {
             intervalMode = commonIntervalMode,
             triggerRate = commonTriggerRate,
             triggerDrift = commonTriggerDrift,
+            triggerDriftDirection = commonTriggerDriftDirection,
             -- Chunk mode parameters
             chunkDuration = commonChunkDuration,
             chunkSilence = commonChunkSilence,
             chunkDurationVariation = commonChunkDurationVariation,
             chunkSilenceVariation = commonChunkSilenceVariation,
+            chunkDurationVarDirection = commonChunkDurationVarDirection,
+            chunkSilenceVarDirection = commonChunkSilenceVarDirection,
             -- Noise mode parameters
             noiseSeed = commonNoiseSeed,
             noiseFrequency = commonNoiseFrequency,
@@ -476,6 +431,7 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
                 end
                 -- Update state for UI refresh
                 commonIntervalMode = newValue
+                dataObj.intervalMode = newValue  -- Update dataObj so UI refreshes immediately
             end,
 
             setTriggerRate = function(newValue)
@@ -498,6 +454,16 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
                 end
                 -- Update state for UI refresh
                 commonTriggerDrift = newValue
+            end,
+
+            setTriggerDriftDirection = function(newValue)
+                for _, c in ipairs(containers) do
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.triggerDriftDirection = newValue
+                    end
+                end
+                commonTriggerDriftDirection = newValue
             end,
 
             -- Chunk mode callbacks
@@ -542,6 +508,26 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
                 end
                 -- Update state for UI refresh
                 commonChunkSilenceVariation = newValue
+            end,
+
+            setChunkDurationVarDirection = function(newValue)
+                for _, c in ipairs(containers) do
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.chunkDurationVarDirection = newValue
+                    end
+                end
+                commonChunkDurationVarDirection = newValue
+            end,
+
+            setChunkSilenceVarDirection = function(newValue)
+                for _, c in ipairs(containers) do
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.chunkSilenceVarDirection = newValue
+                    end
+                end
+                commonChunkSilenceVarDirection = newValue
             end,
 
             -- Noise mode callbacks
@@ -628,7 +614,8 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
         -- Use the common trigger settings function
         -- Multi-selection doesn't support auto-bind (not a group context)
-        globals.UI.drawTriggerSettingsSection(dataObj, callbacks, width, "", nil, false, nil, nil)
+        -- Pass stableId "MultiSelection" for stable ImGui widget IDs (last parameter)
+        globals.UI.drawTriggerSettingsSection(dataObj, callbacks, width, "", nil, false, nil, nil, "MultiSelection")
     end
 
     -- RANDOMIZATION PARAMETERS SECTION
@@ -757,6 +744,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
     -- Only show pitch range if any container uses pitch randomization
     if anyRandomizePitch then
+        -- Use defaults if nil
+        local pitchMin = commonPitchMin or -12
+        local pitchMax = commonPitchMax or 12
+
         if commonPitchMin == -999 or commonPitchMax == -999 then
             -- Mixed values - show a text indicator and editable field
             imgui.Text(globals.ctx, "Pitch Range (semitones):")
@@ -767,11 +758,13 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             local rv, newPitchMin, newPitchMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                       "Set all to##PitchRange",
                                                                       -12, 12, 0.1, -48, 48)
+            imgui.PopItemWidth(globals.ctx)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
                     local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
                     if container then
+                        if not container.pitchRange then container.pitchRange = {} end
                         container.pitchRange.min = newPitchMin
                         container.pitchRange.max = newPitchMax
                     end
@@ -786,12 +779,14 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             imgui.PushItemWidth(globals.ctx, width * 0.7)
             local rv, newPitchMin, newPitchMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                       "Pitch Range (semitones)",
-                                                                      commonPitchMin, commonPitchMax, 0.1, -48, 48)
+                                                                      pitchMin, pitchMax, 0.1, -48, 48)
+            imgui.PopItemWidth(globals.ctx)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
                     local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
                     if container then
+                        if not container.pitchRange then container.pitchRange = {} end
                         container.pitchRange.min = newPitchMin
                         container.pitchRange.max = newPitchMax
                     end
@@ -839,6 +834,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
     -- Only show volume range if any container uses volume randomization
     if anyRandomizeVolume then
+        -- Use defaults if nil
+        local volumeMin = commonVolumeMin or -6
+        local volumeMax = commonVolumeMax or 6
+
         if commonVolumeMin == -999 or commonVolumeMax == -999 then
             -- Mixed values - show a text indicator and editable field
             imgui.Text(globals.ctx, "Volume Range (dB):")
@@ -849,11 +848,13 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             local rv, newVolumeMin, newVolumeMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                        "Set all to##VolumeRange",
                                                                        -6, 6, 0.1, -24, 24)
+            imgui.PopItemWidth(globals.ctx)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
                     local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
                     if container then
+                        if not container.volumeRange then container.volumeRange = {} end
                         container.volumeRange.min = newVolumeMin
                         container.volumeRange.max = newVolumeMax
                     end
@@ -868,12 +869,14 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             imgui.PushItemWidth(globals.ctx, width * 0.7)
             local rv, newVolumeMin, newVolumeMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
                                                                        "Volume Range (dB)",
-                                                                       commonVolumeMin, commonVolumeMax, 0.1, -24, 24)
+                                                                       volumeMin, volumeMax, 0.1, -24, 24)
+            imgui.PopItemWidth(globals.ctx)
             if rv then
                 -- Apply to all selected containers
                 for _, c in ipairs(containers) do
                     local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
                     if container then
+                        if not container.volumeRange then container.volumeRange = {} end
                         container.volumeRange.min = newVolumeMin
                         container.volumeRange.max = newVolumeMax
                     end
@@ -886,8 +889,13 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
         end
     end
 
-    -- Pan randomization controls (only show if no containers are multichannel)
-    if not anyMultiChannel then
+    -- Pan randomization controls (show if ANY container supports pan - i.e., is stereo)
+    if anyStereo then
+        -- Show note if some containers are multichannel
+        if anyMultiChannel then
+            imgui.TextColored(globals.ctx, 0xFFAA00FF, "(Pan applies to stereo containers only)")
+        end
+
         -- Pan randomization checkbox
         local panState = allRandomizePan and 1 or (anyRandomizePan and 2 or 0)
         local panText = "Randomize Pan"
@@ -903,10 +911,10 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
         local rv, newRandomizePan = globals.UndoWrappers.Checkbox(globals.ctx, panText, randomizePan)
         if rv then
-            -- Apply to all selected containers
+            -- Apply only to stereo containers (not multichannel)
             for _, c in ipairs(containers) do
                 local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
-                if container then
+                if container and (not container.channelMode or container.channelMode == 0) then
                     container.randomizePan = newRandomizePan
                 end
             end
@@ -923,53 +931,61 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
 
         -- Only show pan range if any container uses pan randomization
         if anyRandomizePan then
-        if commonPanMin == -999 or commonPanMax == -999 then
-            -- Mixed values - show a text indicator and editable field
-            imgui.Text(globals.ctx, "Pan Range (-100/+100):")
-            showMixedValues()
+            -- Use defaults if nil
+            local panMin = commonPanMin or -50
+            local panMax = commonPanMax or 50
 
-            -- Add a range slider to set all values to the same value
-            imgui.PushItemWidth(globals.ctx, width * 0.7)
-            local rv, newPanMin, newPanMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
-                                                                 "Set all to##PanRange",
-                                                                 -50, 50, 1, -100, 100)
-            if rv then
-                -- Apply to all selected containers
-                for _, c in ipairs(containers) do
-                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
-                    if container then
-                        container.panRange.min = newPanMin
-                        container.panRange.max = newPanMax
+            if commonPanMin == -999 or commonPanMax == -999 then
+                -- Mixed values - show a text indicator and editable field
+                imgui.Text(globals.ctx, "Pan Range (-100/+100):")
+                showMixedValues()
+
+                -- Add a range slider to set all values to the same value
+                imgui.PushItemWidth(globals.ctx, width * 0.7)
+                local rv, newPanMin, newPanMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
+                                                                     "Set all to##PanRange",
+                                                                     -50, 50, 1, -100, 100)
+                imgui.PopItemWidth(globals.ctx)
+                if rv then
+                    -- Apply only to stereo containers
+                    for _, c in ipairs(containers) do
+                        local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                        if container and (not container.channelMode or container.channelMode == 0) then
+                            if not container.panRange then container.panRange = {} end
+                            container.panRange.min = newPanMin
+                            container.panRange.max = newPanMax
+                        end
                     end
-                end
 
-                -- Update state for UI refresh
-                commonPanMin = newPanMin
-                commonPanMax = newPanMax
-            end
-        else
-            -- All containers have the same value - normal edit
-            imgui.PushItemWidth(globals.ctx, width * 0.7)
-            local rv, newPanMin, newPanMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
-                                                                 "Pan Range (-100/+100)",
-                                                                 commonPanMin, commonPanMax, 1, -100, 100)
-            if rv then
-                -- Apply to all selected containers
-                for _, c in ipairs(containers) do
-                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
-                    if container then
-                        container.panRange.min = newPanMin
-                        container.panRange.max = newPanMax
+                    -- Update state for UI refresh
+                    commonPanMin = newPanMin
+                    commonPanMax = newPanMax
+                end
+            else
+                -- All containers have the same value - normal edit
+                imgui.PushItemWidth(globals.ctx, width * 0.7)
+                local rv, newPanMin, newPanMax = globals.UndoWrappers.DragFloatRange2(globals.ctx,
+                                                                     "Pan Range (-100/+100)",
+                                                                     panMin, panMax, 1, -100, 100)
+                imgui.PopItemWidth(globals.ctx)
+                if rv then
+                    -- Apply only to stereo containers
+                    for _, c in ipairs(containers) do
+                        local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                        if container and (not container.channelMode or container.channelMode == 0) then
+                            if not container.panRange then container.panRange = {} end
+                            container.panRange.min = newPanMin
+                            container.panRange.max = newPanMax
+                        end
                     end
-                end
 
-                -- Update state for UI refresh
-                commonPanMin = newPanMin
-                commonPanMax = newPanMax
+                    -- Update state for UI refresh
+                    commonPanMin = newPanMin
+                    commonPanMax = newPanMax
+                end
             end
-        end
         end  -- End of anyRandomizePan condition
-    end  -- End of anyMultiChannel condition
+    end  -- End of anyStereo condition
 end
 
 return UI_MultiSelection

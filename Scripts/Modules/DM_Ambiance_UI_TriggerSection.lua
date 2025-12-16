@@ -155,18 +155,19 @@ end
 -- Draw the trigger settings section (shared by groups and containers)
 -- dataObj must expose: intervalMode, triggerRate, triggerDrift, fadeIn, fadeOut
 -- callbacks must provide setters for each parameter
-function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, autoRegenCallback, isGroup, groupPath, containerIndex)
+function TriggerSection.drawTriggerSettingsSection(dataObj, callbacks, width, titlePrefix, autoRegenCallback, isGroup, groupPath, containerIndex, stableId)
     local imgui = globals.imgui
     local UI = globals.UI
 
     -- Section separator and title
     imgui.Separator(globals.ctx)
-    imgui.Text(globals.ctx, titlePrefix .. "Generation Settings")
+    imgui.Text(globals.ctx, (titlePrefix or "") .. "Generation Settings")
 
     -- Initialize auto-regen tracking if not exists and callback provided
 
     -- Create unique tracking key for this function call
-    local trackingKey = tostring(dataObj) .. "_" .. (titlePrefix or "")
+    -- Use stableId if provided (for multi-selection), otherwise use titlePrefix or dataObj address
+    local trackingKey = stableId or ((titlePrefix and titlePrefix ~= "") and titlePrefix or tostring(dataObj))
 
     -- Helper function for auto-regeneration check
     local function checkAutoRegen(paramName, paramKey, oldValue, newValue)
@@ -1185,5 +1186,9 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
     -- Fade Settings section
     globals.UI.drawFadeSettingsSection(obj, objId, width, titlePrefix, groupPath, containerIndex)
 end
+
+-- Expose sub-modules for use in MultiSelection and other contexts
+TriggerSection.Noise = TriggerSection_Noise
+TriggerSection.Euclidean = TriggerSection_Euclidean
 
 return TriggerSection

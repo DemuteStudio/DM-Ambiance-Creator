@@ -660,17 +660,56 @@ function Structures.getContainerByID(containerID)
     return searchItems(globals.items)
 end
 
+-- Get a group from a path (supports both new path-based and legacy numeric index)
+-- @param groupPath table|number: Path to the group or legacy numeric index
+-- @return table|nil: The group, or nil if not found
+function Structures.getGroupFromPath(groupPath)
+    local group
+
+    -- Handle both path-based (table) and legacy numeric index
+    if type(groupPath) == "table" then
+        group = Structures.getItemFromPath(groupPath)
+    elseif type(groupPath) == "number" then
+        -- Legacy format: groupPath is a numeric index into globals.groups
+        group = globals.groups and globals.groups[groupPath]
+    end
+
+    -- Verify it's a group (either new format with type or legacy format)
+    if group and (group.type == "group" or group.containers) then
+        return group
+    end
+
+    return nil
+end
+
 -- Get a container from a group by index
 -- @param groupPath table: Path to the group
 -- @param containerIndex number: Index of the container (1-based)
 -- @return table|nil: The container, or nil if not found
 function Structures.getContainerFromGroup(groupPath, containerIndex)
-    local group = Structures.getItemFromPath(groupPath)
-    if not group or group.type ~= "group" or not group.containers then
+    local group
+
+    -- Handle both path-based (table) and legacy numeric index
+    if type(groupPath) == "table" then
+        group = Structures.getItemFromPath(groupPath)
+    elseif type(groupPath) == "number" then
+        -- Legacy format: groupPath is a numeric index into globals.groups
+        group = globals.groups and globals.groups[groupPath]
+    end
+
+    if not group then
         return nil
     end
 
-    return group.containers[containerIndex]
+    -- Handle both new format (group.type) and legacy format (direct group)
+    if group.type == "group" then
+        return group.containers and group.containers[containerIndex]
+    elseif group.containers then
+        -- Legacy group without type field
+        return group.containers[containerIndex]
+    end
+
+    return nil
 end
 
 -- Get the parent group of a container by its ID

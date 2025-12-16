@@ -237,6 +237,15 @@ function Core.toggleContainerSelection(groupIndex, containerIndex)
     globals.inMultiSelectMode = globals.UI_Groups.getSelectedContainersCount() > 1
 end
 
+-- Helper to compare paths for equality
+local function pathsEqual(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do
+        if a[i] ~= b[i] then return false end
+    end
+    return true
+end
+
 -- Select a range of containers between two points (supports cross-group selection)
 function Core.selectContainerRange(startGroupIndex, startContainerIndex, endGroupIndex, endContainerIndex)
     -- Clear selection if not in multi-select mode
@@ -244,42 +253,63 @@ function Core.selectContainerRange(startGroupIndex, startContainerIndex, endGrou
         Core.clearContainerSelections()
     end
 
-    -- Range selection within the same group
-    if startGroupIndex == endGroupIndex then
-        local group = globals.groups[startGroupIndex]
-        local startIdx = math.min(startContainerIndex, endContainerIndex)
-        local endIdx = math.max(startContainerIndex, endContainerIndex)
-        for i = startIdx, endIdx do
-            if i <= #group.containers then
-                globals.selectedContainers[startGroupIndex .. "_" .. i] = true
+    -- Detect if using new path-based system
+    local isPathBased = type(startGroupIndex) == "table"
+
+    if isPathBased then
+        -- Path-based range selection (new hierarchical system)
+        local startPath, endPath = startGroupIndex, endGroupIndex
+
+        -- For now: only support range within same path (same group)
+        if pathsEqual(startPath, endPath) then
+            local minIdx = math.min(startContainerIndex, endContainerIndex)
+            local maxIdx = math.max(startContainerIndex, endContainerIndex)
+            for i = minIdx, maxIdx do
+                local key = globals.Utils.makeContainerKey(startPath, i)
+                globals.selectedContainers[key] = true
             end
         end
-        return
-    end
-
-    -- Range selection across groups
-    local startGroup = math.min(startGroupIndex, endGroupIndex)
-    local endGroup = math.max(startGroupIndex, endGroupIndex)
-    local firstContainerIdx, lastContainerIdx
-    if startGroupIndex < endGroupIndex then
-        firstContainerIdx, lastContainerIdx = startContainerIndex, endContainerIndex
+        -- Cross-path selection not supported yet (complex with hierarchical structure)
     else
-        firstContainerIdx, lastContainerIdx = endContainerIndex, startContainerIndex
-    end
+        -- Legacy numeric index system
+        -- Range selection within the same group
+        if startGroupIndex == endGroupIndex then
+            local group = globals.groups[startGroupIndex]
+            local startIdx = math.min(startContainerIndex, endContainerIndex)
+            local endIdx = math.max(startContainerIndex, endContainerIndex)
+            for i = startIdx, endIdx do
+                if i <= #group.containers then
+                    globals.selectedContainers[startGroupIndex .. "_" .. i] = true
+                end
+            end
+            globals.inMultiSelectMode = globals.UI_Groups.getSelectedContainersCount() > 1
+            return
+        end
 
-    for t = startGroup, endGroup do
-        if globals.groups[t] then
-            if t == startGroup then
-                for c = firstContainerIdx, #globals.groups[t].containers do
-                    globals.selectedContainers[t .. "_" .. c] = true
-                end
-            elseif t == endGroup then
-                for c = 1, lastContainerIdx do
-                    globals.selectedContainers[t .. "_" .. c] = true
-                end
-            else
-                for c = 1, #globals.groups[t].containers do
-                    globals.selectedContainers[t .. "_" .. c] = true
+        -- Range selection across groups
+        local startGroup = math.min(startGroupIndex, endGroupIndex)
+        local endGroup = math.max(startGroupIndex, endGroupIndex)
+        local firstContainerIdx, lastContainerIdx
+        if startGroupIndex < endGroupIndex then
+            firstContainerIdx, lastContainerIdx = startContainerIndex, endContainerIndex
+        else
+            firstContainerIdx, lastContainerIdx = endContainerIndex, startContainerIndex
+        end
+
+        for t = startGroup, endGroup do
+            if globals.groups[t] then
+                if t == startGroup then
+                    for c = firstContainerIdx, #globals.groups[t].containers do
+                        globals.selectedContainers[t .. "_" .. c] = true
+                    end
+                elseif t == endGroup then
+                    for c = 1, lastContainerIdx do
+                        globals.selectedContainers[t .. "_" .. c] = true
+                    end
+                else
+                    for c = 1, #globals.groups[t].containers do
+                        globals.selectedContainers[t .. "_" .. c] = true
+                    end
                 end
             end
         end

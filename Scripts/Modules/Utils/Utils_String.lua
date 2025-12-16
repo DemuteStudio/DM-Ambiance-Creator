@@ -135,21 +135,26 @@ function Utils_String.parseContainerKey(key)
         return nil, nil
     end
 
-    local parts = {}
-    for part in key:gmatch("[^_]+") do
-        table.insert(parts, tonumber(part))
+    -- Find the last underscore to separate path from container index
+    local lastUnderscorePos = key:match(".*()_")
+
+    if not lastUnderscorePos then
+        -- No underscore - just a container index (empty path)
+        local containerIndex = tonumber(key)
+        return {}, containerIndex
     end
 
-    if #parts == 0 then
+    -- Split into path string and container index
+    local pathStr = key:sub(1, lastUnderscorePos - 1)
+    local containerIndexStr = key:sub(lastUnderscorePos + 1)
+
+    local containerIndex = tonumber(containerIndexStr)
+    if not containerIndex then
         return nil, nil
     end
 
-    -- Last part is container index, rest is path
-    local containerIndex = parts[#parts]
-    local path = {}
-    for i = 1, #parts - 1 do
-        path[i] = parts[i]
-    end
+    -- Parse path string (comma-separated) back to array
+    local path = Utils_String.pathFromString(pathStr)
 
     return path, containerIndex
 end

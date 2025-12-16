@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.10.3-beta
+@version 0.10.4-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -13,13 +13,14 @@
     [nomain] Modules/UI/*.lua
     Icons/*.png
 @changelog
-  # Version 0.10.3-beta - UI Improvements & ReaPack Fix
-
-  ## New Features
-  + Added version number display next to Settings button in header
+  # Version 0.10.4-beta - Multi-Selection Fixes
 
   ## Bug Fixes
-  + Fixed ReaPack @provides to include all module subdirectories (Audio/, Routing/, Utils/, UI/)
+  + Fixed crash when using Shift+Click multi-selection (table comparison error)
+  + Fixed randomization sliders not appearing in multi-selection panel
+  + Fixed interval mode dropdown not working in multi-selection
+  + Fixed pan controls hidden when any selected container was multichannel
+  + Multi-selection trigger settings now use standard UI when mode is unified
 --]]
 
 -- Check if ReaImGui is available; display an error and exit if not
@@ -73,7 +74,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.10.3-beta",          -- Script version (sync with @version header)
+    version = "0.10.4-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
