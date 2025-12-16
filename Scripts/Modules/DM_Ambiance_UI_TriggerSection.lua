@@ -143,10 +143,11 @@ local function drawSliderWithVariation(params)
 
         -- Only check auto-regen if NOT a reset
         if not wasResetVar then
-            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and autoRegenCallback and globals.autoRegenTracking[varKey] then
+            if imgui.IsItemDeactivatedAfterEdit(globals.ctx) and globals.autoRegenTracking[varKey] then
                 local oldValue = globals.autoRegenTracking[varKey]
-                if oldValue ~= variationValue and globals.timeSelectionValid then
-                    autoRegenCallback(varKey, oldValue, variationValue)
+                local newValue = math.floor(newVar + 0.5)  -- Use the actual new value from the knob
+                if oldValue ~= newValue and globals.timeSelectionValid and autoRegenCallback then
+                    autoRegenCallback(varKey, oldValue, newValue)
                 end
                 globals.autoRegenTracking[varKey] = nil
             end

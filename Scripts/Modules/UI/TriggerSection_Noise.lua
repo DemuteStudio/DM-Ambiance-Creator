@@ -179,10 +179,11 @@ function TriggerSection_Noise.drawDensityRange(dataObj, callbacks, trackingKey, 
         }
     end
     if not anyActive and globals.linkedSlidersTracking[trackingKey_density] then
-        local hasChanged = math.abs(dataObj.noiseThreshold - globals.linkedSlidersTracking[trackingKey_density].originalValues[1]) > 0.001
-            or math.abs(dataObj.noiseDensity - globals.linkedSlidersTracking[trackingKey_density].originalValues[2]) > 0.001
+        local origValues = globals.linkedSlidersTracking[trackingKey_density].originalValues
+        local hasChanged = math.abs(dataObj.noiseThreshold - origValues[1]) > 0.001
+            or math.abs(dataObj.noiseDensity - origValues[2]) > 0.001
         if hasChanged and checkAutoRegen then
-            checkAutoRegen("densityRange", trackingKey_density, nil, {dataObj.noiseThreshold, dataObj.noiseDensity})
+            checkAutoRegen("densityRange", origValues, {dataObj.noiseThreshold, dataObj.noiseDensity})
         end
         globals.linkedSlidersTracking[trackingKey_density] = nil
     end
@@ -222,7 +223,7 @@ function TriggerSection_Noise.drawAlgorithmSelector(dataObj, callbacks, tracking
     if rv then
         callbacks.setNoiseAlgorithm(newAlgorithm)
         if checkAutoRegen then
-            checkAutoRegen("noiseAlgorithm", trackingKey .. "_algorithm", currentAlgorithm, newAlgorithm)
+            checkAutoRegen("noiseAlgorithm", currentAlgorithm, newAlgorithm)
         end
     end
     imgui.PopItemWidth(globals.ctx)
