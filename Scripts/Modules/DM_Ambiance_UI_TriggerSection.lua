@@ -20,6 +20,12 @@ local TriggerSection_Euclidean = dofile(modulePath .. "UI/TriggerSection_Euclide
 
 function TriggerSection.initModule(g)
     globals = g
+
+    -- Initialize tracking table for variation sliders auto-regeneration
+    if not globals.autoRegenTracking then
+        globals.autoRegenTracking = {}
+    end
+
     -- Initialize sub-modules
     TriggerSection_Noise.initModule(g)
     TriggerSection_Euclidean.initModule(g)
