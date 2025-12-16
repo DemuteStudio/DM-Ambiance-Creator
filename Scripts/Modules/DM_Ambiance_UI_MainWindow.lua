@@ -290,13 +290,26 @@ local function renderTopSection()
     -- Top section: preset controls and generation button
     UI_Preset.drawPresetControls()
 
-    -- Settings button positioned at the far right
+    -- Version and Settings button positioned at the far right (on same line)
     local settingsButtonWidth = 14  -- Icon size
     local windowWidth = globals.imgui.GetWindowWidth(globals.ctx)
-    local cursorX = globals.imgui.GetCursorPosX(globals.ctx)
     local spacing = globals.imgui.GetStyleVar(globals.ctx, globals.imgui.StyleVar_ItemSpacing)
+
+    -- Calculate width needed for version text + spacing + settings button
+    local versionText = globals.version or "0.0.0"
+    local versionTextWidth = globals.imgui.CalcTextSize(globals.ctx, versionText)
+    local totalWidth = versionTextWidth + spacing + settingsButtonWidth
+
     globals.imgui.SameLine(globals.ctx)
-    globals.imgui.SetCursorPosX(globals.ctx, windowWidth - settingsButtonWidth - spacing - 10)
+    globals.imgui.SetCursorPosX(globals.ctx, windowWidth - totalWidth - 10)
+
+    -- Version text (dimmed, left of settings button)
+    globals.imgui.PushStyleColor(globals.ctx, globals.imgui.Col_Text, 0x888888FF)
+    globals.imgui.Text(globals.ctx, versionText)
+    globals.imgui.PopStyleColor(globals.ctx)
+
+    -- Settings button (same line, right of version)
+    globals.imgui.SameLine(globals.ctx)
     if globals.Icons.createSettingsButton(globals.ctx, "main", "Open settings") then
         globals.showSettingsWindow = true
     end

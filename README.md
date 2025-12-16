@@ -456,6 +456,8 @@ You can also customize the interface in the Settings.
 
 ## Planned future additions:
 
+***If you have any feature suggestion, please fill this <u>[form](https://airtable.com/appGFEKYmjLSMhMyD/pagw3ISZVUrxrWb5j/form)</u>***
+
 - **Preview Listening for Containers/Groups**: A new function will enable you to preview the sound of a container or an entire group directly within the interface before generating it in REAPER, saving time in the creative process.
 - **Flexible Group Generation Options**: The ability to generate content into a new group, a specific existing group chosen from a list, or directly into the currently selected group, providing more workflow flexibility and integration with existing projects.
 - **Action List**: Adds some Reaper actions to manipulate containers outside of the tool interface.
@@ -466,6 +468,7 @@ You can also customize the interface in the Settings.
 
 ## Known Issues
 
+***Please, if y ou have any issue, report it through this <u>[form](https://airtable.com/appGFEKYmjLSMhMyD/pagMuGETVTpLJfpmy/form)</u>***
 
 ## Change log
 
