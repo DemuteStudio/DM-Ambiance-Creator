@@ -2254,7 +2254,7 @@ function Utils_REAPER.applyRandomizationToItem(item, take, itemData, effectivePa
                 -- Use time stretch (D_PLAYRATE)
                 local playrate = Utils_Math.semitonesToPlayrate(randomPitch)
                 reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", playrate)
-                reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1)  -- Enable preserve pitch
+                reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 0)  -- Disable preserve pitch to allow pitch change
                 -- Reset D_PITCH to 0 to avoid conflicts
                 reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", 0)
             else
@@ -2269,7 +2269,7 @@ function Utils_REAPER.applyRandomizationToItem(item, take, itemData, effectivePa
             if effectiveParams.pitchMode == Constants.PITCH_MODES.STRETCH then
                 local playrate = Utils_Math.semitonesToPlayrate(itemData.originalPitch)
                 reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", playrate)
-                reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1)
+                reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 0)
                 reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", 0)
             else
                 reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", itemData.originalPitch)

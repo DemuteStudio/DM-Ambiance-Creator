@@ -1434,13 +1434,13 @@ function Generation_MultiChannel.syncPitchModeOnExistingItems(group, container)
                         reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", 0)
                     end
                 else
-                    -- PITCH mode: Reset B_PPITCH to default (doesn't matter for D_PITCH)
+                    -- PITCH mode: Reset B_PPITCH to 0 for consistency
                     -- Convert from D_PLAYRATE back to D_PITCH if needed
                     if currentPlayrate ~= 1.0 then
                         local semitones = Utils.playrateToSemitones(currentPlayrate)
                         reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", semitones)
                         reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", 1.0)
-                        reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1)
+                        reaper.SetMediaItemTakeInfo_Value(take, "B_PPITCH", 0)
                     end
                 end
             end
