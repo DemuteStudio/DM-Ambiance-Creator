@@ -15,12 +15,15 @@
 @changelog
   # Version 0.10.4-beta - Multi-Selection Fixes
 
+  ## New Features
+  + Added version display next to Settings button
+
   ## Bug Fixes
-  + Fixed crash when using Shift+Click multi-selection (table comparison error)
+  + Fixed crash when using Shift+Click multi-selection
   + Fixed randomization sliders not appearing in multi-selection panel
   + Fixed interval mode dropdown not working in multi-selection
   + Fixed pan controls hidden when any selected container was multichannel
-  + Multi-selection trigger settings now use standard UI when mode is unified
+  + Fixed ReaPack package installation for new module structure
 --]]
 
 -- Check if ReaImGui is available; display an error and exit if not
