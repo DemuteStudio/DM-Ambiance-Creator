@@ -978,12 +978,17 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
             -- Note: needsRegeneration set in onChangeComplete, not during drag
         end,
         onChangeComplete = function()
-            -- Note: Randomization parameters don't require full regeneration
-            -- They only affect values applied to existing items
-            if groupPath and containerIndex then
-                globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "pitch")
-            elseif groupPath then
-                globals.Utils.queueRandomizationUpdate(groupPath, nil, "pitch")
+            -- STRETCH mode changes item duration due to playrate, requires full regeneration
+            -- PITCH mode only changes pitch property, can update existing items
+            if obj.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
+                obj.needsRegeneration = true
+            else
+                -- Standard pitch mode: just update randomization on existing items
+                if groupPath and containerIndex then
+                    globals.Utils.queueRandomizationUpdate(groupPath, containerIndex, "pitch")
+                elseif groupPath then
+                    globals.Utils.queueRandomizationUpdate(groupPath, nil, "pitch")
+                end
             end
         end,
         onLinkModeChange = function(newMode)
