@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.10.5-beta
+@version 0.15.6-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -13,6 +13,35 @@
     [nomain] Modules/UI/*.lua
     Icons/*.png
 @changelog
+  # Version 0.15.6-beta - STRETCH Mode Item Length & Pitch Preservation Fixes
+
+  ## Bug Fixes
+  + Fixed B_PPITCH property in STRETCH mode causing pitch preservation bug
+    - When modifying pitch range values in STRETCH mode, B_PPITCH was incorrectly set to 1 (preserve pitch)
+    - This prevented time-stretched items from changing pitch with playrate
+    - Now correctly sets B_PPITCH to 0 in STRETCH mode to allow pitch to change with playrate
+  + Fixed item length adjustment in STRETCH mode for playrate changes
+    - In STRETCH mode, playrate affects the effective duration of audio content
+    - Items now have their D_LENGTH adjusted to accommodate stretched/compressed audio
+    - Formula: adjustedLength = originalLength / playrate
+    - Example: 2s item with -12 semitones (playrate 0.5) now has 4s length instead of 2s
+    - Prevents audio clipping when playrate < 1.0 (negative pitch)
+  + COVERAGE mode now uses adjusted length for interval calculation
+    - Coverage percentage now reflects actual audio duration perceived by listener
+    - Ensures accurate coverage even when items are time-stretched
+
+  ## New Features
+  + Auto-regeneration when pitch range changes in STRETCH mode
+    - Changing pitch min/max values in STRETCH mode now triggers automatic regeneration
+    - Necessary because STRETCH mode uses playrate which affects item duration
+    - PITCH mode continues to only update randomization on existing items
+
+  ## Technical Changes
+  + Modified 5 generation locations to calculate and adjust item length before setting D_LENGTH
+  + Pitch/playrate now calculated BEFORE D_LENGTH assignment in all generation modes
+  + Re-clamp adjusted length to timeline bounds to prevent overflow
+  + Updated files: Generation_ItemPlacement.lua, Generation_Modes.lua, Utils_REAPER.lua, Generation_MultiChannel.lua, UI_TriggerSection.lua
+
   # Version 0.10.5-beta - Multi-Selection & Auto-Regeneration Fixes
 
   ## New Features
@@ -87,7 +116,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.10.5-beta",          -- Script version (sync with @version header)
+    version = "0.15.6-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
