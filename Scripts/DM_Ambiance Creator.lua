@@ -149,7 +149,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.10.7-beta",          -- Script version (sync with @version header)
+    version = "0.10.8-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
