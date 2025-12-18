@@ -399,11 +399,11 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
                 end
             end
             -- Default: mark group (if not in AutoBind mode)
-            reaper.ShowConsoleMsg("[checkAutoRegen] Marking GROUP for regeneration\n")
+            --reaper.ShowConsoleMsg("[checkAutoRegen] Marking GROUP for regeneration\n")
             obj.needsRegeneration = true
         else
             -- Mark container
-            reaper.ShowConsoleMsg("[checkAutoRegen] Marking CONTAINER for regeneration\n")
+            -- reaper.ShowConsoleMsg("[checkAutoRegen] Marking CONTAINER for regeneration\n")
             obj.needsRegeneration = true
         end
     end
