@@ -118,6 +118,7 @@ Utils.clearGroupItemsInTimeSelection = Utils_REAPER.clearGroupItemsInTimeSelecti
 Utils.reorganizeTracksAfterGroupReorder = Utils_REAPER.reorganizeTracksAfterGroupReorder
 Utils.reorganizeTracksAfterContainerMove = Utils_REAPER.reorganizeTracksAfterContainerMove
 Utils.createCrossfade = Utils_REAPER.createCrossfade
+Utils.applyCrossfadesToTrack = Utils_REAPER.applyCrossfadesToTrack
 Utils.setContainerTrackVolume = Utils_REAPER.setContainerTrackVolume
 Utils.getContainerTrackVolume = Utils_REAPER.getContainerTrackVolume
 Utils.setChannelTrackVolume = Utils_REAPER.setChannelTrackVolume

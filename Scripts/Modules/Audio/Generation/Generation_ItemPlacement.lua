@@ -149,11 +149,14 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             -- For multi-channel (including stereo with mono split), generate on each track
             if #channelTracks > 1 then
                 for _, channelTrack in ipairs(channelTracks) do
-                    Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, channelTrack, xfadeshape)
+                    Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, channelTrack)
+                    globals.Utils.applyCrossfadesToTrack(channelTrack)
                 end
                 return
             else
-                return Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, containerGroup, xfadeshape)
+                Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, containerGroup)
+                globals.Utils.applyCrossfadesToTrack(containerGroup)
+                return
             end
         elseif effectiveParams.intervalMode == 4 then
             -- Noise mode: Place items based on Perlin noise probability
@@ -161,10 +164,13 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             if #channelTracks > 1 then
                 for _, channelTrack in ipairs(channelTracks) do
                     globals.Generation.placeItemsNoiseMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
+                    globals.Utils.applyCrossfadesToTrack(channelTrack)
                 end
                 return
             else
-                return globals.Generation.placeItemsNoiseMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
+                globals.Generation.placeItemsNoiseMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
+                globals.Utils.applyCrossfadesToTrack(containerGroup)
+                return
             end
         elseif effectiveParams.intervalMode == 5 then
             -- Euclidean Rhythm mode
@@ -172,10 +178,13 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             if #channelTracks > 1 then
                 for _, channelTrack in ipairs(channelTracks) do
                     globals.Generation.placeItemsEuclideanMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
+                    globals.Utils.applyCrossfadesToTrack(channelTrack)
                 end
                 return
             else
-                return globals.Generation.placeItemsEuclideanMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
+                globals.Generation.placeItemsEuclideanMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
+                globals.Utils.applyCrossfadesToTrack(containerGroup)
+                return
             end
         end
 
@@ -193,6 +202,7 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
 
             for trackIdx, targetTrack in ipairs(channelTracks) do
                 Generation_ItemPlacement.generateIndependentTrack(targetTrack, trackIdx, container, effectiveParams, channelTracks, trackStructure, needsChannelSelection, channelSelectionMode)
+                globals.Utils.applyCrossfadesToTrack(targetTrack)
             end
 
             -- Exit completely - independent generation is done
@@ -526,13 +536,8 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                     reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
                 end
 
-                -- Create crossfade if items overlap (negative triggerRate)
-                -- Only for the first target track to avoid duplicate crossfades
-                if i == 1 and lastItemRef and position < lastItemEnd then
-                    globals.Utils.createCrossfade(lastItemRef, newItem, xfadeshape)
-                end
-
-                -- Update references for next iteration (only from first track)
+                -- Update global references for next iteration (only from first track)
+                -- Used for loop control and position calculation
                 if i == 1 then
                     -- Coverage mode with drift:
                     -- - lastItemEnd = actual end of placed item (for collision detection)
@@ -554,6 +559,16 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
 
             ::continue_loop::
         end  -- End of while loop
+
+        -- Apply crossfades to all overlapping items on each track
+        -- Using REAPER's built-in action 41059 for unified crossfade handling
+        if #channelTracks > 0 then
+            for _, track in ipairs(channelTracks) do
+                globals.Utils.applyCrossfadesToTrack(track)
+            end
+        else
+            globals.Utils.applyCrossfadesToTrack(containerGroup)
+        end
 
         -- Message d'erreur pour les items skippés
         if skippedItems > 0 then
@@ -627,8 +642,7 @@ end
 --- Creates structured patterns of sound chunks separated by silence periods
 --- @param effectiveParams table: Container parameters with chunk settings
 --- @param containerGroup userdata: REAPER track to place items on
---- @param xfadeshape number: Crossfade shape from REAPER preferences
-function Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, containerGroup, xfadeshape)
+function Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, containerGroup)
     if not effectiveParams.items or #effectiveParams.items == 0 then
         return
     end
@@ -663,7 +677,7 @@ function Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, container
 
         -- Generate items within this chunk period
         if chunkEnd > currentTime then
-            lastItemRef = Generation_ItemPlacement.generateItemsInTimeRange(effectiveParams, containerGroup, currentTime, chunkEnd, lastItemRef, xfadeshape)
+            lastItemRef = Generation_ItemPlacement.generateItemsInTimeRange(effectiveParams, containerGroup, currentTime, chunkEnd, lastItemRef)
         end
 
         -- Progress using the actual durations that were calculated
@@ -686,9 +700,8 @@ end
 --- @param rangeStart number: Start time of the chunk
 --- @param rangeEnd number: End time of the chunk
 --- @param lastItemRef userdata: Reference to last placed item
---- @param xfadeshape number: Crossfade shape from REAPER preferences
 --- @return userdata: Reference to last placed item
-function Generation_ItemPlacement.generateItemsInTimeRange(effectiveParams, containerGroup, rangeStart, rangeEnd, lastItemRef, xfadeshape)
+function Generation_ItemPlacement.generateItemsInTimeRange(effectiveParams, containerGroup, rangeStart, rangeEnd, lastItemRef)
     local rangeLength = rangeEnd - rangeStart
     if rangeLength <= 0 then
         return lastItemRef
@@ -856,11 +869,6 @@ function Generation_ItemPlacement.generateItemsInTimeRange(effectiveParams, cont
             reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", fadeOutDuration)
             reaper.SetMediaItemInfo_Value(newItem, "C_FADEOUTSHAPE", effectiveParams.fadeOutShape or 0)
             reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
-        end
-
-        -- Create crossfade if items overlap
-        if lastItemRef and position < (reaper.GetMediaItemInfo_Value(lastItemRef, "D_POSITION") + reaper.GetMediaItemInfo_Value(lastItemRef, "D_LENGTH")) then
-            globals.Utils.createCrossfade(lastItemRef, newItem, xfadeshape)
         end
 
         lastItemRef = newItem

@@ -541,6 +541,45 @@ function Utils_REAPER.createCrossfade(item1, item2, fadeShape)
     return false
 end
 
+-- Apply crossfades to all overlapping items on a track using REAPER's built-in action
+-- This is a unified approach that works for all generation modes
+-- @param track MediaTrack: The track to apply crossfades to
+-- @return number: Number of items processed
+function Utils_REAPER.applyCrossfadesToTrack(track)
+    if not track then return 0 end
+
+    local itemCount = reaper.CountTrackMediaItems(track)
+    if itemCount < 2 then return itemCount end  -- Need at least 2 items for crossfades
+
+    -- Save current item selection
+    local savedSelection = {}
+    for i = 0, reaper.CountSelectedMediaItems(0) - 1 do
+        savedSelection[i + 1] = reaper.GetSelectedMediaItem(0, i)
+    end
+
+    -- Unselect all items
+    reaper.SelectAllMediaItems(0, false)
+
+    -- Select all items on this track
+    for i = 0, itemCount - 1 do
+        local item = reaper.GetTrackMediaItem(track, i)
+        reaper.SetMediaItemSelected(item, true)
+    end
+
+    -- Apply crossfades to overlapping items (REAPER action 41059)
+    reaper.Main_OnCommand(41059, 0)
+
+    -- Restore previous selection
+    reaper.SelectAllMediaItems(0, false)
+    for _, item in ipairs(savedSelection) do
+        if reaper.ValidatePtr(item, "MediaItem*") then
+            reaper.SetMediaItemSelected(item, true)
+        end
+    end
+
+    return itemCount
+end
+
 -- ============================================================================
 -- VOLUME CONTROL (TRACK-LEVEL)
 -- ============================================================================
