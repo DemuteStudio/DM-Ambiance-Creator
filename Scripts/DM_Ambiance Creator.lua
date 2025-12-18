@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.15.6-beta
+@version 0.10.7-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -13,7 +13,27 @@
     [nomain] Modules/UI/*.lua
     Icons/*.png
 @changelog
-  # Version 0.15.6-beta - STRETCH Mode Item Length & Pitch Preservation Fixes
+  # Version 0.10.7-beta - Stereo Mono Split & Multi-Channel Fixes
+
+  ## Bug Fixes
+  + Fixed stereo mono split not creating child tracks (was doing mono downmix instead)
+    - Stereo containers with mono split now properly create 2 child tracks (L/R)
+    - Track Structure Preview now displays correct info
+  + Fixed 7.0 surround with stereo items creating only 4 tracks instead of 6
+    - Now correctly creates 3 stereo pairs: L+R, LS+RS, LB+RB
+    - 5.0 continues to create 2 stereo pairs (L+R, LS+RS) as expected
+  + Fixed multiple nil function crashes in Generation_Core.lua
+    - getExistingChannelTracks, deleteContainerChildTracks, clearChannelTracks
+    - Functions were called on wrong module (Generation_MultiChannel instead of Generation_TrackManagement)
+  + Fixed Item Distribution dropdown not showing for stereo with mono split
+    - Round-robin, Random, All tracks modes now available for stereo mono split
+
+  ## Technical Changes
+  + Refactored channel extraction into unified determineChannelExtraction() function
+  + Added trackLabels to split-to-mono strategy for proper track naming
+  + Fixed channel mode checks to use #channelTracks > 1 instead of channelMode > 0
+
+  # Version 0.10.6-beta - STRETCH Mode Item Length & Pitch Preservation Fixes
 
   ## Bug Fixes
   + Fixed B_PPITCH property in STRETCH mode causing pitch preservation bug
@@ -116,7 +136,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.15.6-beta",          -- Script version (sync with @version header)
+    version = "0.10.7-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
