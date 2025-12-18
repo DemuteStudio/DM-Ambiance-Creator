@@ -32,9 +32,6 @@ end
 --- @param containerGroup userdata: REAPER track to place items on
 --- @param xfadeshape number: Crossfade shape from REAPER preferences
 function Generation_ItemPlacement.placeItemsForContainer(group, container, containerGroup, xfadeshape)
-    -- Prevent UI flickering during item placement and crossfade operations
-    reaper.PreventUIRefresh(1)
-
     -- Get effective parameters considering inheritance from parent group
     local effectiveParams = globals.Structures.getEffectiveContainerParams(group, container)
 
@@ -155,12 +152,10 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                     Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, channelTrack)
                     globals.Utils.applyCrossfadesToTrack(channelTrack)
                 end
-                reaper.PreventUIRefresh(-1)
                 return
             else
                 Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, containerGroup)
                 globals.Utils.applyCrossfadesToTrack(containerGroup)
-                reaper.PreventUIRefresh(-1)
                 return
             end
         elseif effectiveParams.intervalMode == 4 then
@@ -171,12 +166,10 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                     globals.Generation.placeItemsNoiseMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
                     globals.Utils.applyCrossfadesToTrack(channelTrack)
                 end
-                reaper.PreventUIRefresh(-1)
                 return
             else
                 globals.Generation.placeItemsNoiseMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
                 globals.Utils.applyCrossfadesToTrack(containerGroup)
-                reaper.PreventUIRefresh(-1)
                 return
             end
         elseif effectiveParams.intervalMode == 5 then
@@ -187,12 +180,10 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                     globals.Generation.placeItemsEuclideanMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
                     globals.Utils.applyCrossfadesToTrack(channelTrack)
                 end
-                reaper.PreventUIRefresh(-1)
                 return
             else
                 globals.Generation.placeItemsEuclideanMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
                 globals.Utils.applyCrossfadesToTrack(containerGroup)
-                reaper.PreventUIRefresh(-1)
                 return
             end
         end
@@ -215,7 +206,6 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             end
 
             -- Exit completely - independent generation is done
-            reaper.PreventUIRefresh(-1)
             return
         end
 
@@ -642,8 +632,6 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
         globals.crossfadeItems[containerGroup] = nil
     end
 
-    -- Re-enable UI refresh
-    reaper.PreventUIRefresh(-1)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
