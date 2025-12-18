@@ -145,13 +145,25 @@ function Generation_Modes.determineTrackStructure(container, itemsAnalysis)
                     needsChannelSelection = false,
                     useDistribution = true
                 }
-            elseif outputChannels >= 5 then
+            elseif outputChannels == 5 then
+                -- 5.0: 2 stereo pairs (L+R, LS+RS) - skip center
                 return {
-                    strategy = "stereo-pairs-surround",
+                    strategy = "stereo-pairs-surround-5",
                     numTracks = 2,
                     trackType = "stereo",
                     trackChannels = 2,
                     trackLabels = {"L+R", "LS+RS"},
+                    needsChannelSelection = false,
+                    useDistribution = true
+                }
+            elseif outputChannels >= 7 then
+                -- 7.0: 3 stereo pairs (L+R, LS+RS, LB+RB) - skip center
+                return {
+                    strategy = "stereo-pairs-surround-7",
+                    numTracks = 3,
+                    trackType = "stereo",
+                    trackChannels = 2,
+                    trackLabels = {"L+R", "LS+RS", "LB+RB"},
                     needsChannelSelection = false,
                     useDistribution = true
                 }

@@ -1299,13 +1299,25 @@ function Generation_MultiChannel.determineAutoOptimization(container, itemsAnaly
                 needsChannelSelection = false,
                 useDistribution = true
             }
-        else  -- 5.0 or 7.0
+        elseif outputChannels == 5 then
+            -- 5.0: 2 stereo pairs (L+R, LS+RS) - skip center
             return {
-                strategy = "auto-stereo-pairs-surround",
+                strategy = "auto-stereo-pairs-surround-5",
                 numTracks = 2,
                 trackType = "stereo",
                 trackChannels = 2,
                 trackLabels = {"L+R", "LS+RS"},
+                needsChannelSelection = false,
+                useDistribution = true
+            }
+        else  -- 7.0
+            -- 7.0: 3 stereo pairs (L+R, LS+RS, LB+RB) - skip center
+            return {
+                strategy = "auto-stereo-pairs-surround-7",
+                numTracks = 3,
+                trackType = "stereo",
+                trackChannels = 2,
+                trackLabels = {"L+R", "LS+RS", "LB+RB"},
                 needsChannelSelection = false,
                 useDistribution = true
             }
