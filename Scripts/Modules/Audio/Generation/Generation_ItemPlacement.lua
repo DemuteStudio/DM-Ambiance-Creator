@@ -146,8 +146,8 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             interval = 0 -- Will be calculated per item in the loop
         elseif effectiveParams.intervalMode == 3 then
             -- Chunk mode: Generate chunks with sound periods followed by silence periods
-            -- For multi-channel, generate on each track
-            if container.channelMode and container.channelMode > 0 then
+            -- For multi-channel (including stereo with mono split), generate on each track
+            if #channelTracks > 1 then
                 for _, channelTrack in ipairs(channelTracks) do
                     Generation_ItemPlacement.placeItemsChunkMode(effectiveParams, channelTrack, xfadeshape)
                 end
@@ -157,8 +157,8 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             end
         elseif effectiveParams.intervalMode == 4 then
             -- Noise mode: Place items based on Perlin noise probability
-            -- For multi-channel, generate on each track
-            if container.channelMode and container.channelMode > 0 then
+            -- For multi-channel (including stereo with mono split), generate on each track
+            if #channelTracks > 1 then
                 for _, channelTrack in ipairs(channelTracks) do
                     globals.Generation.placeItemsNoiseMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
                 end
@@ -168,7 +168,8 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             end
         elseif effectiveParams.intervalMode == 5 then
             -- Euclidean Rhythm mode
-            if container.channelMode and container.channelMode > 0 then
+            -- For multi-channel (including stereo with mono split), generate on each track
+            if #channelTracks > 1 then
                 for _, channelTrack in ipairs(channelTracks) do
                     globals.Generation.placeItemsEuclideanMode(effectiveParams, channelTrack, channelTracks, container, trackStructure, xfadeshape)
                 end
@@ -177,10 +178,6 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                 return globals.Generation.placeItemsEuclideanMode(effectiveParams, containerGroup, channelTracks, container, trackStructure, xfadeshape)
             end
         end
-
-        -- Generate items considering channel count matching
-        -- For multichannel containers, we need to intelligently distribute items
-        local isMultiChannel = container.channelMode and container.channelMode > 0
 
         -- Analyze items and determine track structure for placement logic
         local itemsAnalysis = Generation_MultiChannel.analyzeContainerItems(container)
@@ -247,13 +244,20 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             -- If no custom routing, use automatic distribution
             local distributionMode = container.itemDistributionMode or 0
 
+            -- Track indices for channel extraction (maps position in targetTracks to real track index)
+            local targetTrackIndices = {}
+
             if not useCustomRouting then
                 if trackStructure.numTracks == 1 then
                     -- Single track: place item there
                     targetTracks = {channelTracks[1]}
+                    targetTrackIndices = {1}
                 elseif trackStructure.useSmartRouting then
                     -- Smart routing: place on all tracks (each will extract different channel)
                     targetTracks = channelTracks
+                    for i = 1, #channelTracks do
+                        targetTrackIndices[i] = i
+                    end
                 elseif trackStructure.useDistribution then
                     -- Mono items or items that need distribution: distribute across tracks
 
@@ -265,15 +269,30 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                         container.distributionCounter = container.distributionCounter + 1
                         local targetChannel = ((container.distributionCounter - 1) % #channelTracks) + 1
                         targetTracks = {channelTracks[targetChannel]}
+                        targetTrackIndices = {targetChannel}  -- Store real track index!
                     elseif distributionMode == 1 then
                         -- Random
                         local targetChannel = math.random(1, #channelTracks)
                         targetTracks = {channelTracks[targetChannel]}
+                        targetTrackIndices = {targetChannel}  -- Store real track index!
                     -- distributionMode == 2 (All tracks) is handled BEFORE the main loop
                     end
                 else
                     -- All other cases: use all tracks or first track
                     targetTracks = channelTracks
+                    for i = 1, #channelTracks do
+                        targetTrackIndices[i] = i
+                    end
+                end
+            else
+                -- Custom routing: build indices from channelTracks positions
+                for i, track in ipairs(targetTracks) do
+                    for j, chTrack in ipairs(channelTracks) do
+                        if track == chTrack then
+                            targetTrackIndices[i] = j
+                            break
+                        end
+                    end
                 end
             end
 
@@ -371,7 +390,10 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
             end
 
             -- Place the item on all target tracks determined by channel routing
-            for trackIdx, targetTrack in ipairs(targetTracks) do
+            for i, targetTrack in ipairs(targetTracks) do
+                -- Get the real track index for channel extraction
+                local realTrackIdx = targetTrackIndices[i] or i
+
                 -- Create and configure the new item on current track
                 local newItem = reaper.AddMediaItemToTrack(targetTrack)
                 local newTake = reaper.AddTakeToMediaItem(newItem)
@@ -381,9 +403,9 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
                 reaper.SetMediaItemTake_Source(newTake, PCM_source)
                 reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
 
-                -- Apply channel selection if needed
+                -- Apply channel selection if needed (use real track index for correct channel extraction)
                 if needsChannelSelection then
-                    Generation_MultiChannel.applyChannelSelection(newItem, container, itemChannels, channelSelectionMode, trackStructure, trackIdx)
+                    Generation_MultiChannel.applyChannelSelection(newItem, container, itemChannels, channelSelectionMode, trackStructure, realTrackIdx)
                 end
 
                 -- Trim item so it never exceeds the selection end
@@ -409,7 +431,7 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
 
                 -- Coverage mode: calculate interval based on ACTUAL item length (after trimming and playrate adjustment)
                 -- This ensures accurate coverage even when items are trimmed at timeline end or stretched
-                if effectiveParams.intervalMode == 2 and trackIdx == 1 then
+                if effectiveParams.intervalMode == 2 and i == 1 then
                     local coveragePercent = effectiveParams.triggerRate
                     if coveragePercent > 0 then
                         interval = actualLen * (100 / coveragePercent)
@@ -506,12 +528,12 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
 
                 -- Create crossfade if items overlap (negative triggerRate)
                 -- Only for the first target track to avoid duplicate crossfades
-                if trackIdx == 1 and lastItemRef and position < lastItemEnd then
+                if i == 1 and lastItemRef and position < lastItemEnd then
                     globals.Utils.createCrossfade(lastItemRef, newItem, xfadeshape)
                 end
 
                 -- Update references for next iteration (only from first track)
-                if trackIdx == 1 then
+                if i == 1 then
                     -- Coverage mode with drift:
                     -- - lastItemEnd = actual end of placed item (for collision detection)
                     -- - theoreticalPosition = ideal next position (advances by interval, ignores drift)

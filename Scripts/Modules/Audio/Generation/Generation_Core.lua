@@ -823,7 +823,7 @@ function Generation_Core.generateSingleGroupByPath(groupPath)
         if lastContainer and lastContainer.channelMode and lastContainer.channelMode > 0 then
             -- Find channel tracks for last container
             local lastContainerTrack = reaper.GetTrack(0, reaper.GetNumTracks() - 1)
-            local channelTracks = Generation_MultiChannel.getExistingChannelTracks(lastContainerTrack)
+            local channelTracks = Generation_TrackManagement.getExistingChannelTracks(lastContainerTrack)
 
             if #channelTracks > 0 then
                 -- Last channel track should close the parent group
@@ -942,7 +942,7 @@ function Generation_Core.generateSingleContainer(groupIndex, containerIndex)
         if shouldBeMultiChannel ~= hasChildTracks then
             if hasChildTracks then
                 -- Current structure has child tracks but should be single track
-                Generation_MultiChannel.deleteContainerChildTracks(containerGroup)
+                Generation_TrackManagement.deleteContainerChildTracks(containerGroup)
             else
                 -- Current structure is single track but should have child tracks
                 -- Clear items from container to prepare for multi-channel structure
@@ -959,8 +959,8 @@ function Generation_Core.generateSingleContainer(groupIndex, containerIndex)
 
                 if isMultiChannel then
                     -- Multi-channel: clear items from channel tracks
-                    local channelTracks = Generation_MultiChannel.getExistingChannelTracks(containerGroup)
-                    Generation_MultiChannel.clearChannelTracks(channelTracks)
+                    local channelTracks = Generation_TrackManagement.getExistingChannelTracks(containerGroup)
+                    Generation_TrackManagement.clearChannelTracks(channelTracks)
                 else
                     -- Default mode: clear items from container itself
                     while reaper.CountTrackMediaItems(containerGroup) > 0 do
@@ -1138,7 +1138,7 @@ function Generation_Core.generateSingleContainerByPath(groupPath, containerIndex
         if shouldBeMultiChannel ~= hasChildTracks then
             if hasChildTracks then
                 -- Current structure has child tracks but should be single track
-                Generation_MultiChannel.deleteContainerChildTracks(containerGroup)
+                Generation_TrackManagement.deleteContainerChildTracks(containerGroup)
             else
                 -- Current structure is single track but should have child tracks
                 -- Clear items from container to prepare for multi-channel structure
@@ -1155,8 +1155,8 @@ function Generation_Core.generateSingleContainerByPath(groupPath, containerIndex
 
                 if isMultiChannel then
                     -- Multi-channel: clear items from channel tracks
-                    local channelTracks = Generation_MultiChannel.getExistingChannelTracks(containerGroup)
-                    Generation_MultiChannel.clearChannelTracks(channelTracks)
+                    local channelTracks = Generation_TrackManagement.getExistingChannelTracks(containerGroup)
+                    Generation_TrackManagement.clearChannelTracks(channelTracks)
                 else
                     -- Default mode: clear items from container itself
                     while reaper.CountTrackMediaItems(containerGroup) > 0 do

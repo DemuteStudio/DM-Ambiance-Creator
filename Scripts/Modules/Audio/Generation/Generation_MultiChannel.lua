@@ -922,164 +922,266 @@ function Generation_MultiChannel.checkAndResolveConflicts()
     end
 end
 
+-- ============================================================================
+-- CHANNEL EXTRACTION HELPERS (Refactored)
+-- ============================================================================
+
+-- Get REAPER command for mono channel extraction
+-- @param channelIndex number: 0-based channel index
+-- @return number|nil: REAPER command ID or nil if invalid
+function Generation_MultiChannel.getMonoChannelCommand(channelIndex)
+    local commands = {
+        [0] = 40179,  -- Mono channel 1 (left)
+        [1] = 40180,  -- Mono channel 2 (right)
+        [2] = 41388,  -- Mono channel 3
+        [3] = 41389,  -- Mono channel 4
+        [4] = 41390,  -- Mono channel 5
+        [5] = 41391,  -- Mono channel 6
+        [6] = 41392,  -- Mono channel 7
+        [7] = 41393,  -- Mono channel 8
+    }
+    return commands[channelIndex]
+end
+
+-- Get REAPER command for stereo pair extraction
+-- @param pairIndex number: 0-based pair index
+-- @return number|nil: REAPER command ID or nil if invalid
+function Generation_MultiChannel.getStereoPairCommand(pairIndex)
+    local commands = {
+        [0] = 41450,  -- Channels 1-2 (L/R)
+        [1] = 41452,  -- Channels 3-4 (LS/RS or C/LFE)
+        [2] = 41454,  -- Channels 5-6
+        [3] = 41456,  -- Channels 7-8
+    }
+    return commands[pairIndex]
+end
+
+-- Get mono channel index for a track in surround format (skip center)
+-- @param itemChannels number: Number of channels in source item
+-- @param trackIdx number: 1-based track index
+-- @param variant number: 0=ITU/Dolby, 1=SMPTE
+-- @return number: 0-based channel index
+function Generation_MultiChannel.getMonoChannelForTrack(itemChannels, trackIdx, variant)
+    variant = variant or 0
+
+    -- 5.0 surround: skip center channel
+    if itemChannels == 5 then
+        if variant == 0 then
+            -- ITU/Dolby: L(0) R(1) C(2) LS(3) RS(4)
+            local channelMap = {0, 1, 3, 4}  -- L, R, LS, RS (skip C)
+            return channelMap[trackIdx] or 0
+        else
+            -- SMPTE: L(0) C(1) R(2) LS(3) RS(4)
+            local channelMap = {0, 2, 3, 4}  -- L, R, LS, RS (skip C)
+            return channelMap[trackIdx] or 0
+        end
+
+    -- 7.0 surround: skip center channel
+    elseif itemChannels == 7 then
+        if variant == 0 then
+            -- ITU/Dolby: L(0) R(1) C(2) LS(3) RS(4) LB(5) RB(6)
+            local channelMap = {0, 1, 3, 4}  -- L, R, LS, RS (skip C, LB, RB for 4 tracks)
+            return channelMap[trackIdx] or 0
+        else
+            -- SMPTE: L(0) C(1) R(2) LS(3) RS(4) LB(5) RB(6)
+            local channelMap = {0, 2, 3, 4}  -- L, R, LS, RS (skip C, LB, RB)
+            return channelMap[trackIdx] or 0
+        end
+
+    -- Stereo: simple L/R mapping
+    elseif itemChannels == 2 then
+        local channelMap = {0, 1}  -- Track 1 → L, Track 2 → R
+        return channelMap[trackIdx] or 0
+
+    -- 4.0 quad: direct mapping
+    elseif itemChannels == 4 then
+        local channelMap = {0, 1, 2, 3}  -- L, R, LS, RS
+        return channelMap[trackIdx] or 0
+    end
+
+    -- Fallback: cycle through all channels
+    return (trackIdx - 1) % itemChannels
+end
+
+-- Get stereo pair index for a track in surround format
+-- @param itemChannels number: Number of channels in source item
+-- @param trackIdx number: 1-based track index
+-- @param variant number: 0=ITU/Dolby, 1=SMPTE
+-- @return number: 0-based pair index
+function Generation_MultiChannel.getStereoPairForTrack(itemChannels, trackIdx, variant)
+    variant = variant or 0
+
+    -- 5.0 surround: L/R pair and LS/RS pair (skip center)
+    if itemChannels == 5 then
+        -- Both variants: Track 1 → pair 0 (L/R), Track 2 → pair 1 (LS/RS)
+        -- Note: For 5.0, pair 1 is actually channels 3-4 (LS/RS), not 2-3
+        local pairMap = {0, 1}
+        return pairMap[trackIdx] or 0
+
+    -- 7.0 surround: L/R, LS/RS pairs (skip center, LB/RB)
+    elseif itemChannels == 7 then
+        local pairMap = {0, 1}  -- Track 1 → L/R, Track 2 → LS/RS
+        return pairMap[trackIdx] or 0
+
+    -- 4.0 quad: L/R and LS/RS pairs
+    elseif itemChannels == 4 then
+        local pairMap = {0, 1}  -- Track 1 → pair 0 (L/R), Track 2 → pair 1 (LS/RS)
+        return pairMap[trackIdx] or 0
+
+    -- 6.0 or 8.0: standard pair mapping
+    elseif itemChannels == 6 then
+        local pairMap = {0, 1, 2}  -- L/R, C/LFE, LS/RS
+        return pairMap[trackIdx] or 0
+    elseif itemChannels == 8 then
+        local pairMap = {0, 1, 2, 3}
+        return pairMap[trackIdx] or 0
+    end
+
+    -- Fallback: cycle through pairs
+    local numPairs = math.floor(itemChannels / 2)
+    return (trackIdx - 1) % numPairs
+end
+
+-- Unified channel extraction determination
+-- @param itemChannels number: Number of channels in source item
+-- @param targetTrackIdx number: 1-based target track index
+-- @param numTargetTracks number: Total number of target tracks
+-- @param selectionMode string: "none", "mono", or "stereo"
+-- @param options table: Optional settings
+--   - monoChannelSelection: Forced mono channel (0-based) or nil for auto
+--   - stereoPairSelection: Forced stereo pair (0-based) or nil for auto
+--   - sourceChannelVariant: 0=ITU/Dolby, 1=SMPTE
+--   - upsampling: boolean, true if need to upsample (repeat channels)
+--   - availableStereoPairs: number of available pairs when upsampling
+-- @return table: { extractionType, channelIndex, pairIndex, reaperCommand }
+function Generation_MultiChannel.determineChannelExtraction(itemChannels, targetTrackIdx, _numTargetTracks, selectionMode, options)
+    options = options or {}
+
+    -- No extraction needed for mono items or "none" mode
+    if selectionMode == "none" or itemChannels == 1 then
+        return {
+            extractionType = "none",
+            reaperCommand = nil
+        }
+    end
+
+    -- MODE STEREO: Extract a stereo pair
+    if selectionMode == "stereo" or selectionMode == "split-stereo" then
+        local numPairs = math.floor(itemChannels / 2)
+        local pairIndex
+
+        if options.stereoPairSelection and options.stereoPairSelection < numPairs then
+            -- User-forced pair selection
+            pairIndex = options.stereoPairSelection
+        else
+            -- Auto: Map trackIdx to pairIndex
+            if itemChannels == 5 or itemChannels == 7 then
+                -- Surround: use special mapping that skips center
+                pairIndex = Generation_MultiChannel.getStereoPairForTrack(
+                    itemChannels, targetTrackIdx, options.sourceChannelVariant
+                )
+            else
+                -- Standard: Track 1 → pair 0, Track 2 → pair 1, etc.
+                pairIndex = (targetTrackIdx - 1) % numPairs
+            end
+
+            -- Handle upsampling: if not enough pairs, pick randomly from available
+            if options.upsampling and options.availableStereoPairs and pairIndex >= options.availableStereoPairs then
+                pairIndex = math.random(0, options.availableStereoPairs - 1)
+            end
+        end
+
+        return {
+            extractionType = "stereo",
+            pairIndex = pairIndex,
+            reaperCommand = Generation_MultiChannel.getStereoPairCommand(pairIndex)
+        }
+    end
+
+    -- MODE MONO: Extract a single channel
+    if selectionMode == "mono" then
+        local channelIndex
+
+        if options.monoChannelSelection and options.monoChannelSelection < itemChannels then
+            -- User-forced channel selection
+            channelIndex = options.monoChannelSelection
+        elseif options.monoChannelSelection and options.monoChannelSelection >= itemChannels then
+            -- Random mode: monoChannelSelection >= itemChannels means random
+            channelIndex = math.random(0, itemChannels - 1)
+        else
+            -- Auto: Map trackIdx to channelIndex
+            if itemChannels == 5 or itemChannels == 7 then
+                -- Surround: use special mapping that skips center
+                channelIndex = Generation_MultiChannel.getMonoChannelForTrack(
+                    itemChannels, targetTrackIdx, options.sourceChannelVariant
+                )
+            else
+                -- Standard: Track 1 → ch 0, Track 2 → ch 1, etc. (cycle)
+                channelIndex = (targetTrackIdx - 1) % itemChannels
+            end
+        end
+
+        return {
+            extractionType = "mono",
+            channelIndex = channelIndex,
+            reaperCommand = Generation_MultiChannel.getMonoChannelCommand(channelIndex)
+        }
+    end
+
+    -- Fallback: no extraction
+    return {
+        extractionType = "none",
+        reaperCommand = nil
+    }
+end
+
 -- Apply channel selection (downmix/split) to an item via REAPER actions
+-- Uses the unified determineChannelExtraction function for all cases
 -- @param item userdata: The media item to apply channel selection to
 -- @param container table: Container configuration
 -- @param itemChannels number: Number of channels in the item
--- @param channelSelectionMode string: "none", "stereo", or "mono"
+-- @param channelSelectionMode string: "none", "stereo", "split-stereo", or "mono"
 -- @param trackStructure table: Track structure (optional, for auto-forced values)
--- @param trackIdx number: Track index (1-based) for smart routing
+-- @param trackIdx number: Track index (1-based) for channel extraction
 function Generation_MultiChannel.applyChannelSelection(item, container, itemChannels, channelSelectionMode, trackStructure, trackIdx)
     if not item or not container then return end
 
-    -- Select the item for applying actions
-    reaper.SelectAllMediaItems(0, false)
-    reaper.SetMediaItemSelected(item, true)
+    -- Build options from container and trackStructure
+    local options = {
+        -- Mono channel selection: priority trackStructure > container
+        monoChannelSelection = (trackStructure and trackStructure.monoChannelSelection) or container.monoChannelSelection,
+        -- Stereo pair selection: priority trackStructure > container
+        stereoPairSelection = (trackStructure and trackStructure.stereoPairSelection) or container.stereoPairSelection,
+        -- Source channel variant for 5.0/7.0
+        sourceChannelVariant = (trackStructure and trackStructure.sourceChannelVariant) or container.sourceChannelVariant or 0,
+        -- Upsampling info
+        upsampling = trackStructure and trackStructure.upsampling,
+        availableStereoPairs = trackStructure and trackStructure.availableStereoPairs,
+    }
 
-    if channelSelectionMode == "stereo" then
-        -- Stereo pair selection
-        -- Priority: trackStructure value (auto-forced) > container value (user choice)
-        local stereoPairSelection = (trackStructure and trackStructure.stereoPairSelection) or container.stereoPairSelection or 0
-
-        -- Apply stereo downmix action based on pair index
-        if stereoPairSelection == 0 then
-            reaper.Main_OnCommand(41450, 0) -- Channels 1-2 (L/R)
-        elseif stereoPairSelection == 1 then
-            reaper.Main_OnCommand(41452, 0) -- Channels 3-4 (LS/RS or C/LFE)
-        elseif stereoPairSelection == 2 then
-            reaper.Main_OnCommand(41454, 0) -- Channels 5-6
-        elseif stereoPairSelection == 3 then
-            reaper.Main_OnCommand(41456, 0) -- Channels 7-8
-        end
-
-    elseif channelSelectionMode == "split-stereo" then
-        -- Split stereo pairs: Extract different stereo pair per track
-        -- Used for multi-channel containers with stereo pair distribution
-        -- trackIdx (1-based) determines which stereo pair to extract
-
-        local pairIndex
-
-        -- NEW: Check if container has stereoPairMapping (per-track pair selection)
-        if container.stereoPairMapping and container.stereoPairMapping[trackIdx] then
-            local mappedPair = container.stereoPairMapping[trackIdx]
-
-            if mappedPair == "random" then
-                -- Random mode: select random pair from available
-                local numPairs = math.floor(itemChannels / 2)
-                pairIndex = math.random(0, numPairs - 1)
-            else
-                pairIndex = mappedPair  -- Use user-selected pair for this track
-            end
+    -- Handle per-track stereo pair mapping (custom user selection per track)
+    if container.stereoPairMapping and container.stereoPairMapping[trackIdx] then
+        local mappedPair = container.stereoPairMapping[trackIdx]
+        if mappedPair == "random" then
+            options.stereoPairSelection = nil  -- Will trigger random in determineChannelExtraction
         else
-            -- FALLBACK: Old behavior (default mapping)
-            pairIndex = trackIdx - 1  -- Track 1 → pair 0, Track 2 → pair 1, etc.
-
-            -- UPSAMPLING: If items don't have enough stereo pairs, randomly select from available
-            if trackStructure and trackStructure.upsampling and pairIndex >= trackStructure.availableStereoPairs then
-                pairIndex = math.random(0, trackStructure.availableStereoPairs - 1)
-            end
-        end
-
-        -- Apply stereo pair extraction based on pair index
-        if pairIndex == 0 then
-            reaper.Main_OnCommand(41450, 0) -- Channels 1-2 (L/R)
-        elseif pairIndex == 1 then
-            reaper.Main_OnCommand(41452, 0) -- Channels 3-4 (LS/RS)
-        elseif pairIndex == 2 then
-            reaper.Main_OnCommand(41454, 0) -- Channels 5-6 (LB/RB)
-        elseif pairIndex == 3 then
-            reaper.Main_OnCommand(41456, 0) -- Channels 7-8
-        end
-
-    elseif channelSelectionMode == "mono" then
-        -- Mono channel selection
-        -- Priority: trackStructure value (auto-forced) > container value (user choice)
-        local monoChannelSelection = (trackStructure and trackStructure.monoChannelSelection) or container.monoChannelSelection or itemChannels
-
-        -- Special case: Smart routing for surround items with known center position
-        if trackStructure and trackStructure.useSmartRouting then
-            -- Smart routing: Extract specific channel based on track index and source variant
-            -- For 5.0: L R C LS RS (ITU) or L C R LS RS (SMPTE)
-            -- For 7.0: L R C LS RS LB RB (ITU) or L C R LS RS LB RB (SMPTE)
-            -- Target: 4 tracks = L, R, LS, RS (skip center)
-
-            local sourceChannelVariant = trackStructure.sourceChannelVariant or container.sourceChannelVariant or 0
-            local sourceChannel = 0  -- 0-based channel index
-
-            if itemChannels == 5 then
-                -- 5.0 surround
-                if sourceChannelVariant == 0 then
-                    -- ITU/Dolby: L(0) R(1) C(2) LS(3) RS(4)
-                    local channelMap = {0, 1, 3, 4}  -- L, R, LS, RS (skip C at index 2)
-                    sourceChannel = channelMap[trackIdx] or 0
-                else
-                    -- SMPTE: L(0) C(1) R(2) LS(3) RS(4)
-                    local channelMap = {0, 2, 3, 4}  -- L, R, LS, RS (skip C at index 1)
-                    sourceChannel = channelMap[trackIdx] or 0
-                end
-            elseif itemChannels == 7 then
-                -- 7.0 surround
-                if sourceChannelVariant == 0 then
-                    -- ITU/Dolby: L(0) R(1) C(2) LS(3) RS(4) LB(5) RB(6)
-                    local channelMap = {0, 1, 3, 4}  -- L, R, LS, RS (skip C, LB, RB)
-                    sourceChannel = channelMap[trackIdx] or 0
-                else
-                    -- SMPTE: L(0) C(1) R(2) LS(3) RS(4) LB(5) RB(6)
-                    local channelMap = {0, 2, 3, 4}  -- L, R, LS, RS (skip C, LB, RB)
-                    sourceChannel = channelMap[trackIdx] or 0
-                end
-            end
-
-            -- Apply mono channel selection action based on source channel (0-based)
-            if sourceChannel == 0 then
-                reaper.Main_OnCommand(40179, 0) -- Mono channel 1 (left)
-            elseif sourceChannel == 1 then
-                reaper.Main_OnCommand(40180, 0) -- Mono channel 2 (right)
-            elseif sourceChannel == 2 then
-                reaper.Main_OnCommand(41388, 0) -- Mono channel 3
-            elseif sourceChannel == 3 then
-                reaper.Main_OnCommand(41389, 0) -- Mono channel 4
-            elseif sourceChannel == 4 then
-                reaper.Main_OnCommand(41390, 0) -- Mono channel 5
-            elseif sourceChannel == 5 then
-                reaper.Main_OnCommand(41391, 0) -- Mono channel 6
-            elseif sourceChannel == 6 then
-                reaper.Main_OnCommand(41392, 0) -- Mono channel 7
-            elseif sourceChannel == 7 then
-                reaper.Main_OnCommand(41393, 0) -- Mono channel 8
-            end
-        else
-            -- Normal mono channel selection
-            -- Check if random mode (index >= itemChannels means Random)
-            local selectedChannel = monoChannelSelection
-            if selectedChannel >= itemChannels then
-                -- Random: choose random channel (0-based)
-                selectedChannel = math.random(0, itemChannels - 1)
-            end
-
-            -- Apply mono channel selection action based on channel index (0-based)
-            if selectedChannel == 0 then
-                reaper.Main_OnCommand(40179, 0) -- Mono channel 1 (left)
-            elseif selectedChannel == 1 then
-                reaper.Main_OnCommand(40180, 0) -- Mono channel 2 (right)
-            elseif selectedChannel == 2 then
-                reaper.Main_OnCommand(41388, 0) -- Mono channel 3
-            elseif selectedChannel == 3 then
-                reaper.Main_OnCommand(41389, 0) -- Mono channel 4
-            elseif selectedChannel == 4 then
-                reaper.Main_OnCommand(41390, 0) -- Mono channel 5
-            elseif selectedChannel == 5 then
-                reaper.Main_OnCommand(41391, 0) -- Mono channel 6
-            elseif selectedChannel == 6 then
-                reaper.Main_OnCommand(41392, 0) -- Mono channel 7
-            elseif selectedChannel == 7 then
-                reaper.Main_OnCommand(41393, 0) -- Mono channel 8
-            end
+            options.stereoPairSelection = mappedPair
         end
     end
 
-    -- Deselect the item
-    reaper.SetMediaItemSelected(item, false)
+    -- Get the extraction decision
+    local numTracks = trackStructure and trackStructure.numTracks or 1
+    local extraction = Generation_MultiChannel.determineChannelExtraction(
+        itemChannels, trackIdx, numTracks, channelSelectionMode, options
+    )
+
+    -- Apply the REAPER command if needed
+    if extraction.reaperCommand then
+        reaper.SelectAllMediaItems(0, false)
+        reaper.SetMediaItemSelected(item, true)
+        reaper.Main_OnCommand(extraction.reaperCommand, 0)
+        reaper.SetMediaItemSelected(item, false)
+    end
 end
 
 -- Get output channel count from channel mode

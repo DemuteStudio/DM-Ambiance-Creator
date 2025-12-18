@@ -18,17 +18,8 @@ end
 -- @param isLastInGroup boolean: Whether this is the last container in group
 -- @return table: Array of channel tracks
 function Generation_TrackManagement.createMultiChannelTracks(containerTrack, container, isLastInGroup)
-    if not container.channelMode or container.channelMode == 0 then
-        -- Default mode, no child tracks, generate on container
-        return {containerTrack}
-    end
-
-    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
-    if not config or config.channels == 0 then
-        return {containerTrack}
-    end
-
-    -- STEP 1: Analyze items and determine track structure
+    -- STEP 1: Analyze items and determine track structure FIRST
+    -- This is needed to check if stereo containers need child tracks (e.g., mono split)
     local itemsAnalysis = globals.Generation.analyzeContainerItems(container)
     local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
 
@@ -43,12 +34,22 @@ function Generation_TrackManagement.createMultiChannelTracks(containerTrack, con
         return {containerTrack}
     end
 
+    -- Get channel config (may be nil for stereo with mono split)
+    local config = globals.Constants.CHANNEL_CONFIGS[container.channelMode]
+
+    -- For non-stereo modes, validate config
+    if container.channelMode and container.channelMode > 0 then
+        if not config or config.channels == 0 then
+            return {containerTrack}
+        end
+    end
+
     -- STEP 2: Handle configuration changes
     globals.Generation.detectAndHandleConfigurationChanges(container)
 
     -- Get the active configuration (with variant if applicable)
     local activeConfig = config
-    if config.hasVariants then
+    if config and config.hasVariants then
         activeConfig = config.variants[container.channelVariant or 0]
     end
 
@@ -67,7 +68,7 @@ function Generation_TrackManagement.createMultiChannelTracks(containerTrack, con
             maxChannel = math.max(maxChannel, channelNum)
         end
         requiredChannels = math.max(requiredChannels, maxChannel)
-    else
+    elseif config then
         -- Fallback: use config channels if available
         requiredChannels = config.totalChannels or config.channels or numTracksToCreate
     end
@@ -140,7 +141,7 @@ function Generation_TrackManagement.createMultiChannelTracks(containerTrack, con
             -- Use custom routing if available (for conflict resolution)
 
             -- Validate and clean customRouting if corrupted
-            if container.customRouting then
+            if container.customRouting and config then
                 local expectedChannels = config.channels
                 local customChannels = #container.customRouting
 

@@ -174,8 +174,9 @@ function Container_ChannelConfig.draw(container, containerId, groupPath, contain
         Container_ChannelConfig.drawMonoChannelSettings(container, containerId, labelWidth, comboWidth)
     end
 
-    -- Distribution (only for multichannel + mono items)
-    if container.channelMode > 0 then
+    -- Distribution (for multichannel OR stereo with mono split)
+    local showDistribution = container.channelMode > 0 or container.channelSelectionMode == "mono"
+    if showDistribution then
         imgui.Text(globals.ctx, "Item Distribution:")
         imgui.SameLine(globals.ctx, labelWidth)
 

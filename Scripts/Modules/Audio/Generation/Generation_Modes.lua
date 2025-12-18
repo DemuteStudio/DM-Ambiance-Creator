@@ -196,6 +196,17 @@ function Generation_Modes.determineTrackStructure(container, itemsAnalysis)
     -- RÈGLE 5 : Channel Selection = MONO
     -- ═══════════════════════════════════════════════════════════
     if channelSelectionMode == "mono" then
+        -- Generate labels based on output channels
+        local trackLabels
+        if outputChannels == 2 then
+            trackLabels = {"L", "R"}
+        elseif outputChannels == 4 then
+            trackLabels = {"L", "R", "LS", "RS"}
+        elseif outputChannels >= 5 then
+            -- 5.0/7.0: Use 4 tracks (L, R, LS, RS - skip center)
+            trackLabels = {"L", "R", "LS", "RS"}
+        end
+
         return {
             strategy = "split-to-mono",
             numTracks = outputChannels,
@@ -204,6 +215,7 @@ function Generation_Modes.determineTrackStructure(container, itemsAnalysis)
             needsChannelSelection = true,
             channelSelectionMode = "mono",
             useDistribution = true,
+            trackLabels = trackLabels,
         }
     end
 
