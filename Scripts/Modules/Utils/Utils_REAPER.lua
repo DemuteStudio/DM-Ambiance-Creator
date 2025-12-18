@@ -551,15 +551,6 @@ function Utils_REAPER.applyCrossfadesToTrack(track)
     local itemCount = reaper.CountTrackMediaItems(track)
     if itemCount < 2 then return itemCount end  -- Need at least 2 items for crossfades
 
-    -- Prevent UI flickering during selection changes
-    reaper.PreventUIRefresh(1)
-
-    -- Save current item selection
-    local savedSelection = {}
-    for i = 0, reaper.CountSelectedMediaItems(0) - 1 do
-        savedSelection[i + 1] = reaper.GetSelectedMediaItem(0, i)
-    end
-
     -- Unselect all items
     reaper.SelectAllMediaItems(0, false)
 
@@ -572,16 +563,8 @@ function Utils_REAPER.applyCrossfadesToTrack(track)
     -- Apply crossfades to overlapping items (REAPER action 41059)
     reaper.Main_OnCommand(41059, 0)
 
-    -- Restore previous selection
+    -- Unselect all items after
     reaper.SelectAllMediaItems(0, false)
-    for _, item in ipairs(savedSelection) do
-        if reaper.ValidatePtr(item, "MediaItem*") then
-            reaper.SetMediaItemSelected(item, true)
-        end
-    end
-
-    -- Re-enable UI refresh
-    reaper.PreventUIRefresh(-1)
 
     return itemCount
 end
