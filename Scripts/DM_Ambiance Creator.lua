@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.10.7-beta
+@version 0.10.8-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -13,6 +13,19 @@
     [nomain] Modules/UI/*.lua
     Icons/*.png
 @changelog
+  # Version 0.10.8-beta - Crossfade System Fix
+
+  ## Bug Fixes
+  + Fixed crossfades not working in mono split mode with Round-robin and All Tracks distribution
+    - Replaced fragmented per-item crossfade tracking with unified approach
+    - Now uses REAPER action 41059 to apply crossfades to all overlapping items per track
+    - Works correctly for all distribution modes: Round-robin, Random, All Tracks
+
+  ## Technical Changes
+  + New applyCrossfadesToTrack() function in Utils_REAPER.lua
+  + Crossfades now applied after all items are placed on each track
+  + Removed old manual crossfade tracking (lastItemPerTrack system)
+
   # Version 0.10.7-beta - Stereo Mono Split & Multi-Channel Fixes
 
   ## Bug Fixes
