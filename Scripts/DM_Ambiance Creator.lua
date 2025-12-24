@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.10.8-beta
+@version 0.15.6-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -13,42 +13,16 @@
     [nomain] Modules/UI/*.lua
     Icons/*.png
 @changelog
-  # Version 0.10.8-beta - Crossfade System Fix
+  # Version 0.15.6-beta - Multi-Channel, STRETCH Mode & Auto-Regeneration Fixes
 
-  ## Bug Fixes
-  + Fixed crossfades not working in mono split mode with Round-robin and All Tracks distribution
-    - Replaced fragmented per-item crossfade tracking with unified approach
-    - Now uses REAPER action 41059 to apply crossfades to all overlapping items per track
-    - Works correctly for all distribution modes: Round-robin, Random, All Tracks
+  ## New Features
+  + Auto-regeneration when pitch range changes in STRETCH mode
+    - Changing pitch min/max values in STRETCH mode now triggers automatic regeneration
+    - Necessary because STRETCH mode uses playrate which affects item duration
+    - PITCH mode continues to only update randomization on existing items
+  + Added version display next to Settings button in main window header
 
-  ## Technical Changes
-  + New applyCrossfadesToTrack() function in Utils_REAPER.lua
-  + Crossfades now applied after all items are placed on each track
-  + Removed old manual crossfade tracking (lastItemPerTrack system)
-
-  # Version 0.10.7-beta - Stereo Mono Split & Multi-Channel Fixes
-
-  ## Bug Fixes
-  + Fixed stereo mono split not creating child tracks (was doing mono downmix instead)
-    - Stereo containers with mono split now properly create 2 child tracks (L/R)
-    - Track Structure Preview now displays correct info
-  + Fixed 7.0 surround with stereo items creating only 4 tracks instead of 6
-    - Now correctly creates 3 stereo pairs: L+R, LS+RS, LB+RB
-    - 5.0 continues to create 2 stereo pairs (L+R, LS+RS) as expected
-  + Fixed multiple nil function crashes in Generation_Core.lua
-    - getExistingChannelTracks, deleteContainerChildTracks, clearChannelTracks
-    - Functions were called on wrong module (Generation_MultiChannel instead of Generation_TrackManagement)
-  + Fixed Item Distribution dropdown not showing for stereo with mono split
-    - Round-robin, Random, All tracks modes now available for stereo mono split
-
-  ## Technical Changes
-  + Refactored channel extraction into unified determineChannelExtraction() function
-  + Added trackLabels to split-to-mono strategy for proper track naming
-  + Fixed channel mode checks to use #channelTracks > 1 instead of channelMode > 0
-
-  # Version 0.10.6-beta - STRETCH Mode Item Length & Pitch Preservation Fixes
-
-  ## Bug Fixes
+  ## Bug Fixes - STRETCH Mode & Pitch
   + Fixed B_PPITCH property in STRETCH mode causing pitch preservation bug
     - When modifying pitch range values in STRETCH mode, B_PPITCH was incorrectly set to 1 (preserve pitch)
     - This prevented time-stretched items from changing pitch with playrate
@@ -63,29 +37,31 @@
     - Coverage percentage now reflects actual audio duration perceived by listener
     - Ensures accurate coverage even when items are time-stretched
 
-  ## New Features
-  + Auto-regeneration when pitch range changes in STRETCH mode
-    - Changing pitch min/max values in STRETCH mode now triggers automatic regeneration
-    - Necessary because STRETCH mode uses playrate which affects item duration
-    - PITCH mode continues to only update randomization on existing items
+  ## Bug Fixes - Multi-Channel & Stereo
+  + Fixed crossfades not working in mono split mode with Round-robin and All Tracks distribution
+    - Replaced fragmented per-item crossfade tracking with unified approach
+    - Now uses REAPER action 41059 to apply crossfades to all overlapping items per track
+    - Works correctly for all distribution modes: Round-robin, Random, All Tracks
+  + Fixed stereo mono split not creating child tracks (was doing mono downmix instead)
+    - Stereo containers with mono split now properly create 2 child tracks (L/R)
+    - Track Structure Preview now displays correct info
+  + Fixed 7.0 surround with stereo items creating only 4 tracks instead of 6
+    - Now correctly creates 3 stereo pairs: L+R, LS+RS, LB+RB
+    - 5.0 continues to create 2 stereo pairs (L+R, LS+RS) as expected
+  + Fixed multiple nil function crashes in Generation_Core.lua
+    - getExistingChannelTracks, deleteContainerChildTracks, clearChannelTracks
+    - Functions were called on wrong module (Generation_MultiChannel instead of Generation_TrackManagement)
+  + Fixed Item Distribution dropdown not showing for stereo with mono split
+    - Round-robin, Random, All tracks modes now available for stereo mono split
 
-  ## Technical Changes
-  + Modified 5 generation locations to calculate and adjust item length before setting D_LENGTH
-  + Pitch/playrate now calculated BEFORE D_LENGTH assignment in all generation modes
-  + Re-clamp adjusted length to timeline bounds to prevent overflow
-  + Updated files: Generation_ItemPlacement.lua, Generation_Modes.lua, Utils_REAPER.lua, Generation_MultiChannel.lua, UI_TriggerSection.lua
-
-  # Version 0.10.5-beta - Multi-Selection & Auto-Regeneration Fixes
-
-  ## New Features
-  + Added version display next to Settings button in main window header
-
-  ## Bug Fixes
+  ## Bug Fixes - UI & Multi-Selection
   + Fixed crash when using Shift+Click multi-selection (table comparison error)
   + Fixed randomization sliders not appearing in multi-selection panel
   + Fixed interval mode dropdown not working in multi-selection
   + Fixed pan controls hidden when any selected container was multichannel
   + Fixed ReaPack package installation for new module structure (@provides for subdirectories)
+
+  ## Bug Fixes - Auto-Regeneration
   + Fixed auto-regeneration system for path-based architecture (migrated from globals.groups to globals.items)
   + Fixed variation button not marking containers for regeneration
   + Fixed callback parameter mismatches in TriggerSection_Noise
@@ -93,6 +69,15 @@
   + Reduced auto-regeneration throttle to 0.025 seconds for more responsive updates
 
   ## Technical Changes
+  + Modified 5 generation locations to calculate and adjust item length before setting D_LENGTH
+  + Pitch/playrate now calculated BEFORE D_LENGTH assignment in all generation modes
+  + Re-clamp adjusted length to timeline bounds to prevent overflow
+  + New applyCrossfadesToTrack() function in Utils_REAPER.lua
+  + Crossfades now applied after all items are placed on each track
+  + Removed old manual crossfade tracking (lastItemPerTrack system)
+  + Refactored channel extraction into unified determineChannelExtraction() function
+  + Added trackLabels to split-to-mono strategy for proper track naming
+  + Fixed channel mode checks to use #channelTracks > 1 instead of channelMode > 0
   + Modular refactoring: Utils, Waveform, Generation, RoutingValidator split into sub-modules
   + Added RegenManager helpers: collectAllGroups() and findGroupPath() for folder hierarchy
   + Fixed Knob widget to use manual active/inactive detection instead of IsItemDeactivatedAfterEdit
@@ -149,7 +134,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.10.8-beta",          -- Script version (sync with @version header)
+    version = "0.15.6-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
