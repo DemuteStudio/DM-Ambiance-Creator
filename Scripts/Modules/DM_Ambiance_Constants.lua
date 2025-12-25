@@ -495,6 +495,9 @@ Constants.EXPORT = {
     METHOD_CURRENT_TRACK = 0,           -- Place on existing container track
     METHOD_NEW_TRACK = 1,               -- Create new track for export
     METHOD_DEFAULT = 0,                 -- Default export method
+    -- Region Creation
+    CREATE_REGIONS_DEFAULT = false,     -- Default state for region creation
+    REGION_PATTERN_DEFAULT = "$container", -- Default region naming pattern
 }
 
 return Constants

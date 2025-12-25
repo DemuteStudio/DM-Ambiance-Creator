@@ -47,7 +47,7 @@ function Export_UI.renderModal()
     end
 
     -- Set modal size
-    imgui.SetNextWindowSize(ctx, 750, 520, imgui.Cond_FirstUseEver)
+    imgui.SetNextWindowSize(ctx, 750, 580, imgui.Cond_FirstUseEver)
 
     local popupOpen, popupVisible = imgui.BeginPopupModal(ctx, "Export Items", true, imgui.WindowFlags_NoCollapse)
 
@@ -173,6 +173,34 @@ function Export_UI.renderModal()
             if changed3 then Export_Core.setGlobalParam("preservePitch", newPitch) end
 
             imgui.Spacing(ctx)
+            imgui.Separator(ctx)
+            imgui.Spacing(ctx)
+
+            -- Region Creation Section
+            imgui.Text(ctx, "Region Creation:")
+            imgui.Spacing(ctx)
+
+            local changedCreateRegions, newCreateRegions = imgui.Checkbox(ctx,
+                "Create regions for exported items", globalParams.createRegions)
+            if changedCreateRegions then
+                Export_Core.setGlobalParam("createRegions", newCreateRegions)
+            end
+
+            if globalParams.createRegions then
+                imgui.Indent(ctx, 15)
+                imgui.Text(ctx, "Pattern:")
+                imgui.SameLine(ctx, 80)
+                imgui.PushItemWidth(ctx, 200)
+                local changedPattern, newPattern = imgui.InputText(ctx, "##RegionPattern",
+                    globalParams.regionPattern, imgui.InputTextFlags_None)
+                if changedPattern then
+                    Export_Core.setGlobalParam("regionPattern", newPattern)
+                end
+                imgui.PopItemWidth(ctx)
+                imgui.TextDisabled(ctx, "Tags: $container, $group, $index")
+                imgui.Unindent(ctx, 15)
+            end
+
             imgui.Spacing(ctx)
 
             -- Container Override Section

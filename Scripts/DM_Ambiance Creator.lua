@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.16.0-beta
+@version 0.16.1-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -14,6 +14,15 @@
     [nomain] Modules/Export/*.lua
     Icons/*.png
 @changelog
+  # Version 0.16.1-beta - Export Region Creation
+
+  ## New Features
+  + Export: Add option to create REAPER regions during export
+    - One region per container, spanning all exported items
+    - Customizable region name pattern with tag system
+    - Supported tags: $container, $group, $index
+    - Example: "sfx_$container" → "sfx_Rain Drops"
+
   # Version 0.16.0-beta - Export Feature
 
   ## New Features
@@ -76,7 +85,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.16.0-beta",          -- Script version (sync with @version header)
+    version = "0.16.1-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection

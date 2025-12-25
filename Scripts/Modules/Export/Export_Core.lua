@@ -18,6 +18,8 @@ local exportSettings = {
         preservePan = true,
         preserveVolume = true,
         preservePitch = true,
+        createRegions = false,
+        regionPattern = "$container",
     },
     containerOverrides = {},   -- {[containerKey] = {enabled, params}}
     enabledContainers = {},    -- {[containerKey] = true/false}
@@ -47,6 +49,8 @@ function Export_Core.resetSettings()
         preservePan = EXPORT.PRESERVE_PAN_DEFAULT ~= false,
         preserveVolume = EXPORT.PRESERVE_VOLUME_DEFAULT ~= false,
         preservePitch = EXPORT.PRESERVE_PITCH_DEFAULT ~= false,
+        createRegions = EXPORT.CREATE_REGIONS_DEFAULT or false,
+        regionPattern = EXPORT.REGION_PATTERN_DEFAULT or "$container",
     }
     exportSettings.containerOverrides = {}
     exportSettings.enabledContainers = {}
@@ -231,6 +235,19 @@ end
 -- Helper: Round to next whole second
 function Export_Core.roundToNextSecond(position)
     return math.ceil(position)
+end
+
+-- Helper: Parse region name pattern and replace tags
+-- @param pattern string: The pattern string with tags (e.g., "sfx_$container")
+-- @param containerInfo table: Container information with container, group
+-- @param containerIndex number: 1-based index of container in export list
+-- @return string: The parsed region name
+local function parseRegionPattern(pattern, containerInfo, containerIndex)
+    local result = pattern
+    result = result:gsub("%$container", containerInfo.container.name or "Container")
+    result = result:gsub("%$group", containerInfo.group.name or "Group")
+    result = result:gsub("%$index", tostring(containerIndex))
+    return result
 end
 
 -- Helper: Make item key for waveformAreas lookup
@@ -424,8 +441,12 @@ function Export_Core.performExport()
     local currentPos = reaper.GetCursorPosition()
     local totalItemsExported = 0
     local xfadeshape = reaper.SNM_GetIntConfigVar("defxfadeshape", 0)
+    local containerExportIndex = 0
 
     for _, containerInfo in ipairs(enabledContainers) do
+        containerExportIndex = containerExportIndex + 1
+        local regionStartPos = nil
+        local regionEndPos = nil
         local params = Export_Core.getEffectiveParams(containerInfo.key)
         local container = containerInfo.container
         local group = containerInfo.group
@@ -515,6 +536,12 @@ function Export_Core.performExport()
 
                     if anyItemCreated then
                         totalItemsExported = totalItemsExported + 1
+                        -- Track region bounds
+                        local itemEnd = itemPos + actualLen
+                        if regionStartPos == nil then
+                            regionStartPos = itemPos
+                        end
+                        regionEndPos = math.max(regionEndPos or itemEnd, itemEnd)
                         -- Advance position
                         currentPos = itemPos + actualLen + params.spacing
                         if params.alignToSeconds and params.spacing > 0 then
@@ -525,6 +552,12 @@ function Export_Core.performExport()
             end
 
             ::nextItem::
+        end
+
+        -- Create region for this container if enabled
+        if params.createRegions and regionStartPos and regionEndPos then
+            local regionName = parseRegionPattern(params.regionPattern, containerInfo, containerExportIndex)
+            reaper.AddProjectMarker2(0, true, regionStartPos, regionEndPos, regionName, -1, 0)
         end
 
         ::continue::
