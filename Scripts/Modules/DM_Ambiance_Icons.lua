@@ -57,7 +57,8 @@ local function getIconPaths()
                 arrow_both = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_left_right_arrow_icon.png",
                 undo = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_undo_icon.png",
                 redo = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_redo_icon.png",
-                history = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_undo_history_icon.png"
+                history = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_undo_history_icon.png",
+                export = scripts_dir .. separator .. "Icons" .. separator .. "DM_Ambiance_export_share_upload_up_icon.png"
             }
         end
     end
@@ -80,7 +81,8 @@ local function getIconPaths()
         arrow_both = "",
         undo = "",
         redo = "",
-        history = ""
+        history = "",
+        export = ""
     }
 end
 
@@ -431,6 +433,25 @@ function Icons.loadIcons()
         iconTextures.history = nil
     end
 
+    -- Try to load export icon from file
+    if fileExists(iconPaths.export) then
+        local success, result = pcall(function()
+            local img = globals.imgui.CreateImage(iconPaths.export)
+            if img then
+                globals.imgui.Attach(globals.ctx, img)
+            end
+            return img
+        end)
+
+        if success and result then
+            iconTextures.export = result
+        else
+            iconTextures.export = nil
+        end
+    else
+        iconTextures.export = nil
+    end
+
     return iconTextures.delete ~= nil or iconTextures.regen ~= nil or iconTextures.upload ~= nil or iconTextures.download ~= nil or iconTextures.settings ~= nil or iconTextures.folder ~= nil or iconTextures.conflict ~= nil or iconTextures.add ~= nil or iconTextures.link ~= nil or iconTextures.unlink ~= nil or iconTextures.mirror ~= nil or iconTextures.undo ~= nil or iconTextures.redo ~= nil or iconTextures.history ~= nil
 end
 
@@ -681,7 +702,8 @@ function Icons.areAllLoaded()
            iconTextures.conflict ~= nil and iconTextures.add ~= nil and
            iconTextures.link ~= nil and iconTextures.unlink ~= nil and
            iconTextures.mirror ~= nil and iconTextures.undo ~= nil and
-           iconTextures.redo ~= nil and iconTextures.history ~= nil
+           iconTextures.redo ~= nil and iconTextures.history ~= nil and
+           iconTextures.export ~= nil
 end
 
 -- Create a link/unlink/mirror cycling button that changes mode on click
@@ -772,6 +794,21 @@ function Icons.createHistoryButton(ctx, id, tooltip)
     return createTintedIconButton(ctx, iconTextures.history, buttonId, tooltip or "History")
 end
 
+-- Create an export icon button
+function Icons.createExportButton(ctx, id, tooltip)
+    if not iconTextures.export then
+        -- Fallback to text button if icon failed to load
+        local result = globals.imgui.Button(ctx, "Export##" .. id)
+        if globals.imgui.IsItemHovered(ctx) then
+            globals.imgui.SetTooltip(ctx, tooltip or "Export")
+        end
+        return result
+    end
+
+    local buttonId = "##ImgExport_" .. id
+    return createTintedIconButton(ctx, iconTextures.export, buttonId, tooltip or "Export")
+end
+
 -- Get raw undo/redo/history icon textures (for advanced usage)
 function Icons.getUndoIcon()
     return iconTextures.undo
@@ -783,6 +820,10 @@ end
 
 function Icons.getHistoryIcon()
     return iconTextures.history
+end
+
+function Icons.getExportIcon()
+    return iconTextures.export
 end
 
 -- Create a variation direction button (cycles through left, both, right)

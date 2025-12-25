@@ -25,6 +25,86 @@ end
 -- CORE ITEM PLACEMENT FUNCTION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+--- Place a single item instance on a specific track
+--- @param targetTrack userdata: REAPER track to place item on
+--- @param itemData table: Item data (filePath, startOffset, length, etc.)
+--- @param position number: Timeline position in seconds
+--- @param effectiveParams table: Container parameters
+--- @param trackStructure table: Track structure information
+--- @param trackIdx number: Real track index for channel extraction
+--- @param channelSelectionMode string: Channel selection mode
+--- @param ignoreBounds boolean|nil: If true, ignore timeline bounds (globals.endTime) - useful for export
+--- @return userdata|nil: The created media item or nil if failed
+--- @return number: The actual length of the placed item
+function Generation_ItemPlacement.placeSingleItem(targetTrack, itemData, position, effectiveParams, trackStructure, trackIdx, channelSelectionMode, ignoreBounds)
+    if not targetTrack or not itemData then return nil, 0 end
+
+    -- Create and configure the new item on current track
+    local newItem = reaper.AddMediaItemToTrack(targetTrack)
+    local newTake = reaper.AddTakeToMediaItem(newItem)
+
+    -- Configure the item
+    local PCM_source = reaper.PCM_Source_CreateFromFile(itemData.filePath)
+    if not PCM_source then
+        reaper.DeleteTrackMediaItem(targetTrack, newItem)
+        return nil, 0
+    end
+
+    reaper.SetMediaItemTake_Source(newTake, PCM_source)
+    reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", itemData.startOffset)
+
+    -- Apply channel selection if needed (use real track index for correct channel extraction)
+    local needsChannelSelection = trackStructure and trackStructure.needsChannelSelection
+    if needsChannelSelection then
+        local itemChannels = itemData.numChannels or 2
+        Generation_MultiChannel.applyChannelSelection(newItem, effectiveParams, itemChannels, channelSelectionMode, trackStructure, trackIdx)
+    end
+
+    -- Trim item so it never exceeds the selection end (unless explicitly ignored)
+    -- For export, ignoreBounds allows placing items beyond the time selection
+    local maxLen = itemData.length
+    if not ignoreBounds and globals.endTime and globals.endTime > 0 then
+        maxLen = globals.endTime - position
+    end
+    local actualLen = math.min(itemData.length, maxLen)
+
+    -- Pre-calculate pitch and adjust length if using STRETCH mode
+    local randomPitch = nil
+    local playrate = nil
+    if effectiveParams.pitchMode == globals.Constants.PITCH_MODES.STRETCH then
+        if effectiveParams.randomizePitch then
+            randomPitch = itemData.originalPitch + globals.Utils.randomInRange(effectiveParams.pitchRange.min, effectiveParams.pitchRange.max)
+        else
+            randomPitch = itemData.originalPitch
+        end
+        playrate = globals.Utils.semitonesToPlayrate(randomPitch)
+
+        -- Adjust length for playrate (slower playrate = longer item)
+        actualLen = actualLen / playrate
+        -- Re-clamp to timeline bounds if needed
+        if not ignoreBounds and globals.endTime and globals.endTime > 0 then
+             local boundMaxLen = globals.endTime - position
+             actualLen = math.min(actualLen, boundMaxLen)
+        end
+    end
+
+    reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", position)
+    reaper.GetSetMediaItemTakeInfo_String(newTake, "P_NAME", itemData.name, true)
+
+    -- Apply randomization (pitch, volume, pan)
+    Generation_ItemPlacement.applyRandomization(newItem, newTake, effectiveParams, itemData, trackStructure)
+
+    -- Set D_LENGTH with adjusted value (after playrate adjustment if STRETCH mode)
+    reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", actualLen)
+
+    -- Apply fades if enabled
+    if effectiveParams.fadeInEnabled or effectiveParams.fadeOutEnabled then
+        Generation_ItemPlacement.applyFades(newItem, effectiveParams, actualLen)
+    end
+    
+    return newItem, actualLen
+end
+
 --- Main function to place items on the timeline for a container
 --- Handles all interval modes, multi-channel routing, and randomization
 --- @param group table: Parent group containing the container

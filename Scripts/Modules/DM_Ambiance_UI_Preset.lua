@@ -84,6 +84,14 @@ function UI_Preset.drawPresetControls()
         globals.RoutingValidator.showValidationModal(issues or {})
     end
 
+    -- Export button
+    imgui.SameLine(globals.ctx)
+    if globals.Icons.createExportButton(globals.ctx, "exportItems", "Export items") then
+        if globals.Export then
+            globals.Export.openModal()
+        end
+    end
+
     -- Add spacing to separate the undo/redo block
     imgui.SameLine(globals.ctx)
     imgui.Dummy(globals.ctx, 20, 0)
@@ -117,6 +125,11 @@ function UI_Preset.drawPresetControls()
 
     -- Handle the delete preset confirmation popup modal window
     UI_Preset.handleDeletePresetPopup()
+
+    -- Handle the export modal window
+    if globals.Export then
+        globals.Export.renderModal()
+    end
 end
 
 -- In DM_Ambiance_UI_Preset.lua, replace these functions:

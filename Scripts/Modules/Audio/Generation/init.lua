@@ -107,6 +107,7 @@ Generation.syncPitchModeOnExistingItems = Generation_MultiChannel.syncPitchModeO
 
 -- FROM Generation_ItemPlacement
 Generation.placeItemsForContainer = Generation_ItemPlacement.placeItemsForContainer
+Generation.placeSingleItem = Generation_ItemPlacement.placeSingleItem
 Generation.placeItemsChunkMode = Generation_ItemPlacement.placeItemsChunkMode
 Generation.generateItemsInTimeRange = Generation_ItemPlacement.generateItemsInTimeRange
 Generation.applyRandomization = Generation_ItemPlacement.applyRandomization

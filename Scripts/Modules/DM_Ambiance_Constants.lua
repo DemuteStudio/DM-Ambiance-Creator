@@ -479,4 +479,22 @@ Constants.GENERATION_DEFAULTS = {
     FADE_OUT_CURVE = 0.0,               -- Default curve control
 }
 
+-- Export Feature Constants
+Constants.EXPORT = {
+    INSTANCE_MIN = 1,                   -- Minimum instance amount
+    INSTANCE_MAX = 100,                 -- Maximum instance amount
+    INSTANCE_DEFAULT = 1,               -- Default instance amount
+    SPACING_MIN = 0,                    -- Minimum spacing in seconds
+    SPACING_MAX = 60,                   -- Maximum spacing in seconds
+    SPACING_DEFAULT = 1.0,              -- Default spacing (1 second)
+    ALIGN_TO_SECONDS_DEFAULT = true,    -- Default align to whole seconds
+    PRESERVE_PAN_DEFAULT = true,        -- Default preserve pan state
+    PRESERVE_VOLUME_DEFAULT = true,     -- Default preserve volume state
+    PRESERVE_PITCH_DEFAULT = true,      -- Default preserve pitch/stretch state
+    -- Export methods
+    METHOD_CURRENT_TRACK = 0,           -- Place on existing container track
+    METHOD_NEW_TRACK = 1,               -- Create new track for export
+    METHOD_DEFAULT = 0,                 -- Default export method
+}
+
 return Constants

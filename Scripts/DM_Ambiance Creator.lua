@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.15.6-beta
+@version 0.16.0-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -11,76 +11,17 @@
     [nomain] Modules/Routing/*.lua
     [nomain] Modules/Utils/*.lua
     [nomain] Modules/UI/*.lua
+    [nomain] Modules/Export/*.lua
     Icons/*.png
 @changelog
-  # Version 0.15.6-beta - Multi-Channel, STRETCH Mode & Auto-Regeneration Fixes
+  # Version 0.16.0-beta - Export Feature
 
   ## New Features
-  + Auto-regeneration when pitch range changes in STRETCH mode
-    - Changing pitch min/max values in STRETCH mode now triggers automatic regeneration
-    - Necessary because STRETCH mode uses playrate which affects item duration
-    - PITCH mode continues to only update randomization on existing items
-  + Added version display next to Settings button in main window header
-
-  ## Bug Fixes - STRETCH Mode & Pitch
-  + Fixed B_PPITCH property in STRETCH mode causing pitch preservation bug
-    - When modifying pitch range values in STRETCH mode, B_PPITCH was incorrectly set to 1 (preserve pitch)
-    - This prevented time-stretched items from changing pitch with playrate
-    - Now correctly sets B_PPITCH to 0 in STRETCH mode to allow pitch to change with playrate
-  + Fixed item length adjustment in STRETCH mode for playrate changes
-    - In STRETCH mode, playrate affects the effective duration of audio content
-    - Items now have their D_LENGTH adjusted to accommodate stretched/compressed audio
-    - Formula: adjustedLength = originalLength / playrate
-    - Example: 2s item with -12 semitones (playrate 0.5) now has 4s length instead of 2s
-    - Prevents audio clipping when playrate < 1.0 (negative pitch)
-  + COVERAGE mode now uses adjusted length for interval calculation
-    - Coverage percentage now reflects actual audio duration perceived by listener
-    - Ensures accurate coverage even when items are time-stretched
-
-  ## Bug Fixes - Multi-Channel & Stereo
-  + Fixed crossfades not working in mono split mode with Round-robin and All Tracks distribution
-    - Replaced fragmented per-item crossfade tracking with unified approach
-    - Now uses REAPER action 41059 to apply crossfades to all overlapping items per track
-    - Works correctly for all distribution modes: Round-robin, Random, All Tracks
-  + Fixed stereo mono split not creating child tracks (was doing mono downmix instead)
-    - Stereo containers with mono split now properly create 2 child tracks (L/R)
-    - Track Structure Preview now displays correct info
-  + Fixed 7.0 surround with stereo items creating only 4 tracks instead of 6
-    - Now correctly creates 3 stereo pairs: L+R, LS+RS, LB+RB
-    - 5.0 continues to create 2 stereo pairs (L+R, LS+RS) as expected
-  + Fixed multiple nil function crashes in Generation_Core.lua
-    - getExistingChannelTracks, deleteContainerChildTracks, clearChannelTracks
-    - Functions were called on wrong module (Generation_MultiChannel instead of Generation_TrackManagement)
-  + Fixed Item Distribution dropdown not showing for stereo with mono split
-    - Round-robin, Random, All tracks modes now available for stereo mono split
-
-  ## Bug Fixes - UI & Multi-Selection
-  + Fixed crash when using Shift+Click multi-selection (table comparison error)
-  + Fixed randomization sliders not appearing in multi-selection panel
-  + Fixed interval mode dropdown not working in multi-selection
-  + Fixed pan controls hidden when any selected container was multichannel
-  + Fixed ReaPack package installation for new module structure (@provides for subdirectories)
-
-  ## Bug Fixes - Auto-Regeneration
-  + Fixed auto-regeneration system for path-based architecture (migrated from globals.groups to globals.items)
-  + Fixed variation button not marking containers for regeneration
-  + Fixed callback parameter mismatches in TriggerSection_Noise
-  + Fixed nil error when clicking variation button (globals.autoRegenTracking initialization)
-  + Reduced auto-regeneration throttle to 0.025 seconds for more responsive updates
-
-  ## Technical Changes
-  + Modified 5 generation locations to calculate and adjust item length before setting D_LENGTH
-  + Pitch/playrate now calculated BEFORE D_LENGTH assignment in all generation modes
-  + Re-clamp adjusted length to timeline bounds to prevent overflow
-  + New applyCrossfadesToTrack() function in Utils_REAPER.lua
-  + Crossfades now applied after all items are placed on each track
-  + Removed old manual crossfade tracking (lastItemPerTrack system)
-  + Refactored channel extraction into unified determineChannelExtraction() function
-  + Added trackLabels to split-to-mono strategy for proper track naming
-  + Fixed channel mode checks to use #channelTracks > 1 instead of channelMode > 0
-  + Modular refactoring: Utils, Waveform, Generation, RoutingValidator split into sub-modules
-  + Added RegenManager helpers: collectAllGroups() and findGroupPath() for folder hierarchy
-  + Fixed Knob widget to use manual active/inactive detection instead of IsItemDeactivatedAfterEdit
+  + Export modal: Export generated items to timeline with custom settings
+    - Control instance count and spacing
+    - Choose to export on current track or new track
+    - Preserve or reset pan, volume, and pitch settings
+    - Multi-container selection support
 --]]
 
 -- Check if ReaImGui is available; display an error and exit if not
@@ -119,6 +60,7 @@ local Knob = dofile(script_path .. "Modules/DM_Ambiance_UI_Knob.lua")
 local FadeWidget = dofile(script_path .. "Modules/DM_Ambiance_UI_FadeWidget.lua")
 local EuclideanUI = dofile(script_path .. "Modules/DM_Ambiance_UI_Euclidean.lua")
 local RegenManager = dofile(script_path .. "Modules/DM_Ambiance_RegenManager.lua")
+local Export = dofile(script_path .. "Modules/Export/init.lua")
 
 -- New modular UI components
 local UI_Core = dofile(script_path .. "Modules/DM_Ambiance_UI_Core.lua")
@@ -134,7 +76,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.15.6-beta",          -- Script version (sync with @version header)
+    version = "0.16.0-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
@@ -254,6 +196,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     _G.Knob = Knob
     _G.FadeWidget = FadeWidget
     _G.EuclideanUI = EuclideanUI
+    _G.Export = Export
     _G.imgui = imgui
 
     -- Seed the random number generator for consistent randomization
@@ -289,6 +232,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     globals.FadeWidget = FadeWidget
     globals.EuclideanUI = EuclideanUI
     globals.RegenManager = RegenManager
+    globals.Export = Export
 
     -- New modular UI components
     globals.UI_Core = UI_Core
@@ -322,6 +266,7 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     FadeWidget.initModule(globals)
     EuclideanUI.initModule(globals)
     RegenManager.initModule(globals)
+    Export.initModule(globals)
 
     -- Initialize new modular UI components
     UI_Core.initModule(globals)
