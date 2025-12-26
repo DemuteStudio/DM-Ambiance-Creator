@@ -390,7 +390,38 @@ Change parameters and see results immediately with auto-regeneration.
 - **Smart updates**: Only regenerates what changed
 - **Toggle on/off**: Disable when experimenting, enable for final tweaks
 
-Perfect for fine-tuning during the final stages of ambiance creation.
+
+**Export System**
+---
+
+Export your generated items to the timeline for use in game audio middleware or further editing.
+
+The Export feature allows you to create multiple instances of your generated ambiance elements, perfect for extracting variations to use in audio middleware like Wwise or FMOD.
+
+**Export Options:**
+- **Instance Count**: Number of copies to create (1-100)
+- **Spacing**: Time between each exported instance in seconds
+- **Target Track**: Export to current track or create a new dedicated track
+- **Preserve Settings**: Keep or reset pan, volume, and pitch randomization
+
+**Region Creation:**
+- Optionally create REAPER regions during export
+- One region per container, spanning all exported items
+- Customizable naming pattern with tag system:
+  - `$container` - Container name
+  - `$group` - Parent group name
+  - `$index` - Instance number
+- Example: `"sfx_$container"` → `"sfx_Rain Drops"`
+
+**Multi-Container Support:**
+- Select multiple containers (Ctrl+Click) before exporting
+- All selected containers are exported with the same settings
+- Each container creates its own track and region (if enabled)
+
+Perfect for:
+- Extracting variations for game audio middleware
+- Creating asset libraries from generated ambiances
+- Preparing stems for linear post-production
 
 **Settings**
 ---
@@ -461,7 +492,6 @@ You can also customize the interface in the Settings.
 - **Preview Listening for Containers/Groups**: A new function will enable you to preview the sound of a container or an entire group directly within the interface before generating it in REAPER, saving time in the creative process.
 - **Flexible Group Generation Options**: The ability to generate content into a new group, a specific existing group chosen from a list, or directly into the currently selected group, providing more workflow flexibility and integration with existing projects.
 - **Action List**: Adds some Reaper actions to manipulate containers outside of the tool interface.
-- **Export**: For video games, allow the extraction of one instance of each item variation, so they can be exported and used to replicate the generated behavior in an audio middleware.
 - **Middleware API**: Directly create Random or Sequence containers from the tool in your preferred audio middleware.
 - **Ambisonic Support**: Extend multi-channel support to include ambisonic formats for spatial audio.
 
@@ -471,6 +501,24 @@ You can also customize the interface in the Settings.
 ***Please, if y ou have any issue, report it through this <u>[form](https://airtable.com/appGFEKYmjLSMhMyD/pagMuGETVTpLJfpmy/form)</u>***
 
 ## Change log
+
+### 0.16.1-beta (Export Region Creation)
+
+**New Features:**
+- Export: Add option to create REAPER regions during export
+  - One region per container, spanning all exported items
+  - Customizable region name pattern with tag system
+  - Supported tags: `$container`, `$group`, `$index`
+  - Example: `"sfx_$container"` → `"sfx_Rain Drops"`
+
+### 0.16.0-beta (Export Feature)
+
+**New Features:**
+- Export modal for exporting generated items to timeline
+  - Control instance count and spacing between exported instances
+  - Choose to export on current track or create new track
+  - Preserve or reset pan, volume, and pitch settings
+  - Multi-container selection support for batch export
 
 ### 0.10.0-beta (Major Feature Release)
 
