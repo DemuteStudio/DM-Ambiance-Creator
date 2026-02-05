@@ -1,5 +1,5 @@
 --[[
-@version 1.0
+@version 1.1
 @noindex
 DM Ambiance Creator - Export Module Aggregator
 --]]
@@ -12,7 +12,9 @@ local info = debug.getinfo(1, "S")
 local modulePath = info.source:match[[^@?(.*[\/])[^\/]-$]]
 
 -- Load sub-modules
-local Export_Core = dofile(modulePath .. "Export_Core.lua")
+local Export_Settings = dofile(modulePath .. "Export_Settings.lua")
+local Export_Engine = dofile(modulePath .. "Export_Engine.lua")
+local Export_Placement = dofile(modulePath .. "Export_Placement.lua")
 local Export_UI = dofile(modulePath .. "Export_UI.lua")
 
 function Export.initModule(g)
@@ -22,9 +24,15 @@ function Export.initModule(g)
     globals = g
 
     -- Initialize sub-modules
-    Export_Core.initModule(g)
+    Export_Settings.initModule(g)
+    Export_Engine.initModule(g)
+    Export_Placement.initModule(g)
     Export_UI.initModule(g)
-    Export_UI.setDependencies(Export_Core)
+
+    -- Wire dependencies
+    Export_Engine.setDependencies(Export_Settings, Export_Placement)
+    Export_Placement.setDependencies(Export_Settings)
+    Export_UI.setDependencies(Export_Settings, Export_Engine)
 end
 
 -- Re-export main functions
@@ -37,17 +45,19 @@ Export.renderModal = function()
 end
 
 Export.performExport = function()
-    return Export_Core.performExport()
+    return Export_Engine.performExport()
 end
 
 Export.resetSettings = function()
-    return Export_Core.resetSettings()
+    return Export_Settings.resetSettings()
 end
 
 -- Provide access to sub-modules for advanced usage
 function Export.getSubModules()
     return {
-        Core = Export_Core,
+        Settings = Export_Settings,
+        Engine = Export_Engine,
+        Placement = Export_Placement,
         UI = Export_UI
     }
 end

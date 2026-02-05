@@ -498,6 +498,13 @@ Constants.EXPORT = {
     -- Region Creation
     CREATE_REGIONS_DEFAULT = false,     -- Default state for region creation
     REGION_PATTERN_DEFAULT = "$container", -- Default region naming pattern
+    -- Pool & Loop (v2)
+    MAX_POOL_ITEMS_DEFAULT = 0,         -- Default max pool items (0 = export all)
+    LOOP_MODE_AUTO = "auto",            -- Auto-detect loop from container interval
+    LOOP_MODE_ON = "on",                -- Force loop on
+    LOOP_MODE_OFF = "off",              -- Force loop off
+    LOOP_MODE_DEFAULT = "auto",         -- Default loop mode
+    LOOP_ZERO_CROSSING_WINDOW = 0.05,   -- Zero crossing search window (50ms)
 }
 
 return Constants

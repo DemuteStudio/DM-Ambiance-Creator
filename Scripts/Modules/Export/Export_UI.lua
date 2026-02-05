@@ -7,7 +7,8 @@ Handles the Export modal window rendering with multi-selection and new widgets.
 
 local Export_UI = {}
 local globals = {}
-local Export_Core = nil
+local Export_Settings = nil
+local Export_Engine = nil
 
 -- UI State
 local shouldOpenModal = false
@@ -20,15 +21,16 @@ function Export_UI.initModule(g)
     globals = g
 end
 
-function Export_UI.setDependencies(core)
-    Export_Core = core
+function Export_UI.setDependencies(settings, engine)
+    Export_Settings = settings
+    Export_Engine = engine
 end
 
 -- Open the export modal
 function Export_UI.openModal()
     -- Reset and initialize settings
-    Export_Core.resetSettings()
-    Export_Core.initializeEnabledContainers()
+    Export_Settings.resetSettings()
+    Export_Settings.initializeEnabledContainers()
     lastClickedKey = nil
     shouldOpenModal = true
 end
@@ -58,7 +60,7 @@ function Export_UI.renderModal()
         local contentHeight = windowHeight - 130  -- Leave room for export method + buttons
 
         -- Get global params (needed in multiple sections)
-        local globalParams = Export_Core.getGlobalParams()
+        local globalParams = Export_Settings.getGlobalParams()
         local Constants = globals.Constants
         local EXPORT = Constants and Constants.EXPORT or {}
 
@@ -70,19 +72,19 @@ function Export_UI.renderModal()
             imgui.Separator(ctx)
             imgui.Spacing(ctx)
 
-            local containers = Export_Core.collectAllContainers()
+            local containers = Export_Settings.collectAllContainers()
 
             if #containers == 0 then
                 imgui.TextDisabled(ctx, "No containers found")
             else
                 for _, c in ipairs(containers) do
-                    local enabled = Export_Core.isContainerEnabled(c.key)
-                    local isSelected = Export_Core.isContainerSelected(c.key)
+                    local enabled = Export_Settings.isContainerEnabled(c.key)
+                    local isSelected = Export_Settings.isContainerSelected(c.key)
 
                     -- Checkbox for enable/disable export
                     local changedEnable, newEnabled = imgui.Checkbox(ctx, "##enable_" .. c.key, enabled)
                     if changedEnable then
-                        Export_Core.setContainerEnabled(c.key, newEnabled)
+                        Export_Settings.setContainerEnabled(c.key, newEnabled)
                     end
 
                     imgui.SameLine(ctx)
@@ -95,14 +97,14 @@ function Export_UI.renderModal()
 
                         if shift and lastClickedKey then
                             -- Shift+Click: Range selection
-                            Export_Core.selectContainerRange(lastClickedKey, c.key)
+                            Export_Settings.selectContainerRange(lastClickedKey, c.key)
                         elseif ctrl then
                             -- Ctrl+Click: Toggle selection
-                            Export_Core.toggleContainerSelected(c.key)
+                            Export_Settings.toggleContainerSelected(c.key)
                         else
                             -- Normal click: Single selection
-                            Export_Core.clearContainerSelection()
-                            Export_Core.setContainerSelected(c.key, true)
+                            Export_Settings.clearContainerSelection()
+                            Export_Settings.setContainerSelected(c.key, true)
                         end
                         lastClickedKey = c.key
                     end
@@ -129,7 +131,7 @@ function Export_UI.renderModal()
             local changedAmount, newAmount = imgui.DragInt(ctx, "##InstanceAmount",
                 globalParams.instanceAmount, 0.1, minInstances, maxInstances)
             if changedAmount then
-                Export_Core.setGlobalParam("instanceAmount", newAmount)
+                Export_Settings.setGlobalParam("instanceAmount", newAmount)
             end
             imgui.PopItemWidth(ctx)
 
@@ -142,7 +144,7 @@ function Export_UI.renderModal()
             local changedSpacing, newSpacing = imgui.DragDouble(ctx, "##Spacing",
                 globalParams.spacing, 0.01, minSpacing, maxSpacing, "%.2f")
             if changedSpacing then
-                Export_Core.setGlobalParam("spacing", newSpacing)
+                Export_Settings.setGlobalParam("spacing", newSpacing)
             end
             imgui.PopItemWidth(ctx)
 
@@ -152,7 +154,7 @@ function Export_UI.renderModal()
             local changedAlign, newAlign = imgui.Checkbox(ctx, "Align to whole seconds",
                 globalParams.alignToSeconds)
             if changedAlign then
-                Export_Core.setGlobalParam("alignToSeconds", newAlign)
+                Export_Settings.setGlobalParam("alignToSeconds", newAlign)
             end
 
             imgui.Spacing(ctx)
@@ -164,13 +166,13 @@ function Export_UI.renderModal()
             imgui.Spacing(ctx)
 
             local changed1, newPan = imgui.Checkbox(ctx, "Preserve Pan", globalParams.preservePan)
-            if changed1 then Export_Core.setGlobalParam("preservePan", newPan) end
+            if changed1 then Export_Settings.setGlobalParam("preservePan", newPan) end
 
             local changed2, newVol = imgui.Checkbox(ctx, "Preserve Volume", globalParams.preserveVolume)
-            if changed2 then Export_Core.setGlobalParam("preserveVolume", newVol) end
+            if changed2 then Export_Settings.setGlobalParam("preserveVolume", newVol) end
 
             local changed3, newPitch = imgui.Checkbox(ctx, "Preserve Pitch/Stretch", globalParams.preservePitch)
-            if changed3 then Export_Core.setGlobalParam("preservePitch", newPitch) end
+            if changed3 then Export_Settings.setGlobalParam("preservePitch", newPitch) end
 
             imgui.Spacing(ctx)
             imgui.Separator(ctx)
@@ -183,7 +185,7 @@ function Export_UI.renderModal()
             local changedCreateRegions, newCreateRegions = imgui.Checkbox(ctx,
                 "Create regions for exported items", globalParams.createRegions)
             if changedCreateRegions then
-                Export_Core.setGlobalParam("createRegions", newCreateRegions)
+                Export_Settings.setGlobalParam("createRegions", newCreateRegions)
             end
 
             if globalParams.createRegions then
@@ -194,7 +196,7 @@ function Export_UI.renderModal()
                 local changedPattern, newPattern = imgui.InputText(ctx, "##RegionPattern",
                     globalParams.regionPattern, imgui.InputTextFlags_None)
                 if changedPattern then
-                    Export_Core.setGlobalParam("regionPattern", newPattern)
+                    Export_Settings.setGlobalParam("regionPattern", newPattern)
                 end
                 imgui.PopItemWidth(ctx)
                 imgui.TextDisabled(ctx, "Tags: $container, $group, $index")
@@ -209,17 +211,17 @@ function Export_UI.renderModal()
             imgui.TextColored(ctx, 0x00AAFFFF, "Container Override")
             imgui.Spacing(ctx)
 
-            local selectedCount = Export_Core.getSelectedContainerCount()
+            local selectedCount = Export_Settings.getSelectedContainerCount()
 
             if selectedCount == 0 then
                 imgui.TextDisabled(ctx, "Select container(s) to set overrides")
             elseif selectedCount == 1 then
                 -- Single selection: show container name
-                local selectedKeys = Export_Core.getSelectedContainerKeys()
+                local selectedKeys = Export_Settings.getSelectedContainerKeys()
                 local selectedKey = selectedKeys[1]
 
                 -- Find container display name
-                local containers = Export_Core.collectAllContainers()
+                local containers = Export_Settings.collectAllContainers()
                 local selectedName = ""
                 for _, c in ipairs(containers) do
                     if c.key == selectedKey then
@@ -232,7 +234,7 @@ function Export_UI.renderModal()
                 imgui.Spacing(ctx)
 
                 -- Get or create override
-                local override = Export_Core.getContainerOverride(selectedKey)
+                local override = Export_Settings.getContainerOverride(selectedKey)
                 if not override then
                     override = {
                         enabled = false,
@@ -244,6 +246,10 @@ function Export_UI.renderModal()
                             preservePan = globalParams.preservePan,
                             preserveVolume = globalParams.preserveVolume,
                             preservePitch = globalParams.preservePitch,
+                            createRegions = globalParams.createRegions,
+                            regionPattern = globalParams.regionPattern,
+                            maxPoolItems = globalParams.maxPoolItems,
+                            loopMode = globalParams.loopMode,
                         }
                     }
                 end
@@ -251,7 +257,7 @@ function Export_UI.renderModal()
                 local changedOverride, enableOverride = imgui.Checkbox(ctx, "Enable Override##container", override.enabled)
                 if changedOverride then
                     override.enabled = enableOverride
-                    Export_Core.setContainerOverride(selectedKey, override)
+                    Export_Settings.setContainerOverride(selectedKey, override)
                 end
 
                 if override.enabled then
@@ -267,9 +273,9 @@ function Export_UI.renderModal()
 
                 -- Check if all selected have overrides enabled
                 local allOverridesEnabled = true
-                local selectedKeys = Export_Core.getSelectedContainerKeys()
+                local selectedKeys = Export_Settings.getSelectedContainerKeys()
                 for _, key in ipairs(selectedKeys) do
-                    local override = Export_Core.getContainerOverride(key)
+                    local override = Export_Settings.getContainerOverride(key)
                     if not override or not override.enabled then
                         allOverridesEnabled = false
                         break
@@ -281,7 +287,7 @@ function Export_UI.renderModal()
                     "Enable Override for all##batch", allOverridesEnabled)
                 if changedBatchOverride then
                     for _, key in ipairs(selectedKeys) do
-                        local override = Export_Core.getContainerOverride(key)
+                        local override = Export_Settings.getContainerOverride(key)
                         if not override then
                             override = {
                                 enabled = enableBatchOverride,
@@ -293,12 +299,16 @@ function Export_UI.renderModal()
                                     preservePan = globalParams.preservePan,
                                     preserveVolume = globalParams.preserveVolume,
                                     preservePitch = globalParams.preservePitch,
+                                    createRegions = globalParams.createRegions,
+                                    regionPattern = globalParams.regionPattern,
+                                    maxPoolItems = globalParams.maxPoolItems,
+                                    loopMode = globalParams.loopMode,
                                 }
                             }
                         else
                             override.enabled = enableBatchOverride
                         end
-                        Export_Core.setContainerOverride(key, override)
+                        Export_Settings.setContainerOverride(key, override)
                     end
                 end
 
@@ -308,7 +318,7 @@ function Export_UI.renderModal()
                     imgui.Spacing(ctx)
 
                     -- Get first selected container's override as reference
-                    local refOverride = Export_Core.getContainerOverride(selectedKeys[1])
+                    local refOverride = Export_Settings.getContainerOverride(selectedKeys[1])
                     if refOverride then
                         Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, EXPORT)
                     end
@@ -328,15 +338,15 @@ function Export_UI.renderModal()
         local changedMethod, newMethod = imgui.Combo(ctx, "##ExportMethod",
             globalParams.exportMethod, methods)
         if changedMethod then
-            Export_Core.setGlobalParam("exportMethod", newMethod)
+            Export_Settings.setGlobalParam("exportMethod", newMethod)
         end
         imgui.PopItemWidth(ctx)
 
         imgui.SameLine(ctx)
 
         -- Show enabled count
-        local enabledCount = Export_Core.getEnabledContainerCount()
-        local totalCount = #Export_Core.collectAllContainers()
+        local enabledCount = Export_Settings.getEnabledContainerCount()
+        local totalCount = #Export_Settings.collectAllContainers()
         imgui.Text(ctx, string.format("| Enabled: %d/%d", enabledCount, totalCount))
 
         imgui.Spacing(ctx)
@@ -356,7 +366,7 @@ function Export_UI.renderModal()
         imgui.PushStyleColor(ctx, imgui.Col_ButtonHovered, 0x00AACCFF)
         imgui.PushStyleColor(ctx, imgui.Col_ButtonActive, 0x006688FF)
         if imgui.Button(ctx, "Export", buttonWidth, 30) then
-            local success, message = Export_Core.performExport()
+            local success, message = Export_Engine.performExport()
             if success then
                 imgui.CloseCurrentPopup(ctx)
             end
@@ -388,7 +398,7 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
         EXPORT.INSTANCE_MIN or 1, EXPORT.INSTANCE_MAX or 100)
     if changedAmt then
         override.params.instanceAmount = newAmt
-        Export_Core.setContainerOverride(containerKey, override)
+        Export_Settings.setContainerOverride(containerKey, override)
     end
     imgui.PopItemWidth(ctx)
 
@@ -401,7 +411,7 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
         EXPORT.SPACING_MIN or 0, EXPORT.SPACING_MAX or 60, "%.2f")
     if changedSpc then
         override.params.spacing = newSpc
-        Export_Core.setContainerOverride(containerKey, override)
+        Export_Settings.setContainerOverride(containerKey, override)
     end
     imgui.PopItemWidth(ctx)
 
@@ -410,7 +420,7 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
         override.params.alignToSeconds)
     if changedAlignOvr then
         override.params.alignToSeconds = newAlignOvr
-        Export_Core.setContainerOverride(containerKey, override)
+        Export_Settings.setContainerOverride(containerKey, override)
     end
 
     imgui.Spacing(ctx)
@@ -419,19 +429,19 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
     local c1, p1 = imgui.Checkbox(ctx, "Preserve Pan##override", override.params.preservePan)
     if c1 then
         override.params.preservePan = p1
-        Export_Core.setContainerOverride(containerKey, override)
+        Export_Settings.setContainerOverride(containerKey, override)
     end
 
     local c2, p2 = imgui.Checkbox(ctx, "Preserve Volume##override", override.params.preserveVolume)
     if c2 then
         override.params.preserveVolume = p2
-        Export_Core.setContainerOverride(containerKey, override)
+        Export_Settings.setContainerOverride(containerKey, override)
     end
 
     local c3, p3 = imgui.Checkbox(ctx, "Preserve Pitch##override", override.params.preservePitch)
     if c3 then
         override.params.preservePitch = p3
-        Export_Core.setContainerOverride(containerKey, override)
+        Export_Settings.setContainerOverride(containerKey, override)
     end
 
     imgui.Unindent(ctx, 15)
@@ -449,7 +459,7 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
         refOverride.params.instanceAmount, 0.1,
         EXPORT.INSTANCE_MIN or 1, EXPORT.INSTANCE_MAX or 100)
     if changedAmt then
-        Export_Core.applyParamToSelected("instanceAmount", newAmt)
+        Export_Settings.applyParamToSelected("instanceAmount", newAmt)
     end
     imgui.PopItemWidth(ctx)
 
@@ -461,7 +471,7 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
         refOverride.params.spacing, 0.01,
         EXPORT.SPACING_MIN or 0, EXPORT.SPACING_MAX or 60, "%.2f")
     if changedSpc then
-        Export_Core.applyParamToSelected("spacing", newSpc)
+        Export_Settings.applyParamToSelected("spacing", newSpc)
     end
     imgui.PopItemWidth(ctx)
 
@@ -469,7 +479,7 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
     local changedAlignBatch, newAlignBatch = imgui.Checkbox(ctx, "Align to seconds##batch",
         refOverride.params.alignToSeconds)
     if changedAlignBatch then
-        Export_Core.applyParamToSelected("alignToSeconds", newAlignBatch)
+        Export_Settings.applyParamToSelected("alignToSeconds", newAlignBatch)
     end
 
     imgui.Spacing(ctx)
@@ -477,17 +487,17 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
     -- Batch Preserve checkboxes
     local c1, p1 = imgui.Checkbox(ctx, "Preserve Pan##batch", refOverride.params.preservePan)
     if c1 then
-        Export_Core.applyParamToSelected("preservePan", p1)
+        Export_Settings.applyParamToSelected("preservePan", p1)
     end
 
     local c2, p2 = imgui.Checkbox(ctx, "Preserve Volume##batch", refOverride.params.preserveVolume)
     if c2 then
-        Export_Core.applyParamToSelected("preserveVolume", p2)
+        Export_Settings.applyParamToSelected("preserveVolume", p2)
     end
 
     local c3, p3 = imgui.Checkbox(ctx, "Preserve Pitch##batch", refOverride.params.preservePitch)
     if c3 then
-        Export_Core.applyParamToSelected("preservePitch", p3)
+        Export_Settings.applyParamToSelected("preservePitch", p3)
     end
 
     imgui.Unindent(ctx, 15)
