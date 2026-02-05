@@ -48,8 +48,8 @@ function Export_UI.renderModal()
         shouldOpenModal = false
     end
 
-    -- Set modal size
-    imgui.SetNextWindowSize(ctx, 750, 580, imgui.Cond_FirstUseEver)
+    -- Set modal size (increased for Preview section)
+    imgui.SetNextWindowSize(ctx, 750, 620, imgui.Cond_FirstUseEver)
 
     local popupOpen, popupVisible = imgui.BeginPopupModal(ctx, "Export Items", true, imgui.WindowFlags_NoCollapse)
 
@@ -145,6 +145,58 @@ function Export_UI.renderModal()
                 globalParams.spacing, 0.01, minSpacing, maxSpacing, "%.2f")
             if changedSpacing then
                 Export_Settings.setGlobalParam("spacing", newSpacing)
+            end
+            imgui.PopItemWidth(ctx)
+
+            -- Max Pool Items (DragInt)
+            imgui.Text(ctx, "Max Pool Items:")
+            imgui.SameLine(ctx, 150)
+            imgui.PushItemWidth(ctx, 120)
+            local changedMaxPool, newMaxPool = imgui.DragInt(ctx, "##MaxPoolItems",
+                globalParams.maxPoolItems, 0.1, 0, 999)
+            if changedMaxPool then
+                Export_Settings.setGlobalParam("maxPoolItems", newMaxPool)
+            end
+            imgui.PopItemWidth(ctx)
+
+            -- Display pool info: "All (X)" when 0, or "X / Y available" when > 0
+            imgui.SameLine(ctx)
+            local totalPool = 0
+            local selectedKeys = Export_Settings.getSelectedContainerKeys()
+            if #selectedKeys == 1 then
+                totalPool = Export_Settings.getPoolSize(selectedKeys[1])
+            elseif #selectedKeys == 0 then
+                -- Show total from all enabled containers
+                local containers = Export_Settings.collectAllContainers()
+                for _, c in ipairs(containers) do
+                    if Export_Settings.isContainerEnabled(c.key) then
+                        totalPool = totalPool + Export_Settings.getPoolSize(c.key)
+                    end
+                end
+            end
+            if totalPool > 0 then
+                local poolText
+                if globalParams.maxPoolItems == 0 or globalParams.maxPoolItems >= totalPool then
+                    poolText = string.format("All (%d)", totalPool)
+                else
+                    poolText = string.format("%d / %d available", globalParams.maxPoolItems, totalPool)
+                end
+                imgui.TextDisabled(ctx, poolText)
+            end
+
+            -- Loop Mode (Combo)
+            imgui.Text(ctx, "Loop Mode:")
+            imgui.SameLine(ctx, 150)
+            imgui.PushItemWidth(ctx, 120)
+            local loopModeOptions = "Auto\0On\0Off\0"
+            local loopModeValueToIndex = { ["auto"] = 0, ["on"] = 1, ["off"] = 2 }
+            local loopModeIndexToValue = { [0] = "auto", [1] = "on", [2] = "off" }
+            local currentLoopIndex = loopModeValueToIndex[globalParams.loopMode] or 0
+            local changedLoopMode, newLoopIndex = imgui.Combo(ctx, "##LoopMode",
+                currentLoopIndex, loopModeOptions)
+            if changedLoopMode then
+                local newLoopValue = loopModeIndexToValue[newLoopIndex] or "auto"
+                Export_Settings.setGlobalParam("loopMode", newLoopValue)
             end
             imgui.PopItemWidth(ctx)
 
@@ -324,6 +376,66 @@ function Export_UI.renderModal()
                     end
                 end
             end
+
+            -- Preview Section
+            imgui.Spacing(ctx)
+            imgui.Separator(ctx)
+            imgui.Spacing(ctx)
+            imgui.TextColored(ctx, 0x00AAFFFF, "Preview")
+            imgui.Spacing(ctx)
+
+            if imgui.BeginChild(ctx, "PreviewList", -1, 120, imgui.ChildFlags_Border) then
+                -- Defensive nil-check for Export_Engine
+                local previewEntries = Export_Engine and Export_Engine.generatePreview
+                    and Export_Engine.generatePreview() or {}
+
+                if #previewEntries == 0 then
+                    imgui.TextDisabled(ctx, "No enabled containers")
+                else
+                    for _, entry in ipairs(previewEntries) do
+                        -- Format pool display: "6/12" or "8/8"
+                        local poolDisplay = string.format("%d/%d", entry.poolSelected, entry.poolTotal)
+
+                        -- Format loop indicator: checkmark or X, with "(auto)" suffix
+                        local loopIndicator
+                        if entry.loopMode then
+                            loopIndicator = "Loop \226\156\147"  -- ✓
+                            if entry.loopModeAuto then
+                                loopIndicator = loopIndicator .. " (auto)"
+                            end
+                        else
+                            loopIndicator = "Loop \226\156\151"  -- ✗
+                        end
+
+                        -- Format track info: "1trk" for mono, "2trk" for stereo
+                        local trackInfo = string.format("%dtrk", entry.trackCount)
+
+                        -- Format duration: "~12s" rounded to nearest second
+                        local durationDisplay = string.format("~%ds", math.floor(entry.estimatedDuration + 0.5))
+
+                        -- Render row with proper spacing
+                        -- Name (truncated if needed)
+                        local displayName = entry.name
+                        if #displayName > 20 then
+                            displayName = displayName:sub(1, 17) .. "..."
+                        end
+                        imgui.Text(ctx, displayName)
+                        imgui.SameLine(ctx, 160)
+                        imgui.TextDisabled(ctx, poolDisplay)
+                        imgui.SameLine(ctx, 200)
+                        if entry.loopMode then
+                            imgui.TextColored(ctx, 0x88FF88FF, loopIndicator)
+                        else
+                            imgui.TextDisabled(ctx, loopIndicator)
+                        end
+                        imgui.SameLine(ctx, 300)
+                        imgui.TextDisabled(ctx, trackInfo)
+                        imgui.SameLine(ctx, 340)
+                        imgui.TextDisabled(ctx, durationDisplay)
+                    end
+                end
+            end
+            imgui.EndChild(ctx)
         end
         imgui.EndChild(ctx)
 
@@ -415,6 +527,34 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
     end
     imgui.PopItemWidth(ctx)
 
+    -- Override Max Pool Items
+    imgui.Text(ctx, "Max Pool:")
+    imgui.SameLine(ctx, 100)
+    imgui.PushItemWidth(ctx, 100)
+    local changedMaxPoolOvr, newMaxPoolOvr = imgui.DragInt(ctx, "##OverrideMaxPool",
+        override.params.maxPoolItems or 0, 0.1, 0, 999)
+    if changedMaxPoolOvr then
+        override.params.maxPoolItems = newMaxPoolOvr
+        Export_Settings.setContainerOverride(containerKey, override)
+    end
+    imgui.PopItemWidth(ctx)
+
+    -- Override Loop Mode
+    imgui.Text(ctx, "Loop Mode:")
+    imgui.SameLine(ctx, 100)
+    imgui.PushItemWidth(ctx, 100)
+    local loopModeOptions = "Auto\0On\0Off\0"
+    local loopModeValueToIndex = { ["auto"] = 0, ["on"] = 1, ["off"] = 2 }
+    local loopModeIndexToValue = { [0] = "auto", [1] = "on", [2] = "off" }
+    local currentLoopIdx = loopModeValueToIndex[override.params.loopMode or "auto"] or 0
+    local changedLoopOvr, newLoopIdx = imgui.Combo(ctx, "##OverrideLoopMode",
+        currentLoopIdx, loopModeOptions)
+    if changedLoopOvr then
+        override.params.loopMode = loopModeIndexToValue[newLoopIdx] or "auto"
+        Export_Settings.setContainerOverride(containerKey, override)
+    end
+    imgui.PopItemWidth(ctx)
+
     -- Override Align to seconds
     local changedAlignOvr, newAlignOvr = imgui.Checkbox(ctx, "Align to seconds##override",
         override.params.alignToSeconds)
@@ -472,6 +612,32 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
         EXPORT.SPACING_MIN or 0, EXPORT.SPACING_MAX or 60, "%.2f")
     if changedSpc then
         Export_Settings.applyParamToSelected("spacing", newSpc)
+    end
+    imgui.PopItemWidth(ctx)
+
+    -- Batch Max Pool Items
+    imgui.Text(ctx, "Max Pool:")
+    imgui.SameLine(ctx, 100)
+    imgui.PushItemWidth(ctx, 100)
+    local changedMaxPoolBatch, newMaxPoolBatch = imgui.DragInt(ctx, "##BatchMaxPool",
+        refOverride.params.maxPoolItems or 0, 0.1, 0, 999)
+    if changedMaxPoolBatch then
+        Export_Settings.applyParamToSelected("maxPoolItems", newMaxPoolBatch)
+    end
+    imgui.PopItemWidth(ctx)
+
+    -- Batch Loop Mode
+    imgui.Text(ctx, "Loop Mode:")
+    imgui.SameLine(ctx, 100)
+    imgui.PushItemWidth(ctx, 100)
+    local loopModeOptions = "Auto\0On\0Off\0"
+    local loopModeValueToIndex = { ["auto"] = 0, ["on"] = 1, ["off"] = 2 }
+    local loopModeIndexToValue = { [0] = "auto", [1] = "on", [2] = "off" }
+    local currentLoopIdxBatch = loopModeValueToIndex[refOverride.params.loopMode or "auto"] or 0
+    local changedLoopBatch, newLoopIdxBatch = imgui.Combo(ctx, "##BatchLoopMode",
+        currentLoopIdxBatch, loopModeOptions)
+    if changedLoopBatch then
+        Export_Settings.applyParamToSelected("loopMode", loopModeIndexToValue[newLoopIdxBatch] or "auto")
     end
     imgui.PopItemWidth(ctx)
 

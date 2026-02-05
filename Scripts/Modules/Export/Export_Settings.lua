@@ -272,6 +272,15 @@ end
 -- Returns boolean: true if item should loop, false otherwise
 function M.resolveLoopMode(container, params)
     local Constants = globals.Constants
+    -- Defensive nil-check for Constants
+    if not Constants or not Constants.EXPORT then
+        -- Fallback to string comparison if Constants not available
+        if params.loopMode == "on" then return true end
+        if params.loopMode == "off" then return false end
+        -- "auto" fallback: check negative triggerRate
+        return container.triggerRate and container.triggerRate < 0
+    end
+
     if params.loopMode == Constants.EXPORT.LOOP_MODE_ON then return true end
     if params.loopMode == Constants.EXPORT.LOOP_MODE_OFF then return false end
     -- "auto": check if container has negative interval in absolute mode
@@ -288,30 +297,46 @@ function M.validateMaxPoolItems(container, maxItems)
     return #container.items
 end
 
--- NEW v2: Get pool size for a container (total exportable entries: items x areas)
+-- NEW v2: Calculate pool size directly from containerInfo (optimized - no search)
+-- Use this when you already have containerInfo to avoid O(N) lookup
+function M.calculatePoolSizeFromInfo(containerInfo)
+    local container = containerInfo.container
+    local totalEntries = 0
+    for itemIdx, item in ipairs(container.items or {}) do
+        local areas = item.areas
+        if (not areas or #areas == 0) and globals.waveformAreas then
+            local itemKey = globals.Structures and globals.Structures.makeItemKey
+                and globals.Structures.makeItemKey(containerInfo.path, containerInfo.containerIndex, itemIdx)
+                or nil
+            if itemKey then
+                areas = globals.waveformAreas[itemKey]
+            end
+        end
+        if areas and #areas > 0 then
+            totalEntries = totalEntries + #areas
+        else
+            totalEntries = totalEntries + 1  -- At least one entry per item
+        end
+    end
+    return totalEntries
+end
+
+-- NEW v2: Get pool size for a container by key (total exportable entries: items x areas)
+-- Note: Use calculatePoolSizeFromInfo() when you already have containerInfo for better performance
 function M.getPoolSize(containerKey)
+    -- First check if we have a cached container list to avoid full scan
+    if #containerListCache > 0 then
+        for _, c in ipairs(containerListCache) do
+            if c.key == containerKey then
+                return M.calculatePoolSizeFromInfo(c)
+            end
+        end
+    end
+    -- Fallback: collect all containers (will update cache)
     local containers = M.collectAllContainers()
     for _, c in ipairs(containers) do
         if c.key == containerKey then
-            local container = c.container
-            local totalEntries = 0
-            for itemIdx, item in ipairs(container.items or {}) do
-                local areas = item.areas
-                if (not areas or #areas == 0) and globals.waveformAreas then
-                    local itemKey = globals.Structures and globals.Structures.makeItemKey
-                        and globals.Structures.makeItemKey(c.path, c.containerIndex, itemIdx)
-                        or nil
-                    if itemKey then
-                        areas = globals.waveformAreas[itemKey]
-                    end
-                end
-                if areas and #areas > 0 then
-                    totalEntries = totalEntries + #areas
-                else
-                    totalEntries = totalEntries + 1  -- At least one entry per item
-                end
-            end
-            return totalEntries
+            return M.calculatePoolSizeFromInfo(c)
         end
     end
     return 0

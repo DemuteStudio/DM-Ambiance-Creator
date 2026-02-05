@@ -1,9 +1,10 @@
 --[[
-@version 1.1
+@version 1.2
 @noindex
 DM Ambiance Creator - Export Engine Module
 Handles export orchestration, region creation, and export execution.
 Migrated from Export_Core.lua (performExport, parseRegionPattern, shallowCopy).
+v1.2: Added instanceCount to PreviewEntry, optimized pool size calculation, fixed trackType default.
 --]]
 
 local M = {}
@@ -120,14 +121,117 @@ function M.performExport()
     return true, message
 end
 
--- Stub: Generate preview of export (full implementation in Story 1.3)
-function M.generatePreview(settings)
-    return {}
+-- Generate preview of export showing per-container summary
+-- @return table: Array of PreviewEntry objects
+function M.generatePreview()
+    local previewEntries = {}
+
+    local containers = Settings.collectAllContainers()
+
+    for _, containerInfo in ipairs(containers) do
+        if not Settings.isContainerEnabled(containerInfo.key) then
+            goto nextContainer
+        end
+
+        local params = Settings.getEffectiveParams(containerInfo.key)
+        local container = containerInfo.container
+
+        -- Get total pool size (use optimized version since we have containerInfo)
+        local poolTotal = Settings.calculatePoolSizeFromInfo
+            and Settings.calculatePoolSizeFromInfo(containerInfo)
+            or Settings.getPoolSize(containerInfo.key)
+
+        -- Calculate poolSelected based on maxPoolItems
+        local poolSelected
+        if params.maxPoolItems > 0 and params.maxPoolItems < poolTotal then
+            poolSelected = params.maxPoolItems
+        else
+            poolSelected = poolTotal
+        end
+
+        -- Resolve loop mode
+        local loopModeResolved = Settings.resolveLoopMode(container, params)
+        local loopModeAuto = (params.loopMode == "auto" and loopModeResolved)
+
+        -- Resolve track structure (may error if Generation not available)
+        -- Default to mono for single track (consistent with trackCount=1)
+        local trackCount = 1
+        local trackType = "mono"
+        if Placement and globals.Generation then
+            local ok, trackStructure = pcall(Placement.resolveTrackStructure, containerInfo)
+            if ok and trackStructure then
+                trackCount = trackStructure.numTracks or 1
+                trackType = trackStructure.trackType or "stereo"
+            end
+        end
+
+        -- Estimate duration
+        local estimatedDuration = M.estimateDuration(poolSelected, params, container)
+
+        -- Build PreviewEntry (includes instanceCount per Architecture 3.4)
+        table.insert(previewEntries, {
+            name = containerInfo.displayName,
+            poolTotal = poolTotal,
+            poolSelected = poolSelected,
+            loopMode = loopModeResolved,
+            loopModeAuto = loopModeAuto,
+            trackCount = trackCount,
+            trackType = trackType,
+            estimatedDuration = estimatedDuration,
+            instanceCount = params.instanceAmount or 1,
+        })
+
+        ::nextContainer::
+    end
+
+    return previewEntries
 end
 
--- Stub: Estimate duration of export (full implementation in Story 1.3)
+-- Estimate total duration of export for a container
+-- @param poolSize number: Number of items/areas that will be exported
+-- @param params table: Export params with instanceAmount, spacing
+-- @param container table: Container object with items for avg length calculation
+-- @return number: Estimated duration in seconds
 function M.estimateDuration(poolSize, params, container)
-    return 0
+    if poolSize == 0 then return 0 end
+
+    -- Calculate average item length from container items or use default
+    local avgItemLength = 5.0  -- Default: 5 seconds
+    if container and container.items and #container.items > 0 then
+        local totalLength = 0
+        local itemCount = 0
+        for _, item in ipairs(container.items) do
+            if item.length and item.length > 0 then
+                totalLength = totalLength + item.length
+                itemCount = itemCount + 1
+            end
+        end
+        if itemCount > 0 then
+            avgItemLength = totalLength / itemCount
+        end
+    end
+
+    -- Calculate total items: poolSize * instanceAmount
+    local totalItems = poolSize * (params.instanceAmount or 1)
+
+    -- Calculate duration: (totalItems * avgItemLength) + ((totalItems - 1) * spacing)
+    local spacing = params.spacing or 0
+    local duration = (totalItems * avgItemLength)
+    if totalItems > 1 then
+        duration = duration + ((totalItems - 1) * spacing)
+    end
+
+    -- If loop mode is enabled, check if loopDuration is specified
+    local loopMode = params.loopMode or "auto"
+    if loopMode == "on" or (loopMode == "auto" and container and container.triggerRate and container.triggerRate < 0) then
+        -- For loop mode, return estimated duration based on items
+        -- (loopDuration from params could override this in future Story 3.2)
+        if params.loopDuration and params.loopDuration > 0 then
+            return params.loopDuration
+        end
+    end
+
+    return duration
 end
 
 return M
