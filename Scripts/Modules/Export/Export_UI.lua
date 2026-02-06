@@ -1,8 +1,10 @@
 --[[
-@version 1.1
+@version 1.3
 @noindex
 DM Ambiance Creator - Export UI Module
 Handles the Export modal window rendering with multi-selection and new widgets.
+v1.2: Fixed BeginChild/EndChild bug, added visual distinction for override values.
+v1.3: Code review fixes - added error display, all 11 override params, constants extraction, nil checks, caching.
 --]]
 
 local Export_UI = {}
@@ -13,6 +15,14 @@ local Export_Engine = nil
 -- UI State
 local shouldOpenModal = false
 local lastClickedKey = nil  -- For Shift+Click range selection
+local lastExportError = nil  -- Store export error for display
+
+-- Module-level constants (avoid duplication)
+local LOOP_MODE_OPTIONS = "Auto\0On\0Off\0"
+local LOOP_MODE_VALUE_TO_INDEX = { ["auto"] = 0, ["on"] = 1, ["off"] = 2 }
+local LOOP_MODE_INDEX_TO_VALUE = { [0] = "auto", [1] = "on", [2] = "off" }
+local OVERRIDE_LABEL_WIDTH = 100
+local MAX_POOL_UI_LIMIT = 999
 
 function Export_UI.initModule(g)
     if not g then
@@ -32,6 +42,7 @@ function Export_UI.openModal()
     Export_Settings.resetSettings()
     Export_Settings.initializeEnabledContainers()
     lastClickedKey = nil
+    lastExportError = nil  -- Clear any previous error
     shouldOpenModal = true
 end
 
@@ -64,6 +75,9 @@ function Export_UI.renderModal()
         local Constants = globals.Constants
         local EXPORT = Constants and Constants.EXPORT or {}
 
+        -- Cache containers list (called once per frame, used in multiple places)
+        local containers = Export_Settings.collectAllContainers()
+
         -- Left Panel: Container List with Checkboxes and Multi-Selection
         if imgui.BeginChild(ctx, "ContainerList", leftPanelWidth, contentHeight, imgui.ChildFlags_Border) then
             imgui.TextColored(ctx, 0xFFAA00FF, "Containers")
@@ -71,8 +85,6 @@ function Export_UI.renderModal()
             imgui.TextDisabled(ctx, "(Ctrl/Shift+Click)")
             imgui.Separator(ctx)
             imgui.Spacing(ctx)
-
-            local containers = Export_Settings.collectAllContainers()
 
             if #containers == 0 then
                 imgui.TextDisabled(ctx, "No containers found")
@@ -110,8 +122,8 @@ function Export_UI.renderModal()
                     end
                 end
             end
+            imgui.EndChild(ctx)  -- ContainerList - inside if block
         end
-        imgui.EndChild(ctx)
 
         imgui.SameLine(ctx)
 
@@ -153,7 +165,7 @@ function Export_UI.renderModal()
             imgui.SameLine(ctx, 150)
             imgui.PushItemWidth(ctx, 120)
             local changedMaxPool, newMaxPool = imgui.DragInt(ctx, "##MaxPoolItems",
-                globalParams.maxPoolItems, 0.1, 0, 999)
+                globalParams.maxPoolItems, 0.1, 0, MAX_POOL_UI_LIMIT)
             if changedMaxPool then
                 Export_Settings.setGlobalParam("maxPoolItems", newMaxPool)
             end
@@ -166,8 +178,7 @@ function Export_UI.renderModal()
             if #selectedKeys == 1 then
                 totalPool = Export_Settings.getPoolSize(selectedKeys[1])
             elseif #selectedKeys == 0 then
-                -- Show total from all enabled containers
-                local containers = Export_Settings.collectAllContainers()
+                -- Show total from all enabled containers (use cached containers)
                 for _, c in ipairs(containers) do
                     if Export_Settings.isContainerEnabled(c.key) then
                         totalPool = totalPool + Export_Settings.getPoolSize(c.key)
@@ -188,14 +199,11 @@ function Export_UI.renderModal()
             imgui.Text(ctx, "Loop Mode:")
             imgui.SameLine(ctx, 150)
             imgui.PushItemWidth(ctx, 120)
-            local loopModeOptions = "Auto\0On\0Off\0"
-            local loopModeValueToIndex = { ["auto"] = 0, ["on"] = 1, ["off"] = 2 }
-            local loopModeIndexToValue = { [0] = "auto", [1] = "on", [2] = "off" }
-            local currentLoopIndex = loopModeValueToIndex[globalParams.loopMode] or 0
+            local currentLoopIndex = LOOP_MODE_VALUE_TO_INDEX[globalParams.loopMode] or 0
             local changedLoopMode, newLoopIndex = imgui.Combo(ctx, "##LoopMode",
-                currentLoopIndex, loopModeOptions)
+                currentLoopIndex, LOOP_MODE_OPTIONS)
             if changedLoopMode then
-                local newLoopValue = loopModeIndexToValue[newLoopIndex] or "auto"
+                local newLoopValue = LOOP_MODE_INDEX_TO_VALUE[newLoopIndex] or "auto"
                 Export_Settings.setGlobalParam("loopMode", newLoopValue)
             end
             imgui.PopItemWidth(ctx)
@@ -272,8 +280,7 @@ function Export_UI.renderModal()
                 local selectedKeys = Export_Settings.getSelectedContainerKeys()
                 local selectedKey = selectedKeys[1]
 
-                -- Find container display name
-                local containers = Export_Settings.collectAllContainers()
+                -- Find container display name (use cached containers)
                 local selectedName = ""
                 for _, c in ipairs(containers) do
                     if c.key == selectedKey then
@@ -393,51 +400,60 @@ function Export_UI.renderModal()
                     imgui.TextDisabled(ctx, "No enabled containers")
                 else
                     for _, entry in ipairs(previewEntries) do
-                        -- Format pool display: "6/12" or "8/8"
-                        local poolDisplay = string.format("%d/%d", entry.poolSelected, entry.poolTotal)
+                        -- Defensive nil checks for entry fields
+                        if not entry or not entry.name then
+                            imgui.TextDisabled(ctx, "(invalid entry)")
+                        else
+                            -- Format pool display: "6/12" or "8/8"
+                            local poolSelected = entry.poolSelected or 0
+                            local poolTotal = entry.poolTotal or 0
+                            local poolDisplay = string.format("%d/%d", poolSelected, poolTotal)
 
-                        -- Format loop indicator: checkmark or X, with "(auto)" suffix
-                        local loopIndicator
-                        if entry.loopMode then
-                            loopIndicator = "Loop \226\156\147"  -- ✓
-                            if entry.loopModeAuto then
-                                loopIndicator = loopIndicator .. " (auto)"
+                            -- Format loop indicator: checkmark or X, with "(auto)" suffix
+                            local loopIndicator
+                            if entry.loopMode then
+                                loopIndicator = "Loop \226\156\147"  -- ✓
+                                if entry.loopModeAuto then
+                                    loopIndicator = loopIndicator .. " (auto)"
+                                end
+                            else
+                                loopIndicator = "Loop \226\156\151"  -- ✗
                             end
-                        else
-                            loopIndicator = "Loop \226\156\151"  -- ✗
-                        end
 
-                        -- Format track info: "1trk" for mono, "2trk" for stereo
-                        local trackInfo = string.format("%dtrk", entry.trackCount)
+                            -- Format track info: "1trk" for mono, "2trk" for stereo
+                            local trackCount = entry.trackCount or 1
+                            local trackInfo = string.format("%dtrk", trackCount)
 
-                        -- Format duration: "~12s" rounded to nearest second
-                        local durationDisplay = string.format("~%ds", math.floor(entry.estimatedDuration + 0.5))
+                            -- Format duration: "~12s" rounded to nearest second
+                            local estimatedDuration = entry.estimatedDuration or 0
+                            local durationDisplay = string.format("~%ds", math.floor(estimatedDuration + 0.5))
 
-                        -- Render row with proper spacing
-                        -- Name (truncated if needed)
-                        local displayName = entry.name
-                        if #displayName > 20 then
-                            displayName = displayName:sub(1, 17) .. "..."
+                            -- Render row with proper spacing
+                            -- Name (truncated if needed)
+                            local displayName = entry.name
+                            if #displayName > 20 then
+                                displayName = displayName:sub(1, 17) .. "..."
+                            end
+                            imgui.Text(ctx, displayName)
+                            imgui.SameLine(ctx, 160)
+                            imgui.TextDisabled(ctx, poolDisplay)
+                            imgui.SameLine(ctx, 200)
+                            if entry.loopMode then
+                                imgui.TextColored(ctx, 0x88FF88FF, loopIndicator)
+                            else
+                                imgui.TextDisabled(ctx, loopIndicator)
+                            end
+                            imgui.SameLine(ctx, 300)
+                            imgui.TextDisabled(ctx, trackInfo)
+                            imgui.SameLine(ctx, 340)
+                            imgui.TextDisabled(ctx, durationDisplay)
                         end
-                        imgui.Text(ctx, displayName)
-                        imgui.SameLine(ctx, 160)
-                        imgui.TextDisabled(ctx, poolDisplay)
-                        imgui.SameLine(ctx, 200)
-                        if entry.loopMode then
-                            imgui.TextColored(ctx, 0x88FF88FF, loopIndicator)
-                        else
-                            imgui.TextDisabled(ctx, loopIndicator)
-                        end
-                        imgui.SameLine(ctx, 300)
-                        imgui.TextDisabled(ctx, trackInfo)
-                        imgui.SameLine(ctx, 340)
-                        imgui.TextDisabled(ctx, durationDisplay)
                     end
                 end
+                imgui.EndChild(ctx)  -- PreviewList - inside if block
             end
-            imgui.EndChild(ctx)
+            imgui.EndChild(ctx)  -- Parameters - inside if block
         end
-        imgui.EndChild(ctx)
 
         -- Export Method Section (between panels and buttons)
         imgui.Separator(ctx)
@@ -456,9 +472,9 @@ function Export_UI.renderModal()
 
         imgui.SameLine(ctx)
 
-        -- Show enabled count
+        -- Show enabled count (use cached containers)
         local enabledCount = Export_Settings.getEnabledContainerCount()
-        local totalCount = #Export_Settings.collectAllContainers()
+        local totalCount = #containers
         imgui.Text(ctx, string.format("| Enabled: %d/%d", enabledCount, totalCount))
 
         imgui.Spacing(ctx)
@@ -480,10 +496,19 @@ function Export_UI.renderModal()
         if imgui.Button(ctx, "Export", buttonWidth, 30) then
             local success, message = Export_Engine.performExport()
             if success then
+                lastExportError = nil
                 imgui.CloseCurrentPopup(ctx)
+            else
+                lastExportError = message or "Export failed (unknown error)"
             end
         end
         imgui.PopStyleColor(ctx, 3)
+
+        -- Show export error if any
+        if lastExportError then
+            imgui.SameLine(ctx)
+            imgui.TextColored(ctx, 0xFF4444FF, lastExportError)
+        end
 
         imgui.SameLine(ctx)
 
@@ -497,13 +522,23 @@ function Export_UI.renderModal()
 end
 
 -- Render override parameters for single selection
+-- Visual distinction: orange text with * suffix for values that differ from global
 function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPORT)
     imgui.Indent(ctx, 15)
     imgui.Spacing(ctx)
 
+    -- Get global params for comparison (visual distinction per AC #2)
+    local globalParams = Export_Settings.getGlobalParams()
+    local MODIFIED_COLOR = 0xFFAA00FF  -- Orange
+
     -- Override Instance Amount
-    imgui.Text(ctx, "Instances:")
-    imgui.SameLine(ctx, 100)
+    local instDiff = override.params.instanceAmount ~= globalParams.instanceAmount
+    if instDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Instances: *")
+    else
+        imgui.Text(ctx, "Instances:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
     imgui.PushItemWidth(ctx, 100)
     local changedAmt, newAmt = imgui.DragInt(ctx, "##OverrideAmount",
         override.params.instanceAmount, 0.1,
@@ -515,8 +550,13 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
     imgui.PopItemWidth(ctx)
 
     -- Override Spacing
-    imgui.Text(ctx, "Spacing:")
-    imgui.SameLine(ctx, 100)
+    local spcDiff = override.params.spacing ~= globalParams.spacing
+    if spcDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Spacing: *")
+    else
+        imgui.Text(ctx, "Spacing:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
     imgui.PushItemWidth(ctx, 100)
     local changedSpc, newSpc = imgui.DragDouble(ctx, "##OverrideSpacing",
         override.params.spacing, 0.01,
@@ -528,11 +568,16 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
     imgui.PopItemWidth(ctx)
 
     -- Override Max Pool Items
-    imgui.Text(ctx, "Max Pool:")
-    imgui.SameLine(ctx, 100)
+    local poolDiff = (override.params.maxPoolItems or 0) ~= (globalParams.maxPoolItems or 0)
+    if poolDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Max Pool: *")
+    else
+        imgui.Text(ctx, "Max Pool:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
     imgui.PushItemWidth(ctx, 100)
     local changedMaxPoolOvr, newMaxPoolOvr = imgui.DragInt(ctx, "##OverrideMaxPool",
-        override.params.maxPoolItems or 0, 0.1, 0, 999)
+        override.params.maxPoolItems or 0, 0.1, 0, MAX_POOL_UI_LIMIT)
     if changedMaxPoolOvr then
         override.params.maxPoolItems = newMaxPoolOvr
         Export_Settings.setContainerOverride(containerKey, override)
@@ -540,23 +585,27 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
     imgui.PopItemWidth(ctx)
 
     -- Override Loop Mode
-    imgui.Text(ctx, "Loop Mode:")
-    imgui.SameLine(ctx, 100)
+    local loopDiff = (override.params.loopMode or "auto") ~= (globalParams.loopMode or "auto")
+    if loopDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Loop Mode: *")
+    else
+        imgui.Text(ctx, "Loop Mode:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
     imgui.PushItemWidth(ctx, 100)
-    local loopModeOptions = "Auto\0On\0Off\0"
-    local loopModeValueToIndex = { ["auto"] = 0, ["on"] = 1, ["off"] = 2 }
-    local loopModeIndexToValue = { [0] = "auto", [1] = "on", [2] = "off" }
-    local currentLoopIdx = loopModeValueToIndex[override.params.loopMode or "auto"] or 0
+    local currentLoopIdx = LOOP_MODE_VALUE_TO_INDEX[override.params.loopMode or "auto"] or 0
     local changedLoopOvr, newLoopIdx = imgui.Combo(ctx, "##OverrideLoopMode",
-        currentLoopIdx, loopModeOptions)
+        currentLoopIdx, LOOP_MODE_OPTIONS)
     if changedLoopOvr then
-        override.params.loopMode = loopModeIndexToValue[newLoopIdx] or "auto"
+        override.params.loopMode = LOOP_MODE_INDEX_TO_VALUE[newLoopIdx] or "auto"
         Export_Settings.setContainerOverride(containerKey, override)
     end
     imgui.PopItemWidth(ctx)
 
     -- Override Align to seconds
-    local changedAlignOvr, newAlignOvr = imgui.Checkbox(ctx, "Align to seconds##override",
+    local alignDiff = override.params.alignToSeconds ~= globalParams.alignToSeconds
+    local changedAlignOvr, newAlignOvr = imgui.Checkbox(ctx,
+        alignDiff and "Align to seconds *##override" or "Align to seconds##override",
         override.params.alignToSeconds)
     if changedAlignOvr then
         override.params.alignToSeconds = newAlignOvr
@@ -566,34 +615,104 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
     imgui.Spacing(ctx)
 
     -- Override Preserve checkboxes
-    local c1, p1 = imgui.Checkbox(ctx, "Preserve Pan##override", override.params.preservePan)
+    local panDiff = override.params.preservePan ~= globalParams.preservePan
+    local c1, p1 = imgui.Checkbox(ctx,
+        panDiff and "Preserve Pan *##override" or "Preserve Pan##override",
+        override.params.preservePan)
     if c1 then
         override.params.preservePan = p1
         Export_Settings.setContainerOverride(containerKey, override)
     end
 
-    local c2, p2 = imgui.Checkbox(ctx, "Preserve Volume##override", override.params.preserveVolume)
+    local volDiff = override.params.preserveVolume ~= globalParams.preserveVolume
+    local c2, p2 = imgui.Checkbox(ctx,
+        volDiff and "Preserve Volume *##override" or "Preserve Volume##override",
+        override.params.preserveVolume)
     if c2 then
         override.params.preserveVolume = p2
         Export_Settings.setContainerOverride(containerKey, override)
     end
 
-    local c3, p3 = imgui.Checkbox(ctx, "Preserve Pitch##override", override.params.preservePitch)
+    local pitchDiff = override.params.preservePitch ~= globalParams.preservePitch
+    local c3, p3 = imgui.Checkbox(ctx,
+        pitchDiff and "Preserve Pitch *##override" or "Preserve Pitch##override",
+        override.params.preservePitch)
     if c3 then
         override.params.preservePitch = p3
         Export_Settings.setContainerOverride(containerKey, override)
+    end
+
+    imgui.Spacing(ctx)
+    imgui.Separator(ctx)
+    imgui.Spacing(ctx)
+
+    -- Override Export Method
+    local methodDiff = (override.params.exportMethod or 0) ~= (globalParams.exportMethod or 0)
+    if methodDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Export To: *")
+    else
+        imgui.Text(ctx, "Export To:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+    imgui.PushItemWidth(ctx, 120)
+    local methods = "Current Track\0New Track\0"
+    local changedMethodOvr, newMethodOvr = imgui.Combo(ctx, "##OverrideMethod",
+        override.params.exportMethod or 0, methods)
+    if changedMethodOvr then
+        override.params.exportMethod = newMethodOvr
+        Export_Settings.setContainerOverride(containerKey, override)
+    end
+    imgui.PopItemWidth(ctx)
+
+    -- Override Create Regions
+    local regionsDiff = override.params.createRegions ~= globalParams.createRegions
+    local changedRegionsOvr, newRegionsOvr = imgui.Checkbox(ctx,
+        regionsDiff and "Create Regions *##override" or "Create Regions##override",
+        override.params.createRegions or false)
+    if changedRegionsOvr then
+        override.params.createRegions = newRegionsOvr
+        Export_Settings.setContainerOverride(containerKey, override)
+    end
+
+    -- Override Region Pattern (only show if createRegions is enabled)
+    if override.params.createRegions then
+        local patternDiff = (override.params.regionPattern or "") ~= (globalParams.regionPattern or "")
+        if patternDiff then
+            imgui.TextColored(ctx, MODIFIED_COLOR, "Pattern: *")
+        else
+            imgui.Text(ctx, "Pattern:")
+        end
+        imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+        imgui.PushItemWidth(ctx, 150)
+        local changedPatternOvr, newPatternOvr = imgui.InputText(ctx, "##OverridePattern",
+            override.params.regionPattern or "$container", imgui.InputTextFlags_None)
+        if changedPatternOvr then
+            override.params.regionPattern = newPatternOvr
+            Export_Settings.setContainerOverride(containerKey, override)
+        end
+        imgui.PopItemWidth(ctx)
     end
 
     imgui.Unindent(ctx, 15)
 end
 
 -- Render override parameters for multi-selection (batch editing)
+-- Visual distinction: orange text with * suffix for values that differ from global
 function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, EXPORT)
     imgui.Indent(ctx, 15)
 
+    -- Get global params for comparison (visual distinction per AC #2)
+    local globalParams = Export_Settings.getGlobalParams()
+    local MODIFIED_COLOR = 0xFFAA00FF  -- Orange
+
     -- Batch Instance Amount
-    imgui.Text(ctx, "Instances:")
-    imgui.SameLine(ctx, 100)
+    local instDiff = refOverride.params.instanceAmount ~= globalParams.instanceAmount
+    if instDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Instances: *")
+    else
+        imgui.Text(ctx, "Instances:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
     imgui.PushItemWidth(ctx, 100)
     local changedAmt, newAmt = imgui.DragInt(ctx, "##BatchAmount",
         refOverride.params.instanceAmount, 0.1,
@@ -604,8 +723,13 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
     imgui.PopItemWidth(ctx)
 
     -- Batch Spacing
-    imgui.Text(ctx, "Spacing:")
-    imgui.SameLine(ctx, 100)
+    local spcDiff = refOverride.params.spacing ~= globalParams.spacing
+    if spcDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Spacing: *")
+    else
+        imgui.Text(ctx, "Spacing:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
     imgui.PushItemWidth(ctx, 100)
     local changedSpc, newSpc = imgui.DragDouble(ctx, "##BatchSpacing",
         refOverride.params.spacing, 0.01,
@@ -616,33 +740,42 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
     imgui.PopItemWidth(ctx)
 
     -- Batch Max Pool Items
-    imgui.Text(ctx, "Max Pool:")
-    imgui.SameLine(ctx, 100)
+    local poolDiff = (refOverride.params.maxPoolItems or 0) ~= (globalParams.maxPoolItems or 0)
+    if poolDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Max Pool: *")
+    else
+        imgui.Text(ctx, "Max Pool:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
     imgui.PushItemWidth(ctx, 100)
     local changedMaxPoolBatch, newMaxPoolBatch = imgui.DragInt(ctx, "##BatchMaxPool",
-        refOverride.params.maxPoolItems or 0, 0.1, 0, 999)
+        refOverride.params.maxPoolItems or 0, 0.1, 0, MAX_POOL_UI_LIMIT)
     if changedMaxPoolBatch then
         Export_Settings.applyParamToSelected("maxPoolItems", newMaxPoolBatch)
     end
     imgui.PopItemWidth(ctx)
 
     -- Batch Loop Mode
-    imgui.Text(ctx, "Loop Mode:")
-    imgui.SameLine(ctx, 100)
+    local loopDiff = (refOverride.params.loopMode or "auto") ~= (globalParams.loopMode or "auto")
+    if loopDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Loop Mode: *")
+    else
+        imgui.Text(ctx, "Loop Mode:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
     imgui.PushItemWidth(ctx, 100)
-    local loopModeOptions = "Auto\0On\0Off\0"
-    local loopModeValueToIndex = { ["auto"] = 0, ["on"] = 1, ["off"] = 2 }
-    local loopModeIndexToValue = { [0] = "auto", [1] = "on", [2] = "off" }
-    local currentLoopIdxBatch = loopModeValueToIndex[refOverride.params.loopMode or "auto"] or 0
+    local currentLoopIdxBatch = LOOP_MODE_VALUE_TO_INDEX[refOverride.params.loopMode or "auto"] or 0
     local changedLoopBatch, newLoopIdxBatch = imgui.Combo(ctx, "##BatchLoopMode",
-        currentLoopIdxBatch, loopModeOptions)
+        currentLoopIdxBatch, LOOP_MODE_OPTIONS)
     if changedLoopBatch then
-        Export_Settings.applyParamToSelected("loopMode", loopModeIndexToValue[newLoopIdxBatch] or "auto")
+        Export_Settings.applyParamToSelected("loopMode", LOOP_MODE_INDEX_TO_VALUE[newLoopIdxBatch] or "auto")
     end
     imgui.PopItemWidth(ctx)
 
     -- Batch Align to seconds
-    local changedAlignBatch, newAlignBatch = imgui.Checkbox(ctx, "Align to seconds##batch",
+    local alignDiff = refOverride.params.alignToSeconds ~= globalParams.alignToSeconds
+    local changedAlignBatch, newAlignBatch = imgui.Checkbox(ctx,
+        alignDiff and "Align to seconds *##batch" or "Align to seconds##batch",
         refOverride.params.alignToSeconds)
     if changedAlignBatch then
         Export_Settings.applyParamToSelected("alignToSeconds", newAlignBatch)
@@ -651,19 +784,76 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
     imgui.Spacing(ctx)
 
     -- Batch Preserve checkboxes
-    local c1, p1 = imgui.Checkbox(ctx, "Preserve Pan##batch", refOverride.params.preservePan)
+    local panDiff = refOverride.params.preservePan ~= globalParams.preservePan
+    local c1, p1 = imgui.Checkbox(ctx,
+        panDiff and "Preserve Pan *##batch" or "Preserve Pan##batch",
+        refOverride.params.preservePan)
     if c1 then
         Export_Settings.applyParamToSelected("preservePan", p1)
     end
 
-    local c2, p2 = imgui.Checkbox(ctx, "Preserve Volume##batch", refOverride.params.preserveVolume)
+    local volDiff = refOverride.params.preserveVolume ~= globalParams.preserveVolume
+    local c2, p2 = imgui.Checkbox(ctx,
+        volDiff and "Preserve Volume *##batch" or "Preserve Volume##batch",
+        refOverride.params.preserveVolume)
     if c2 then
         Export_Settings.applyParamToSelected("preserveVolume", p2)
     end
 
-    local c3, p3 = imgui.Checkbox(ctx, "Preserve Pitch##batch", refOverride.params.preservePitch)
+    local pitchDiff = refOverride.params.preservePitch ~= globalParams.preservePitch
+    local c3, p3 = imgui.Checkbox(ctx,
+        pitchDiff and "Preserve Pitch *##batch" or "Preserve Pitch##batch",
+        refOverride.params.preservePitch)
     if c3 then
         Export_Settings.applyParamToSelected("preservePitch", p3)
+    end
+
+    imgui.Spacing(ctx)
+    imgui.Separator(ctx)
+    imgui.Spacing(ctx)
+
+    -- Batch Export Method
+    local methodDiff = (refOverride.params.exportMethod or 0) ~= (globalParams.exportMethod or 0)
+    if methodDiff then
+        imgui.TextColored(ctx, MODIFIED_COLOR, "Export To: *")
+    else
+        imgui.Text(ctx, "Export To:")
+    end
+    imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+    imgui.PushItemWidth(ctx, 120)
+    local methods = "Current Track\0New Track\0"
+    local changedMethodBatch, newMethodBatch = imgui.Combo(ctx, "##BatchMethod",
+        refOverride.params.exportMethod or 0, methods)
+    if changedMethodBatch then
+        Export_Settings.applyParamToSelected("exportMethod", newMethodBatch)
+    end
+    imgui.PopItemWidth(ctx)
+
+    -- Batch Create Regions
+    local regionsDiff = refOverride.params.createRegions ~= globalParams.createRegions
+    local changedRegionsBatch, newRegionsBatch = imgui.Checkbox(ctx,
+        regionsDiff and "Create Regions *##batch" or "Create Regions##batch",
+        refOverride.params.createRegions or false)
+    if changedRegionsBatch then
+        Export_Settings.applyParamToSelected("createRegions", newRegionsBatch)
+    end
+
+    -- Batch Region Pattern (only show if createRegions is enabled in reference)
+    if refOverride.params.createRegions then
+        local patternDiff = (refOverride.params.regionPattern or "") ~= (globalParams.regionPattern or "")
+        if patternDiff then
+            imgui.TextColored(ctx, MODIFIED_COLOR, "Pattern: *")
+        else
+            imgui.Text(ctx, "Pattern:")
+        end
+        imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+        imgui.PushItemWidth(ctx, 150)
+        local changedPatternBatch, newPatternBatch = imgui.InputText(ctx, "##BatchPattern",
+            refOverride.params.regionPattern or "$container", imgui.InputTextFlags_None)
+        if changedPatternBatch then
+            Export_Settings.applyParamToSelected("regionPattern", newPatternBatch)
+        end
+        imgui.PopItemWidth(ctx)
     end
 
     imgui.Unindent(ctx, 15)
