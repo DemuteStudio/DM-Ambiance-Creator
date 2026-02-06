@@ -1,5 +1,5 @@
 --[[
-@version 1.13
+@version 1.15
 @noindex
 DM Ambiance Creator - Export Engine Module
 Handles export orchestration, region creation, and export execution.
@@ -18,6 +18,10 @@ v1.10: Bug fix - Reposition loop container items after split/swap to prevent ove
 v1.11: Bug fix - Read actual item bounds from REAPER after loop processing for accurate spacing and regions.
 v1.12: Bug fix - Calculate actual endPosition for ALL containers (not just loops) to ensure consistent spacing.
 v1.13: Story 4.1 fix - Apply crossfades to overlapping items after placement using Utils.applyCrossfadesToTrack.
+v1.14: Story 4.3 - Per-container error isolation with pcall, structured ExportResults with per-container status.
+       Empty pool now recorded as warning (not just console), missing source files detected and reported.
+v1.15: Code review fixes - Log warning when ValidatePtr fails, log all warnings (not just first),
+       remove redundant success check condition.
 --]]
 
 local M = {}
@@ -39,6 +43,54 @@ function M.setDependencies(settings, placement, loop)
     Loop = loop
 end
 
+-- Helper: Create an ExportResult object for a single container
+-- @param containerKey string: Unique container identifier
+-- @param containerName string: Display name for UI
+-- @param status string: "success" | "error" | "warning"
+-- @param itemsExported number: Count of items placed
+-- @param errors table: Array of error messages
+-- @param warnings table: Array of warning messages
+-- @return table: ExportResult object
+local function createExportResult(containerKey, containerName, status, itemsExported, errors, warnings)
+    return {
+        containerKey = containerKey,
+        containerName = containerName,
+        status = status,
+        itemsExported = itemsExported or 0,
+        errors = errors or {},
+        warnings = warnings or {}
+    }
+end
+
+-- Helper: Create an ExportResults aggregate object
+-- @return table: ExportResults structure
+local function createExportResults()
+    return {
+        results = {},              -- Array of ExportResult objects
+        totalItemsExported = 0,    -- Total items across all containers
+        totalSuccess = 0,          -- Count of successful containers
+        totalErrors = 0,           -- Count of containers with errors
+        totalWarnings = 0          -- Count of containers with warnings (but still succeeded)
+    }
+end
+
+-- Helper: Add a result to ExportResults and update totals
+-- @param exportResults table: ExportResults aggregate object
+-- @param result table: ExportResult object to add
+local function addExportResult(exportResults, result)
+    table.insert(exportResults.results, result)
+    exportResults.totalItemsExported = exportResults.totalItemsExported + result.itemsExported
+
+    if result.status == "error" then
+        exportResults.totalErrors = exportResults.totalErrors + 1
+    elseif result.status == "warning" then
+        exportResults.totalWarnings = exportResults.totalWarnings + 1
+        exportResults.totalSuccess = exportResults.totalSuccess + 1  -- Warnings still count as success
+    elseif result.status == "success" then
+        exportResults.totalSuccess = exportResults.totalSuccess + 1
+    end
+end
+
 -- Helper: Parse region name pattern and replace tags
 -- @param pattern string: The pattern string with tags (e.g., "sfx_$container")
 -- @param containerInfo table: Container information with container, group
@@ -52,8 +104,205 @@ local function parseRegionPattern(pattern, containerInfo, containerIndex)
     return result
 end
 
+-- Process a single container for export (isolated function for pcall wrapping)
+-- @param containerInfo table: Container info from collectAllContainers
+-- @param params table: Effective params for this container
+-- @param currentExportPosition number: Start position for this container
+-- @param containerExportIndex number: 1-based index in export list (for region naming)
+-- @return table: Result object with { itemsExported, endPosition, warnings, loopNewItems }
+local function processContainerExport(containerInfo, params, currentExportPosition, containerExportIndex)
+    local warnings = {}
+
+    -- Get target tracks for this container
+    local targetTracks = Placement.resolveTargetTracks(containerInfo, params)
+    if #targetTracks == 0 then
+        error("No target tracks available for container")
+    end
+
+    -- Get track structure (delegates to Generation engine)
+    local trackStructure = Placement.resolveTrackStructure(containerInfo)
+
+    -- Validate and clamp maxPoolItems to actual pool size (AC #3, #4)
+    local validatedMax = Settings.validateMaxPoolItems(containerInfo, params.maxPoolItems)
+
+    -- Get pool of PoolEntry objects (item + area pre-resolved)
+    local pool = Placement.resolvePool(containerInfo, validatedMax)
+
+    -- Handle empty pool: return as warning, not error
+    if #pool == 0 then
+        return {
+            itemsExported = 0,
+            endPosition = currentExportPosition,
+            warnings = { "Empty container skipped" },
+            loopNewItems = {},
+            isEmpty = true
+        }
+    end
+
+    -- Place items on tracks using Placement module
+    local placedItems, endPosition = Placement.placeContainerItems(
+        pool,
+        targetTracks,
+        trackStructure,
+        params,
+        containerInfo,
+        currentExportPosition
+    )
+
+    -- Process loop if in loop mode (Story 3.2: zero-crossing split/swap)
+    local isLoopMode = Settings.resolveLoopMode(containerInfo.container, params)
+    local loopNewItems = {}
+
+    -- Warn if loop mode enabled but Loop module not available
+    if isLoopMode and not Loop then
+        table.insert(warnings, "Loop mode enabled but Export_Loop module not loaded. Loop processing skipped.")
+    end
+
+    if isLoopMode and Loop and #placedItems > 1 then
+        local loopResult = Loop.processLoop(placedItems, targetTracks)
+        if loopResult.warnings then
+            for _, warn in ipairs(loopResult.warnings) do
+                table.insert(warnings, warn)
+            end
+        end
+        if loopResult.errors then
+            for _, err in ipairs(loopResult.errors) do
+                -- Loop errors are treated as warnings since export still succeeded
+                table.insert(warnings, "Loop processing: " .. err)
+            end
+        end
+        -- Capture new items created by split/swap for region bounds calculation
+        if loopResult.newItems then
+            loopNewItems = loopResult.newItems
+        end
+
+        -- Reposition all items if loop processing moved items before container start
+        if #loopNewItems > 0 then
+            local minPosition = currentExportPosition
+            for _, newItem in ipairs(loopNewItems) do
+                if newItem.position < minPosition then
+                    minPosition = newItem.position
+                end
+            end
+
+            if minPosition < currentExportPosition then
+                local shiftAmount = currentExportPosition - minPosition
+
+                for _, placed in ipairs(placedItems) do
+                    if reaper.ValidatePtr(placed.item, "MediaItem*") then
+                        local currentPos = reaper.GetMediaItemInfo_Value(placed.item, "D_POSITION")
+                        reaper.SetMediaItemPosition(placed.item, currentPos + shiftAmount, false)
+                        placed.position = placed.position + shiftAmount
+                    end
+                end
+
+                for _, newItem in ipairs(loopNewItems) do
+                    if reaper.ValidatePtr(newItem.item, "MediaItem*") then
+                        local currentPos = reaper.GetMediaItemInfo_Value(newItem.item, "D_POSITION")
+                        reaper.SetMediaItemPosition(newItem.item, currentPos + shiftAmount, false)
+                        newItem.position = newItem.position + shiftAmount
+                    end
+                end
+
+                endPosition = endPosition + shiftAmount
+            end
+        end
+    end
+
+    -- Calculate actual endPosition for ALL containers
+    -- Story 4.3 fix: Log warning if items become invalid during processing
+    if #placedItems > 0 then
+        local actualEndPosition = currentExportPosition
+        local invalidItemCount = 0
+        for _, placed in ipairs(placedItems) do
+            if reaper.ValidatePtr(placed.item, "MediaItem*") then
+                local itemPos = reaper.GetMediaItemInfo_Value(placed.item, "D_POSITION")
+                local itemLen = reaper.GetMediaItemInfo_Value(placed.item, "D_LENGTH")
+                local itemEnd = itemPos + itemLen
+                if itemEnd > actualEndPosition then
+                    actualEndPosition = itemEnd
+                end
+                placed.position = itemPos
+                placed.length = itemLen
+            else
+                invalidItemCount = invalidItemCount + 1
+            end
+        end
+        for _, newItem in ipairs(loopNewItems) do
+            if reaper.ValidatePtr(newItem.item, "MediaItem*") then
+                local itemPos = reaper.GetMediaItemInfo_Value(newItem.item, "D_POSITION")
+                local itemLen = reaper.GetMediaItemInfo_Value(newItem.item, "D_LENGTH")
+                local itemEnd = itemPos + itemLen
+                if itemEnd > actualEndPosition then
+                    actualEndPosition = itemEnd
+                end
+                newItem.position = itemPos
+                newItem.length = itemLen
+            else
+                invalidItemCount = invalidItemCount + 1
+            end
+        end
+        if invalidItemCount > 0 then
+            table.insert(warnings, string.format("%d item(s) became invalid during processing", invalidItemCount))
+        end
+        endPosition = actualEndPosition
+    end
+
+    -- Apply crossfades to overlapping items on each target track
+    if globals.Utils and globals.Utils.applyCrossfadesToTrack then
+        for _, track in ipairs(targetTracks) do
+            globals.Utils.applyCrossfadesToTrack(track)
+        end
+    end
+
+    -- Create region for this container if enabled
+    if params.createRegions and #placedItems > 0 then
+        local regionStartPos = nil
+        local regionEndPos = nil
+
+        for _, placed in ipairs(placedItems) do
+            local itemEnd = placed.position + placed.length
+            if regionStartPos == nil or placed.position < regionStartPos then
+                regionStartPos = placed.position
+            end
+            if regionEndPos == nil or itemEnd > regionEndPos then
+                regionEndPos = itemEnd
+            end
+        end
+
+        for _, newItem in ipairs(loopNewItems) do
+            local itemEnd = newItem.position + newItem.length
+            if regionStartPos == nil or newItem.position < regionStartPos then
+                regionStartPos = newItem.position
+            end
+            if regionEndPos == nil or itemEnd > regionEndPos then
+                regionEndPos = itemEnd
+            end
+        end
+
+        if regionStartPos and regionEndPos then
+            local regionName = parseRegionPattern(params.regionPattern, containerInfo, containerExportIndex)
+            reaper.AddProjectMarker2(0, true, regionStartPos, regionEndPos, regionName, -1, 0)
+        end
+    end
+
+    local totalItems = #placedItems + #loopNewItems
+
+    return {
+        itemsExported = totalItems,
+        endPosition = endPosition,
+        warnings = warnings,
+        loopNewItems = loopNewItems,
+        isEmpty = false
+    }
+end
+
 -- Main export function - exports Areas from containers using Generation Engine
 -- Delegates to Export_Placement for item placement with correct multichannel support
+-- Story 4.3: Returns structured ExportResults with per-container status
+-- @return boolean: true if any containers exported successfully
+-- @return string: Summary message
+-- @return table: ExportResults structure with per-container details
 function M.performExport()
     local containers = Settings.collectAllContainers()
     local enabledContainers = {}
@@ -67,227 +316,129 @@ function M.performExport()
 
     if #enabledContainers == 0 then
         reaper.ShowMessageBox("No containers are enabled for export.", "Export", 0)
-        return false, "No containers enabled"
+        local emptyResults = createExportResults()
+        return false, "No containers enabled", emptyResults
     end
 
     reaper.Undo_BeginBlock()
     reaper.PreventUIRefresh(1)
 
     -- Seed random ONCE at export start for consistent randomness across all containers
-    -- (os.time() has 1-second resolution, so seeding per-container could cause duplicates)
     math.randomseed(os.time())
 
-    local totalItemsExported = 0
+    -- Initialize structured export results
+    local exportResults = createExportResults()
     local containerExportIndex = 0
 
-    -- Story 4.1: Track cumulative position for sequential container placement
-    -- Each container starts after the previous one ends (plus spacing)
+    -- Track cumulative position for sequential container placement
     local currentExportPosition = reaper.GetCursorPosition()
-    -- Use global spacing param for container spacing (allows user control via UI)
     local globalParams = Settings.getGlobalParams()
     local containerSpacing = globalParams.spacing or 1.0
 
     for _, containerInfo in ipairs(enabledContainers) do
         containerExportIndex = containerExportIndex + 1
         local params = Settings.getEffectiveParams(containerInfo.key)
+        local containerName = containerInfo.container.name or "Unknown"
+        local containerKey = containerInfo.key
 
-        -- Get target tracks for this container
-        local targetTracks = Placement.resolveTargetTracks(containerInfo, params)
-        if #targetTracks == 0 then goto continue end
-
-        -- Get track structure (delegates to Generation engine)
-        local trackStructure = Placement.resolveTrackStructure(containerInfo)
-
-        -- Validate and clamp maxPoolItems to actual pool size (AC #3, #4)
-        -- Pass full containerInfo to account for waveformAreas in pool size calculation
-        local validatedMax = Settings.validateMaxPoolItems(containerInfo, params.maxPoolItems)
-
-        -- Get pool of PoolEntry objects (item + area pre-resolved)
-        local pool = Placement.resolvePool(containerInfo, validatedMax)
-
-        -- Handle empty pool gracefully with warning
-        if #pool == 0 then
-            reaper.ShowConsoleMsg("[Export] Warning: Skipping container '"
-                .. (containerInfo.container.name or "Unknown")
-                .. "' - no items in pool\n")
-            goto continue
-        end
-
-        -- Place items on tracks using Placement module
-        -- This includes the critical multichannel fix using realTrackIdx from trackStructure
-        -- Story 4.1: Pass currentExportPosition for sequential placement
-        local placedItems, endPosition = Placement.placeContainerItems(
-            pool,
-            targetTracks,
-            trackStructure,
-            params,
+        -- Use pcall to isolate container errors (Story 4.3: AC #1)
+        local ok, result = pcall(
+            processContainerExport,
             containerInfo,
-            currentExportPosition
+            params,
+            currentExportPosition,
+            containerExportIndex
         )
 
-        -- Process loop if in loop mode (Story 3.2: zero-crossing split/swap)
-        local isLoopMode = Settings.resolveLoopMode(containerInfo.container, params)
-        local loopNewItems = {} -- Track new items created by loop processing
-        -- Warn if loop mode enabled but Loop module not available
-        if isLoopMode and not Loop then
-            reaper.ShowConsoleMsg("[Export] Warning: Loop mode enabled for '"
-                .. (containerInfo.container.name or "Unknown")
-                .. "' but Export_Loop module not loaded. Loop processing skipped.\n")
-        end
-        if isLoopMode and Loop and #placedItems > 1 then
-            local loopResult = Loop.processLoop(placedItems, targetTracks)
-            if loopResult.warnings then
-                for _, warn in ipairs(loopResult.warnings) do
-                    reaper.ShowConsoleMsg("[Export] Warning: " .. warn .. "\n")
-                end
+        if not ok then
+            -- pcall failed: result contains error message
+            local errorMsg = tostring(result)
+            local exportResult = createExportResult(
+                containerKey,
+                containerName,
+                "error",
+                0,
+                { errorMsg },
+                {}
+            )
+            addExportResult(exportResults, exportResult)
+            reaper.ShowConsoleMsg("[Export] Error in container '" .. containerName .. "': " .. errorMsg .. "\n")
+        elseif result.isEmpty then
+            -- Empty container: treated as warning
+            local exportResult = createExportResult(
+                containerKey,
+                containerName,
+                "warning",
+                0,
+                {},
+                result.warnings
+            )
+            addExportResult(exportResults, exportResult)
+            -- Story 4.3 fix: Log all warnings, not just the first one
+            for _, warn in ipairs(result.warnings) do
+                reaper.ShowConsoleMsg("[Export] Warning: Container '" .. containerName .. "' - " .. warn .. "\n")
             end
-            if loopResult.errors then
-                for _, err in ipairs(loopResult.errors) do
-                    reaper.ShowConsoleMsg("[Export] Error: " .. err .. "\n")
-                end
+        elseif #result.warnings > 0 then
+            -- Success with warnings
+            local exportResult = createExportResult(
+                containerKey,
+                containerName,
+                "warning",
+                result.itemsExported,
+                {},
+                result.warnings
+            )
+            addExportResult(exportResults, exportResult)
+            -- Update position for next container
+            if result.itemsExported > 0 and result.endPosition then
+                currentExportPosition = result.endPosition + containerSpacing
             end
-            -- Capture new items created by split/swap for region bounds calculation
-            if loopResult.newItems then
-                loopNewItems = loopResult.newItems
-            end
-
-            -- v1.10: Reposition all items if loop processing moved items before container start
-            -- This prevents overlap with the previous container
-            if #loopNewItems > 0 then
-                -- Find minimum position among all items (original + loop-created)
-                local minPosition = currentExportPosition
-                for _, newItem in ipairs(loopNewItems) do
-                    if newItem.position < minPosition then
-                        minPosition = newItem.position
-                    end
-                end
-
-                -- If items were placed before container start, shift everything right
-                if minPosition < currentExportPosition then
-                    local shiftAmount = currentExportPosition - minPosition
-
-                    -- Shift original placed items
-                    for _, placed in ipairs(placedItems) do
-                        if reaper.ValidatePtr(placed.item, "MediaItem*") then
-                            local currentPos = reaper.GetMediaItemInfo_Value(placed.item, "D_POSITION")
-                            reaper.SetMediaItemPosition(placed.item, currentPos + shiftAmount, false)
-                            placed.position = placed.position + shiftAmount
-                        end
-                    end
-
-                    -- Shift loop-created items
-                    for _, newItem in ipairs(loopNewItems) do
-                        if reaper.ValidatePtr(newItem.item, "MediaItem*") then
-                            local currentPos = reaper.GetMediaItemInfo_Value(newItem.item, "D_POSITION")
-                            reaper.SetMediaItemPosition(newItem.item, currentPos + shiftAmount, false)
-                            newItem.position = newItem.position + shiftAmount
-                        end
-                    end
-
-                    -- Update endPosition to account for the shift
-                    endPosition = endPosition + shiftAmount
-                end
-            end
-
-        end
-
-        -- Count includes original items plus any new items from loop split
-        totalItemsExported = totalItemsExported + #placedItems + #loopNewItems
-
-        -- v1.12: Calculate actual endPosition for ALL containers (not just loops)
-        -- placeContainerItems returns currentPos which includes item spacing, but we need actual item bounds
-        -- This ensures consistent spacing between containers regardless of type (normal vs loop)
-        if #placedItems > 0 then
-            local actualEndPosition = currentExportPosition
-            for _, placed in ipairs(placedItems) do
-                if reaper.ValidatePtr(placed.item, "MediaItem*") then
-                    local itemPos = reaper.GetMediaItemInfo_Value(placed.item, "D_POSITION")
-                    local itemLen = reaper.GetMediaItemInfo_Value(placed.item, "D_LENGTH")
-                    local itemEnd = itemPos + itemLen
-                    if itemEnd > actualEndPosition then
-                        actualEndPosition = itemEnd
-                    end
-                    -- Update cached values for region calculation
-                    placed.position = itemPos
-                    placed.length = itemLen
-                end
-            end
-            -- Include loop-created items in end position calculation
-            for _, newItem in ipairs(loopNewItems) do
-                if reaper.ValidatePtr(newItem.item, "MediaItem*") then
-                    local itemPos = reaper.GetMediaItemInfo_Value(newItem.item, "D_POSITION")
-                    local itemLen = reaper.GetMediaItemInfo_Value(newItem.item, "D_LENGTH")
-                    local itemEnd = itemPos + itemLen
-                    if itemEnd > actualEndPosition then
-                        actualEndPosition = itemEnd
-                    end
-                    -- Update cached values for region calculation
-                    newItem.position = itemPos
-                    newItem.length = itemLen
-                end
-            end
-            endPosition = actualEndPosition
-        end
-
-        -- v1.13: Apply crossfades to overlapping items on each target track
-        -- This matches the behavior of the generator which calls Utils.applyCrossfadesToTrack
-        if globals.Utils and globals.Utils.applyCrossfadesToTrack then
-            for _, track in ipairs(targetTracks) do
-                globals.Utils.applyCrossfadesToTrack(track)
+        else
+            -- Full success
+            local exportResult = createExportResult(
+                containerKey,
+                containerName,
+                "success",
+                result.itemsExported,
+                {},
+                {}
+            )
+            addExportResult(exportResults, exportResult)
+            -- Update position for next container
+            if result.itemsExported > 0 and result.endPosition then
+                currentExportPosition = result.endPosition + containerSpacing
             end
         end
-
-        -- Create region for this container if enabled
-        if params.createRegions and #placedItems > 0 then
-            -- Calculate region bounds from placed items AND loop-created items
-            local regionStartPos = nil
-            local regionEndPos = nil
-
-            -- Include original placed items
-            for _, placed in ipairs(placedItems) do
-                local itemEnd = placed.position + placed.length
-                if regionStartPos == nil or placed.position < regionStartPos then
-                    regionStartPos = placed.position
-                end
-                if regionEndPos == nil or itemEnd > regionEndPos then
-                    regionEndPos = itemEnd
-                end
-            end
-
-            -- Include new items created by loop processing (split rightParts moved to start)
-            for _, newItem in ipairs(loopNewItems) do
-                local itemEnd = newItem.position + newItem.length
-                if regionStartPos == nil or newItem.position < regionStartPos then
-                    regionStartPos = newItem.position
-                end
-                if regionEndPos == nil or itemEnd > regionEndPos then
-                    regionEndPos = itemEnd
-                end
-            end
-
-            if regionStartPos and regionEndPos then
-                local regionName = parseRegionPattern(params.regionPattern, containerInfo, containerExportIndex)
-                reaper.AddProjectMarker2(0, true, regionStartPos, regionEndPos, regionName, -1, 0)
-            end
-        end
-
-        -- Story 4.1: Update position for next container (sequential placement)
-        -- Use endPosition from placeContainerItems, add spacing between containers
-        if #placedItems > 0 and endPosition then
-            currentExportPosition = endPosition + containerSpacing
-        end
-
-        ::continue::
     end
 
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
     reaper.Undo_EndBlock("Export Ambiance Areas", -1)
 
-    local message = string.format("Exported %d items", totalItemsExported)
-    reaper.ShowMessageBox(message, "Export Complete", 0)
+    -- Build summary message
+    local message = string.format(
+        "Exported %d items (%d success, %d warnings, %d errors)",
+        exportResults.totalItemsExported,
+        exportResults.totalSuccess,
+        exportResults.totalWarnings,
+        exportResults.totalErrors
+    )
 
-    return true, message
+    -- Show message box with appropriate title based on results
+    if exportResults.totalErrors > 0 then
+        reaper.ShowMessageBox(message, "Export Complete (with errors)", 0)
+    elseif exportResults.totalWarnings > 0 then
+        reaper.ShowMessageBox(message, "Export Complete (with warnings)", 0)
+    else
+        -- Full success - show simple success message
+        local successMessage = string.format("Exported %d items", exportResults.totalItemsExported)
+        reaper.ShowMessageBox(successMessage, "Export Complete", 0)
+    end
+
+    -- Return success if at least one container succeeded
+    -- Note: totalSuccess already includes containers with warnings (see addExportResult)
+    local overallSuccess = exportResults.totalSuccess > 0
+    return overallSuccess, message, exportResults
 end
 
 -- Generate preview of export showing per-container summary

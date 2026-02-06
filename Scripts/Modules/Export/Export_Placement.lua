@@ -1,5 +1,5 @@
 --[[
-@version 1.6
+@version 1.8
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
@@ -12,6 +12,10 @@ v1.4: Story 4.1 - Added startPosition parameter and endPosition return for seque
       Enables batch export without overlap between containers.
 v1.5: Code review fixes - startPosition validation, improved return value documentation.
 v1.6: Story 4.1 fix - In autoloop mode, use container.triggerRate for overlap instead of export loopInterval.
+v1.7: Story 4.3 - Added missing source file detection with reaper.file_exists() check.
+      Throws error with file path if source file is missing for pcall isolation in Export_Engine.
+v1.8: Code review fixes - Nil filePath now throws error instead of silent skip, error() uses level 0
+      for cleaner UI display without file:line prefix.
 --]]
 
 local M = {}
@@ -374,7 +378,17 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
 
     -- Helper: place a single pool entry at current position
     local function placePoolEntry(poolEntry)
-        if not poolEntry.item.filePath then return false, 0 end
+        -- Story 4.3 fix: Nil filePath should throw error, not silently skip
+        if not poolEntry.item.filePath then
+            error("Item has no file path configured")
+        end
+
+        -- Story 4.3: Check if source file exists before attempting placement
+        local filePath = poolEntry.item.filePath
+        if not reaper.file_exists(filePath) then
+            -- Use error level 0 to suppress file:line prefix for cleaner UI display
+            error("Missing source file: " .. filePath, 0)
+        end
 
         local itemData = M.buildItemData(poolEntry.item, poolEntry.area)
         local itemPos = M.calculatePosition(currentPos, params)

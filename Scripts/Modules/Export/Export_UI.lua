@@ -1,11 +1,15 @@
 --[[
-@version 1.4
+@version 1.6
 @noindex
 DM Ambiance Creator - Export UI Module
 Handles the Export modal window rendering with multi-selection and new widgets.
 v1.2: Fixed BeginChild/EndChild bug, added visual distinction for override values.
 v1.3: Code review fixes - added error display, all 11 override params, constants extraction, nil checks, caching.
 v1.4: Story 3.1 - Added loopDuration and loopInterval UI controls for loop mode configuration.
+v1.5: Story 4.3 - Added per-container export results display with success/error/warning indicators.
+      Replaced lastExportError with lastExportResults for structured result display.
+v1.6: Code review fixes - Clearer success count labels (OK vs with warnings), consistent terminology
+      across summary displays.
 --]]
 
 local Export_UI = {}
@@ -16,7 +20,7 @@ local Export_Engine = nil
 -- UI State
 local shouldOpenModal = false
 local lastClickedKey = nil  -- For Shift+Click range selection
-local lastExportError = nil  -- Store export error for display
+local lastExportResults = nil  -- Store structured export results for display (Story 4.3)
 
 -- Module-level constants (avoid duplication)
 local LOOP_MODE_OPTIONS = "Auto\0On\0Off\0"
@@ -43,7 +47,7 @@ function Export_UI.openModal()
     Export_Settings.resetSettings()
     Export_Settings.initializeEnabledContainers()
     lastClickedKey = nil
-    lastExportError = nil  -- Clear any previous error
+    lastExportResults = nil  -- Clear any previous results (Story 4.3)
     shouldOpenModal = true
 end
 
@@ -488,6 +492,79 @@ function Export_UI.renderModal()
                 end
                 imgui.EndChild(ctx)  -- PreviewList - inside if block
             end
+
+            -- Story 4.3: Export Results Section (shows after export with errors/warnings)
+            if lastExportResults and #lastExportResults.results > 0 then
+                local hasIssues = lastExportResults.totalErrors > 0 or lastExportResults.totalWarnings > 0
+                if hasIssues then
+                    imgui.Spacing(ctx)
+                    imgui.Separator(ctx)
+                    imgui.Spacing(ctx)
+
+                    -- Header with color based on severity
+                    if lastExportResults.totalErrors > 0 then
+                        imgui.TextColored(ctx, 0xFF4444FF, "Export Results (with errors)")
+                    else
+                        imgui.TextColored(ctx, 0xFFAA00FF, "Export Results (with warnings)")
+                    end
+                    imgui.Spacing(ctx)
+
+                    -- Scrollable results list
+                    if imgui.BeginChild(ctx, "ExportResults", -1, 100, imgui.ChildFlags_Border) then
+                        for _, result in ipairs(lastExportResults.results) do
+                            local containerName = result.containerName or "Unknown"
+                            if #containerName > 25 then
+                                containerName = containerName:sub(1, 22) .. "..."
+                            end
+
+                            -- Status indicator and container name
+                            if result.status == "success" then
+                                -- Green checkmark for success
+                                imgui.TextColored(ctx, 0x88FF88FF, "\226\156\147")  -- ✓
+                                imgui.SameLine(ctx)
+                                imgui.Text(ctx, containerName)
+                                imgui.SameLine(ctx, 200)
+                                imgui.TextDisabled(ctx, string.format("(%d items)", result.itemsExported))
+                            elseif result.status == "warning" then
+                                -- Yellow warning for warnings
+                                imgui.TextColored(ctx, 0xFFAA00FF, "!")
+                                imgui.SameLine(ctx)
+                                imgui.Text(ctx, containerName)
+                                imgui.SameLine(ctx, 200)
+                                imgui.TextDisabled(ctx, string.format("(%d items)", result.itemsExported))
+                                -- Show warning details
+                                for _, warn in ipairs(result.warnings or {}) do
+                                    imgui.Indent(ctx, 20)
+                                    imgui.TextColored(ctx, 0xFFAA00FF, "\226\148\148 " .. warn)
+                                    imgui.Unindent(ctx, 20)
+                                end
+                            elseif result.status == "error" then
+                                -- Red X for errors
+                                imgui.TextColored(ctx, 0xFF4444FF, "\226\156\151")  -- ✗
+                                imgui.SameLine(ctx)
+                                imgui.TextColored(ctx, 0xFF6666FF, containerName)
+                                -- Show error details
+                                for _, err in ipairs(result.errors or {}) do
+                                    imgui.Indent(ctx, 20)
+                                    imgui.TextColored(ctx, 0xFF4444FF, "\226\148\148 " .. err)
+                                    imgui.Unindent(ctx, 20)
+                                end
+                            end
+                        end
+                        imgui.EndChild(ctx)  -- ExportResults
+                    end
+
+                    -- Summary line (pure success = totalSuccess - totalWarnings since warnings count as success)
+                    local pureSuccess = lastExportResults.totalSuccess - lastExportResults.totalWarnings
+                    imgui.TextDisabled(ctx, string.format(
+                        "Summary: %d items (%d OK, %d with warnings, %d failed)",
+                        lastExportResults.totalItemsExported,
+                        pureSuccess,
+                        lastExportResults.totalWarnings,
+                        lastExportResults.totalErrors
+                    ))
+                end
+            end
             imgui.EndChild(ctx)  -- Parameters - inside if block
         end
 
@@ -530,20 +607,37 @@ function Export_UI.renderModal()
         imgui.PushStyleColor(ctx, imgui.Col_ButtonHovered, 0x00AACCFF)
         imgui.PushStyleColor(ctx, imgui.Col_ButtonActive, 0x006688FF)
         if imgui.Button(ctx, "Export", buttonWidth, 30) then
-            local success, message = Export_Engine.performExport()
-            if success then
-                lastExportError = nil
+            local success, message, exportResults = Export_Engine.performExport()
+            lastExportResults = exportResults
+            -- Only close on full success (no errors or warnings)
+            if success and exportResults and exportResults.totalErrors == 0 and exportResults.totalWarnings == 0 then
                 imgui.CloseCurrentPopup(ctx)
-            else
-                lastExportError = message or "Export failed (unknown error)"
             end
+            -- Results will be displayed below if there were any issues
         end
         imgui.PopStyleColor(ctx, 3)
 
-        -- Show export error if any
-        if lastExportError then
+        -- Show compact export results summary (Story 4.3)
+        -- Note: Detailed results section (above) shows full breakdown when issues exist
+        if lastExportResults and (lastExportResults.totalErrors > 0 or lastExportResults.totalWarnings > 0) then
             imgui.SameLine(ctx)
-            imgui.TextColored(ctx, 0xFF4444FF, lastExportError)
+            local pureSuccess = lastExportResults.totalSuccess - lastExportResults.totalWarnings
+            if lastExportResults.totalErrors > 0 then
+                imgui.TextColored(ctx, 0xFF4444FF, string.format(
+                    "%d items (%d OK, %d warn, %d failed)",
+                    lastExportResults.totalItemsExported,
+                    pureSuccess,
+                    lastExportResults.totalWarnings,
+                    lastExportResults.totalErrors
+                ))
+            else
+                imgui.TextColored(ctx, 0xFFAA00FF, string.format(
+                    "%d items (%d OK, %d with warnings)",
+                    lastExportResults.totalItemsExported,
+                    pureSuccess,
+                    lastExportResults.totalWarnings
+                ))
+            end
         end
 
         imgui.SameLine(ctx)
