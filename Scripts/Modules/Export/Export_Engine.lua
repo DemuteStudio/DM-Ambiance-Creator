@@ -1,5 +1,5 @@
 --[[
-@version 1.5
+@version 1.7
 @noindex
 DM Ambiance Creator - Export Engine Module
 Handles export orchestration, region creation, and export execution.
@@ -9,12 +9,15 @@ v1.3: Story 2.1 - Added validateMaxPoolItems() call before resolvePool(), empty 
 v1.4: Code review fixes - math.randomseed moved here (once per export), validateMaxPoolItems uses containerInfo, empty pool warning.
 v1.5: Story 3.1 - Added loopDuration to PreviewEntry, updated estimateDuration for loop mode.
       Code review fix: estimateDuration now uses Settings.resolveLoopMode for consistency.
+v1.6: Story 3.2 - Integrated Export_Loop for zero-crossing loop processing (split/swap).
+v1.7: Code review fixes - Region bounds now include loop-created items, totalItemsExported counts split items.
 --]]
 
 local M = {}
 local globals = {}
 local Settings = nil
 local Placement = nil
+local Loop = nil
 
 function M.initModule(g)
     if not g then
@@ -23,9 +26,10 @@ function M.initModule(g)
     globals = g
 end
 
-function M.setDependencies(settings, placement)
+function M.setDependencies(settings, placement, loop)
     Settings = settings
     Placement = placement
+    Loop = loop
 end
 
 -- Helper: Parse region name pattern and replace tags
@@ -105,17 +109,52 @@ function M.performExport()
             containerInfo
         )
 
-        totalItemsExported = totalItemsExported + #placedItems
+        -- Process loop if in loop mode (Story 3.2: zero-crossing split/swap)
+        local isLoopMode = Settings.resolveLoopMode(containerInfo.container, params)
+        local loopNewItems = {} -- Track new items created by loop processing
+        if isLoopMode and Loop and #placedItems > 1 then
+            local loopResult = Loop.processLoop(placedItems, targetTracks)
+            if loopResult.warnings then
+                for _, warn in ipairs(loopResult.warnings) do
+                    reaper.ShowConsoleMsg("[Export] Warning: " .. warn .. "\n")
+                end
+            end
+            if loopResult.errors then
+                for _, err in ipairs(loopResult.errors) do
+                    reaper.ShowConsoleMsg("[Export] Error: " .. err .. "\n")
+                end
+            end
+            -- Capture new items created by split/swap for region bounds calculation
+            if loopResult.newItems then
+                loopNewItems = loopResult.newItems
+            end
+        end
+
+        -- Count includes original items plus any new items from loop split
+        totalItemsExported = totalItemsExported + #placedItems + #loopNewItems
 
         -- Create region for this container if enabled
         if params.createRegions and #placedItems > 0 then
-            -- Calculate region bounds from placed items
+            -- Calculate region bounds from placed items AND loop-created items
             local regionStartPos = nil
             local regionEndPos = nil
+
+            -- Include original placed items
             for _, placed in ipairs(placedItems) do
                 local itemEnd = placed.position + placed.length
                 if regionStartPos == nil or placed.position < regionStartPos then
                     regionStartPos = placed.position
+                end
+                if regionEndPos == nil or itemEnd > regionEndPos then
+                    regionEndPos = itemEnd
+                end
+            end
+
+            -- Include new items created by loop processing (split rightParts moved to start)
+            for _, newItem in ipairs(loopNewItems) do
+                local itemEnd = newItem.position + newItem.length
+                if regionStartPos == nil or newItem.position < regionStartPos then
+                    regionStartPos = newItem.position
                 end
                 if regionEndPos == nil or itemEnd > regionEndPos then
                     regionEndPos = itemEnd
