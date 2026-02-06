@@ -1,5 +1,5 @@
 --[[
-@version 1.7
+@version 1.13
 @noindex
 DM Ambiance Creator - Export Engine Module
 Handles export orchestration, region creation, and export execution.
@@ -11,6 +11,13 @@ v1.5: Story 3.1 - Added loopDuration to PreviewEntry, updated estimateDuration f
       Code review fix: estimateDuration now uses Settings.resolveLoopMode for consistency.
 v1.6: Story 3.2 - Integrated Export_Loop for zero-crossing loop processing (split/swap).
 v1.7: Code review fixes - Region bounds now include loop-created items, totalItemsExported counts split items.
+v1.8: Story 4.1 - Sequential container placement for batch export. Each container starts after
+      previous container ends, preventing overlap. Uses globalParams.spacing for container spacing.
+v1.9: Code review fixes - containerSpacing from global params, Loop module warning in loop mode.
+v1.10: Bug fix - Reposition loop container items after split/swap to prevent overlap with previous container.
+v1.11: Bug fix - Read actual item bounds from REAPER after loop processing for accurate spacing and regions.
+v1.12: Bug fix - Calculate actual endPosition for ALL containers (not just loops) to ensure consistent spacing.
+v1.13: Story 4.1 fix - Apply crossfades to overlapping items after placement using Utils.applyCrossfadesToTrack.
 --]]
 
 local M = {}
@@ -73,6 +80,13 @@ function M.performExport()
     local totalItemsExported = 0
     local containerExportIndex = 0
 
+    -- Story 4.1: Track cumulative position for sequential container placement
+    -- Each container starts after the previous one ends (plus spacing)
+    local currentExportPosition = reaper.GetCursorPosition()
+    -- Use global spacing param for container spacing (allows user control via UI)
+    local globalParams = Settings.getGlobalParams()
+    local containerSpacing = globalParams.spacing or 1.0
+
     for _, containerInfo in ipairs(enabledContainers) do
         containerExportIndex = containerExportIndex + 1
         local params = Settings.getEffectiveParams(containerInfo.key)
@@ -101,17 +115,25 @@ function M.performExport()
 
         -- Place items on tracks using Placement module
         -- This includes the critical multichannel fix using realTrackIdx from trackStructure
-        local placedItems = Placement.placeContainerItems(
+        -- Story 4.1: Pass currentExportPosition for sequential placement
+        local placedItems, endPosition = Placement.placeContainerItems(
             pool,
             targetTracks,
             trackStructure,
             params,
-            containerInfo
+            containerInfo,
+            currentExportPosition
         )
 
         -- Process loop if in loop mode (Story 3.2: zero-crossing split/swap)
         local isLoopMode = Settings.resolveLoopMode(containerInfo.container, params)
         local loopNewItems = {} -- Track new items created by loop processing
+        -- Warn if loop mode enabled but Loop module not available
+        if isLoopMode and not Loop then
+            reaper.ShowConsoleMsg("[Export] Warning: Loop mode enabled for '"
+                .. (containerInfo.container.name or "Unknown")
+                .. "' but Export_Loop module not loaded. Loop processing skipped.\n")
+        end
         if isLoopMode and Loop and #placedItems > 1 then
             local loopResult = Loop.processLoop(placedItems, targetTracks)
             if loopResult.warnings then
@@ -128,10 +150,92 @@ function M.performExport()
             if loopResult.newItems then
                 loopNewItems = loopResult.newItems
             end
+
+            -- v1.10: Reposition all items if loop processing moved items before container start
+            -- This prevents overlap with the previous container
+            if #loopNewItems > 0 then
+                -- Find minimum position among all items (original + loop-created)
+                local minPosition = currentExportPosition
+                for _, newItem in ipairs(loopNewItems) do
+                    if newItem.position < minPosition then
+                        minPosition = newItem.position
+                    end
+                end
+
+                -- If items were placed before container start, shift everything right
+                if minPosition < currentExportPosition then
+                    local shiftAmount = currentExportPosition - minPosition
+
+                    -- Shift original placed items
+                    for _, placed in ipairs(placedItems) do
+                        if reaper.ValidatePtr(placed.item, "MediaItem*") then
+                            local currentPos = reaper.GetMediaItemInfo_Value(placed.item, "D_POSITION")
+                            reaper.SetMediaItemPosition(placed.item, currentPos + shiftAmount, false)
+                            placed.position = placed.position + shiftAmount
+                        end
+                    end
+
+                    -- Shift loop-created items
+                    for _, newItem in ipairs(loopNewItems) do
+                        if reaper.ValidatePtr(newItem.item, "MediaItem*") then
+                            local currentPos = reaper.GetMediaItemInfo_Value(newItem.item, "D_POSITION")
+                            reaper.SetMediaItemPosition(newItem.item, currentPos + shiftAmount, false)
+                            newItem.position = newItem.position + shiftAmount
+                        end
+                    end
+
+                    -- Update endPosition to account for the shift
+                    endPosition = endPosition + shiftAmount
+                end
+            end
+
         end
 
         -- Count includes original items plus any new items from loop split
         totalItemsExported = totalItemsExported + #placedItems + #loopNewItems
+
+        -- v1.12: Calculate actual endPosition for ALL containers (not just loops)
+        -- placeContainerItems returns currentPos which includes item spacing, but we need actual item bounds
+        -- This ensures consistent spacing between containers regardless of type (normal vs loop)
+        if #placedItems > 0 then
+            local actualEndPosition = currentExportPosition
+            for _, placed in ipairs(placedItems) do
+                if reaper.ValidatePtr(placed.item, "MediaItem*") then
+                    local itemPos = reaper.GetMediaItemInfo_Value(placed.item, "D_POSITION")
+                    local itemLen = reaper.GetMediaItemInfo_Value(placed.item, "D_LENGTH")
+                    local itemEnd = itemPos + itemLen
+                    if itemEnd > actualEndPosition then
+                        actualEndPosition = itemEnd
+                    end
+                    -- Update cached values for region calculation
+                    placed.position = itemPos
+                    placed.length = itemLen
+                end
+            end
+            -- Include loop-created items in end position calculation
+            for _, newItem in ipairs(loopNewItems) do
+                if reaper.ValidatePtr(newItem.item, "MediaItem*") then
+                    local itemPos = reaper.GetMediaItemInfo_Value(newItem.item, "D_POSITION")
+                    local itemLen = reaper.GetMediaItemInfo_Value(newItem.item, "D_LENGTH")
+                    local itemEnd = itemPos + itemLen
+                    if itemEnd > actualEndPosition then
+                        actualEndPosition = itemEnd
+                    end
+                    -- Update cached values for region calculation
+                    newItem.position = itemPos
+                    newItem.length = itemLen
+                end
+            end
+            endPosition = actualEndPosition
+        end
+
+        -- v1.13: Apply crossfades to overlapping items on each target track
+        -- This matches the behavior of the generator which calls Utils.applyCrossfadesToTrack
+        if globals.Utils and globals.Utils.applyCrossfadesToTrack then
+            for _, track in ipairs(targetTracks) do
+                globals.Utils.applyCrossfadesToTrack(track)
+            end
+        end
 
         -- Create region for this container if enabled
         if params.createRegions and #placedItems > 0 then
@@ -165,6 +269,12 @@ function M.performExport()
                 local regionName = parseRegionPattern(params.regionPattern, containerInfo, containerExportIndex)
                 reaper.AddProjectMarker2(0, true, regionStartPos, regionEndPos, regionName, -1, 0)
             end
+        end
+
+        -- Story 4.1: Update position for next container (sequential placement)
+        -- Use endPosition from placeContainerItems, add spacing between containers
+        if #placedItems > 0 and endPosition then
+            currentExportPosition = endPosition + containerSpacing
         end
 
         ::continue::

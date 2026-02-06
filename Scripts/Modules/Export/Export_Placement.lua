@@ -1,5 +1,5 @@
 --[[
-@version 1.3
+@version 1.6
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
@@ -8,6 +8,10 @@ v1.2: Story 2.1 - Full resolvePool() implementation with PoolEntry format and Fi
       placeContainerItems() updated to use PoolEntry objects directly.
 v1.3: Story 3.1 - Added loop mode support with loopInterval and loopDuration in placeContainerItems.
       Code review fix: Use LOOP_MAX_ITERATIONS constant, added loop overshoot documentation.
+v1.4: Story 4.1 - Added startPosition parameter and endPosition return for sequential container placement.
+      Enables batch export without overlap between containers.
+v1.5: Code review fixes - startPosition validation, improved return value documentation.
+v1.6: Story 4.1 fix - In autoloop mode, use container.triggerRate for overlap instead of export loopInterval.
 --]]
 
 local M = {}
@@ -335,16 +339,37 @@ end
 -- @param trackStructure table: Track structure from resolveTrackStructure
 -- @param params table: Effective export params
 -- @param containerInfo table: Container info with path, container, group
+-- @param startPosition number|nil: Optional start position in seconds (defaults to cursor if nil).
+--        If provided, must be >= 0. Used by Export_Engine for sequential container placement.
 -- @return table: Array of PlacedItem records {item, track, position, length, trackIdx}
-function M.placeContainerItems(pool, targetTracks, trackStructure, params, containerInfo)
+-- @return number: End position (in seconds) after all items placed. Used by Export_Engine to
+--        calculate next container's start position for sequential batch export.
+function M.placeContainerItems(pool, targetTracks, trackStructure, params, containerInfo, startPosition)
     local placedItems = {}
-    local startPos = reaper.GetCursorPosition()
+    -- Validate and resolve start position (must be >= 0 if provided)
+    local startPos = startPosition or reaper.GetCursorPosition()
+    if startPos < 0 then
+        startPos = 0 -- Clamp negative positions to timeline start
+    end
     local currentPos = startPos
     local genParams = M.buildGenParams(params, containerInfo)
 
     -- Detect loop mode and configure placement behavior
     local isLoopMode = Settings and Settings.resolveLoopMode(containerInfo.container, params) or false
-    local effectiveInterval = isLoopMode and (params.loopInterval or 0) or (params.spacing or 0)
+    local container = containerInfo.container
+    -- v1.6: In autoloop mode (negative triggerRate), use container's triggerRate for overlap
+    -- This ensures the same overlap behavior as the generator when container has negative interval
+    local effectiveInterval
+    if isLoopMode then
+        -- Check if container has negative triggerRate (overlap) - use it if so
+        if container.triggerRate and container.triggerRate < 0 then
+            effectiveInterval = container.triggerRate  -- Use container's overlap value
+        else
+            effectiveInterval = params.loopInterval or 0  -- Use export settings loopInterval
+        end
+    else
+        effectiveInterval = params.spacing or 0  -- Non-loop mode uses spacing
+    end
     local targetDuration = isLoopMode and (params.loopDuration or 30) or math.huge
 
     -- Helper: place a single pool entry at current position
@@ -439,7 +464,7 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
         end
     end
 
-    return placedItems
+    return placedItems, currentPos
 end
 
 return M
