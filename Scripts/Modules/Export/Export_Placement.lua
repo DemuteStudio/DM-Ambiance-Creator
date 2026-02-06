@@ -1,9 +1,11 @@
 --[[
-@version 1.1
+@version 1.2
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
 Migrated from Export_Core.lua (makeItemKey, createExportTrack, findTrackByName, getChildTracks, getTargetTracks).
+v1.2: Story 2.1 - Full resolvePool() implementation with PoolEntry format and Fisher-Yates shuffle.
+      placeContainerItems() updated to use PoolEntry objects directly.
 --]]
 
 local M = {}
@@ -179,10 +181,74 @@ function M.resolveTargetTracks(containerInfo, params)
     return tracks
 end
 
--- Stub: Resolve pool subset for export (full random subset in Story 2.1)
--- For now returns all items
+-- Fisher-Yates shuffle (in-place, returns same array)
+-- @param arr table: Array to shuffle
+-- @return table: The same array, shuffled in place
+function M.shuffleArray(arr)
+    local n = #arr
+    for i = n, 2, -1 do
+        local j = math.random(1, i)
+        arr[i], arr[j] = arr[j], arr[i]
+    end
+    return arr
+end
+
+-- Resolve pool subset for export with random selection
+-- Returns array of PoolEntry objects: { item, area, itemIdx, itemKey }
+-- @param containerInfo table: Container info from collectAllContainers
+-- @param maxPoolItems number: Maximum items to return (0 = all)
+-- @return table: Array of PoolEntry objects
 function M.resolvePool(containerInfo, maxPoolItems)
-    return containerInfo.container.items or {}
+    -- Defensive nil-check for containerInfo
+    if not containerInfo or not containerInfo.container then
+        return {}
+    end
+
+    local allEntries = {}
+
+    -- Iterate all items in container
+    for itemIdx, item in ipairs(containerInfo.container.items or {}) do
+        local itemKey = M.makeItemKey(containerInfo.path, containerInfo.containerIndex, itemIdx)
+        local areas = globals.waveformAreas and globals.waveformAreas[itemKey]
+
+        if areas and #areas > 0 then
+            -- Create entry for each waveform area
+            for _, area in ipairs(areas) do
+                table.insert(allEntries, {
+                    item = item,
+                    area = area,
+                    itemIdx = itemIdx,
+                    itemKey = itemKey
+                })
+            end
+        else
+            -- No waveform areas: treat full item as single area
+            table.insert(allEntries, {
+                item = item,
+                area = {
+                    startPos = 0,
+                    endPos = item.length or 10,
+                    name = item.name or "Full"
+                },
+                itemIdx = itemIdx,
+                itemKey = itemKey
+            })
+        end
+    end
+
+    -- Return all entries if maxPoolItems is 0 or >= total entries
+    if maxPoolItems == 0 or maxPoolItems >= #allEntries then
+        return allEntries
+    end
+
+    -- Random subset selection using Fisher-Yates shuffle
+    -- NOTE: math.randomseed() is called once in Export_Engine.performExport()
+    local shuffled = M.shuffleArray(allEntries)
+    local subset = {}
+    for i = 1, maxPoolItems do
+        subset[i] = shuffled[i]
+    end
+    return subset
 end
 
 -- Build ItemData object for placeSingleItem
@@ -261,7 +327,7 @@ end
 
 -- Place container items on target tracks with correct multichannel channel distribution
 -- CRITICAL: Uses real track indices from trackStructure for correct channel extraction
--- @param pool table: Array of items to export (from resolvePool or container.items)
+-- @param pool table: Array of PoolEntry objects from resolvePool { item, area, itemIdx, itemKey }
 -- @param targetTracks table: Array of REAPER tracks from resolveTargetTracks
 -- @param trackStructure table: Track structure from resolveTrackStructure
 -- @param params table: Effective export params
@@ -272,77 +338,65 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
     local currentPos = reaper.GetCursorPosition()
     local genParams = M.buildGenParams(params, containerInfo)
 
-    -- Iterate items in pool
-    for itemIdx, item in ipairs(pool) do
-        if not item.filePath then goto nextItem end
+    -- Iterate PoolEntry objects (each has pre-resolved item and area)
+    for _, poolEntry in ipairs(pool) do
+        if not poolEntry.item.filePath then goto nextEntry end
 
-        -- Get Areas for this item
-        local itemKey = M.makeItemKey(containerInfo.path, containerInfo.containerIndex, itemIdx)
-        local areas = item.areas
-        if (not areas or #areas == 0) and globals.waveformAreas then
-            areas = globals.waveformAreas[itemKey]
-        end
-        if not areas or #areas == 0 then
-            areas = {{ startPos = 0, endPos = item.length or 10, name = item.name or "Full" }}
-        end
+        -- Build ItemData from pre-resolved PoolEntry
+        local itemData = M.buildItemData(poolEntry.item, poolEntry.area)
 
-        -- For each Area
-        for _, area in ipairs(areas) do
-            local itemData = M.buildItemData(item, area)
+        -- For each instance requested
+        for instance = 1, params.instanceAmount do
+            -- Calculate aligned position
+            local itemPos = M.calculatePosition(currentPos, params)
+            local actualLen = 0
+            local anyItemCreated = false
 
-            -- For each instance requested
-            for instance = 1, params.instanceAmount do
-                -- Calculate aligned position
-                local itemPos = M.calculatePosition(currentPos, params)
-                local actualLen = 0
-                local anyItemCreated = false
+            -- Place item on target tracks (handles multi-channel)
+            for tIdx, track in ipairs(targetTracks) do
+                -- CRITICAL FIX: Use real track index from trackStructure, not loop counter
+                -- This ensures correct channel extraction for multichannel configurations
+                local realTrackIdx = trackStructure.trackIndices
+                    and trackStructure.trackIndices[tIdx] or tIdx
 
-                -- Place item on target tracks (handles multi-channel)
-                for tIdx, track in ipairs(targetTracks) do
-                    -- CRITICAL FIX: Use real track index from trackStructure, not loop counter
-                    -- This ensures correct channel extraction for multichannel configurations
-                    local realTrackIdx = trackStructure.trackIndices
-                        and trackStructure.trackIndices[tIdx] or tIdx
+                -- Use placeSingleItem from Generation Engine
+                -- Pass ignoreBounds=true to ignore project time selection limits
+                local newItem, length = globals.Generation.placeSingleItem(
+                    track,
+                    itemData,
+                    itemPos,
+                    genParams,
+                    trackStructure,
+                    realTrackIdx,
+                    trackStructure.channelSelectionMode,
+                    true -- ignoreBounds
+                )
 
-                    -- Use placeSingleItem from Generation Engine
-                    -- Pass ignoreBounds=true to ignore project time selection limits
-                    local newItem, length = globals.Generation.placeSingleItem(
-                        track,
-                        itemData,
-                        itemPos,
-                        genParams,
-                        trackStructure,
-                        realTrackIdx,
-                        trackStructure.channelSelectionMode,
-                        true -- ignoreBounds
-                    )
-
-                    if newItem then
-                        anyItemCreated = true
-                        actualLen = math.max(actualLen, length)
-                        -- Record placed item
-                        table.insert(placedItems, {
-                            item = newItem,
-                            track = track,
-                            position = itemPos,
-                            length = length,
-                            trackIdx = realTrackIdx
-                        })
-                    end
+                if newItem then
+                    anyItemCreated = true
+                    actualLen = math.max(actualLen, length)
+                    -- Record placed item
+                    table.insert(placedItems, {
+                        item = newItem,
+                        track = track,
+                        position = itemPos,
+                        length = length,
+                        trackIdx = realTrackIdx
+                    })
                 end
+            end
 
-                if anyItemCreated then
-                    -- Advance position by item length plus spacing
-                    currentPos = itemPos + actualLen + params.spacing
-                    -- Optionally align again after spacing
-                    if params.alignToSeconds and params.spacing > 0 then
-                        currentPos = math.ceil(currentPos)
-                    end
+            if anyItemCreated then
+                -- Advance position by item length plus spacing
+                currentPos = itemPos + actualLen + params.spacing
+                -- Optionally align again after spacing
+                if params.alignToSeconds and params.spacing > 0 then
+                    currentPos = math.ceil(currentPos)
                 end
             end
         end
 
-        ::nextItem::
+        ::nextEntry::
     end
 
     return placedItems

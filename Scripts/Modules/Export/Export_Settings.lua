@@ -1,9 +1,10 @@
 --[[
-@version 1.0
+@version 1.1
 @noindex
 DM Ambiance Creator - Export Settings Module
 Handles export settings state management, container collection, and parameter resolution.
 Migrated from Export_Core.lua with new v2 fields (maxPoolItems, loopMode).
+v1.1: Code review fix - validateMaxPoolItems now uses containerInfo for proper pool size (items × areas).
 --]]
 
 local M = {}
@@ -288,13 +289,15 @@ function M.resolveLoopMode(container, params)
         and container.intervalMode == Constants.TRIGGER_MODES.ABSOLUTE
 end
 
--- NEW v2: Validate maxPoolItems against actual container pool size
--- Returns clamped value: math.min(maxItems, #container.items) when maxItems > 0, else #container.items
-function M.validateMaxPoolItems(container, maxItems)
+-- NEW v2: Validate maxPoolItems against actual pool size (items × waveformAreas)
+-- Returns clamped value: math.min(maxItems, poolSize) when maxItems > 0, else poolSize
+-- IMPORTANT: Uses calculatePoolSizeFromInfo to account for waveformAreas per AC #4
+function M.validateMaxPoolItems(containerInfo, maxItems)
+    local poolSize = M.calculatePoolSizeFromInfo(containerInfo)
     if maxItems > 0 then
-        return math.min(maxItems, #container.items)
+        return math.min(maxItems, poolSize)
     end
-    return #container.items
+    return poolSize
 end
 
 -- NEW v2: Calculate pool size directly from containerInfo (optimized - no search)

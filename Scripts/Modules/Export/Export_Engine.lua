@@ -1,10 +1,12 @@
 --[[
-@version 1.2
+@version 1.4
 @noindex
 DM Ambiance Creator - Export Engine Module
 Handles export orchestration, region creation, and export execution.
 Migrated from Export_Core.lua (performExport, parseRegionPattern, shallowCopy).
 v1.2: Added instanceCount to PreviewEntry, optimized pool size calculation, fixed trackType default.
+v1.3: Story 2.1 - Added validateMaxPoolItems() call before resolvePool(), empty pool handling.
+v1.4: Code review fixes - math.randomseed moved here (once per export), validateMaxPoolItems uses containerInfo, empty pool warning.
 --]]
 
 local M = {}
@@ -58,6 +60,10 @@ function M.performExport()
     reaper.Undo_BeginBlock()
     reaper.PreventUIRefresh(1)
 
+    -- Seed random ONCE at export start for consistent randomness across all containers
+    -- (os.time() has 1-second resolution, so seeding per-container could cause duplicates)
+    math.randomseed(os.time())
+
     local totalItemsExported = 0
     local containerExportIndex = 0
 
@@ -72,8 +78,20 @@ function M.performExport()
         -- Get track structure (delegates to Generation engine)
         local trackStructure = Placement.resolveTrackStructure(containerInfo)
 
-        -- Get pool of items to export (stub for now, full implementation in Story 2.1)
-        local pool = Placement.resolvePool(containerInfo, params.maxPoolItems)
+        -- Validate and clamp maxPoolItems to actual pool size (AC #3, #4)
+        -- Pass full containerInfo to account for waveformAreas in pool size calculation
+        local validatedMax = Settings.validateMaxPoolItems(containerInfo, params.maxPoolItems)
+
+        -- Get pool of PoolEntry objects (item + area pre-resolved)
+        local pool = Placement.resolvePool(containerInfo, validatedMax)
+
+        -- Handle empty pool gracefully with warning
+        if #pool == 0 then
+            reaper.ShowConsoleMsg("[Export] Warning: Skipping container '"
+                .. (containerInfo.container.name or "Unknown")
+                .. "' - no items in pool\n")
+            goto continue
+        end
 
         -- Place items on tracks using Placement module
         -- This includes the critical multichannel fix using realTrackIdx from trackStructure
