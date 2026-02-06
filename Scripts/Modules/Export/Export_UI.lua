@@ -1,5 +1,5 @@
 --[[
-@version 1.6
+@version 1.7
 @noindex
 DM Ambiance Creator - Export UI Module
 Handles the Export modal window rendering with multi-selection and new widgets.
@@ -10,6 +10,8 @@ v1.5: Story 4.3 - Added per-container export results display with success/error/
       Replaced lastExportError with lastExportResults for structured result display.
 v1.6: Code review fixes - Clearer success count labels (OK vs with warnings), consistent terminology
       across summary displays.
+v1.7: Story 4.4 - Added "(auto: uses container intervals)" indicator when loopInterval=0 in global,
+      single override, and batch override sections.
 --]]
 
 local Export_UI = {}
@@ -238,6 +240,14 @@ function Export_UI.renderModal()
                     Export_Settings.setGlobalParam("loopInterval", newLoopInt)
                 end
                 imgui.PopItemWidth(ctx)
+                -- Auto-mode indicator: show when loopInterval is 0
+                if (globalParams.loopInterval or 0) == 0 then
+                    imgui.SameLine(ctx)
+                    imgui.TextDisabled(ctx, "(auto: uses container intervals)")
+                    if imgui.IsItemHovered(ctx) then
+                        imgui.SetTooltip(ctx, "When set to 0, each container uses its own triggerRate\nfor overlap timing instead of a global value.")
+                    end
+                end
             end
 
             imgui.Spacing(ctx)
@@ -770,6 +780,14 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
             Export_Settings.setContainerOverride(containerKey, override)
         end
         imgui.PopItemWidth(ctx)
+        -- Auto-mode indicator: show when loopInterval is 0
+        if (override.params.loopInterval or 0) == 0 then
+            imgui.SameLine(ctx)
+            imgui.TextDisabled(ctx, "(auto: uses container intervals)")
+            if imgui.IsItemHovered(ctx) then
+                imgui.SetTooltip(ctx, "When set to 0, each container uses its own triggerRate\nfor overlap timing instead of a global value.")
+            end
+        end
     end
 
     -- Override Align to seconds
@@ -978,6 +996,14 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
             Export_Settings.applyParamToSelected("loopInterval", newLoopIntBatch)
         end
         imgui.PopItemWidth(ctx)
+        -- Auto-mode indicator: show when loopInterval is 0
+        if (refOverride.params.loopInterval or 0) == 0 then
+            imgui.SameLine(ctx)
+            imgui.TextDisabled(ctx, "(auto: uses container intervals)")
+            if imgui.IsItemHovered(ctx) then
+                imgui.SetTooltip(ctx, "When set to 0, each container uses its own triggerRate\nfor overlap timing instead of a global value.")
+            end
+        end
     end
 
     -- Batch Align to seconds

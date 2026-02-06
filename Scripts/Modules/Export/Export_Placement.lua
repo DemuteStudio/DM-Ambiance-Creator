@@ -1,5 +1,5 @@
 --[[
-@version 1.8
+@version 1.9
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
@@ -16,6 +16,8 @@ v1.7: Story 4.3 - Added missing source file detection with reaper.file_exists() 
       Throws error with file path if source file is missing for pcall isolation in Export_Engine.
 v1.8: Code review fixes - Nil filePath now throws error instead of silent skip, error() uses level 0
       for cleaner UI display without file:line prefix.
+v1.9: Story 4.4 - Fixed effectiveInterval logic to properly support auto-mode semantics.
+      loopInterval=0 means auto-mode (use container.triggerRate), non-zero overrides all containers.
 --]]
 
 local M = {}
@@ -338,6 +340,13 @@ end
 -- Place container items on target tracks with correct multichannel channel distribution
 -- CRITICAL: Uses real track indices from trackStructure for correct channel extraction
 -- In loop mode: uses loopInterval instead of spacing, continues until loopDuration reached
+--
+-- ARCHITECTURE NOTE: This function is called ONCE per container by Export_Engine.performExport().
+-- This design enables Story 4.4's AC5 (batch export with loopInterval=0): each container's
+-- effectiveInterval is calculated independently based on its own triggerRate when in auto-mode.
+-- Do NOT refactor Export_Engine to batch multiple containers in a single call without updating
+-- the effectiveInterval logic accordingly.
+--
 -- @param pool table: Array of PoolEntry objects from resolvePool { item, area, itemIdx, itemKey }
 -- @param targetTracks table: Array of REAPER tracks from resolveTargetTracks
 -- @param trackStructure table: Track structure from resolveTrackStructure
@@ -361,15 +370,20 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
     -- Detect loop mode and configure placement behavior
     local isLoopMode = Settings and Settings.resolveLoopMode(containerInfo.container, params) or false
     local container = containerInfo.container
-    -- v1.6: In autoloop mode (negative triggerRate), use container's triggerRate for overlap
-    -- This ensures the same overlap behavior as the generator when container has negative interval
+    -- Story 4.4: Loop Interval auto-mode semantics
+    -- loopInterval=0 (auto-mode): each container uses its own triggerRate for overlap
+    -- loopInterval!=0 (explicit): all containers use the specified loopInterval value
     local effectiveInterval
     if isLoopMode then
-        -- Check if container has negative triggerRate (overlap) - use it if so
-        if container.triggerRate and container.triggerRate < 0 then
-            effectiveInterval = container.triggerRate  -- Use container's overlap value
+        if (params.loopInterval or 0) ~= 0 then
+            -- Explicit override: all containers use the specified loopInterval
+            effectiveInterval = params.loopInterval
+        elseif container.triggerRate and container.triggerRate < 0 then
+            -- Auto-mode: container has negative triggerRate (overlap), use it
+            effectiveInterval = container.triggerRate
         else
-            effectiveInterval = params.loopInterval or 0  -- Use export settings loopInterval
+            -- Auto-mode: container has non-negative triggerRate (no overlap requested)
+            effectiveInterval = 0
         end
     else
         effectiveInterval = params.spacing or 0  -- Non-loop mode uses spacing
