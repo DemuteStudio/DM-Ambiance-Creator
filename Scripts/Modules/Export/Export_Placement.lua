@@ -1,11 +1,13 @@
 --[[
-@version 1.2
+@version 1.3
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
 Migrated from Export_Core.lua (makeItemKey, createExportTrack, findTrackByName, getChildTracks, getTargetTracks).
 v1.2: Story 2.1 - Full resolvePool() implementation with PoolEntry format and Fisher-Yates shuffle.
       placeContainerItems() updated to use PoolEntry objects directly.
+v1.3: Story 3.1 - Added loop mode support with loopInterval and loopDuration in placeContainerItems.
+      Code review fix: Use LOOP_MAX_ITERATIONS constant, added loop overshoot documentation.
 --]]
 
 local M = {}
@@ -327,6 +329,7 @@ end
 
 -- Place container items on target tracks with correct multichannel channel distribution
 -- CRITICAL: Uses real track indices from trackStructure for correct channel extraction
+-- In loop mode: uses loopInterval instead of spacing, continues until loopDuration reached
 -- @param pool table: Array of PoolEntry objects from resolvePool { item, area, itemIdx, itemKey }
 -- @param targetTracks table: Array of REAPER tracks from resolveTargetTracks
 -- @param trackStructure table: Track structure from resolveTrackStructure
@@ -335,68 +338,105 @@ end
 -- @return table: Array of PlacedItem records {item, track, position, length, trackIdx}
 function M.placeContainerItems(pool, targetTracks, trackStructure, params, containerInfo)
     local placedItems = {}
-    local currentPos = reaper.GetCursorPosition()
+    local startPos = reaper.GetCursorPosition()
+    local currentPos = startPos
     local genParams = M.buildGenParams(params, containerInfo)
 
-    -- Iterate PoolEntry objects (each has pre-resolved item and area)
-    for _, poolEntry in ipairs(pool) do
-        if not poolEntry.item.filePath then goto nextEntry end
+    -- Detect loop mode and configure placement behavior
+    local isLoopMode = Settings and Settings.resolveLoopMode(containerInfo.container, params) or false
+    local effectiveInterval = isLoopMode and (params.loopInterval or 0) or (params.spacing or 0)
+    local targetDuration = isLoopMode and (params.loopDuration or 30) or math.huge
 
-        -- Build ItemData from pre-resolved PoolEntry
+    -- Helper: place a single pool entry at current position
+    local function placePoolEntry(poolEntry)
+        if not poolEntry.item.filePath then return false, 0 end
+
         local itemData = M.buildItemData(poolEntry.item, poolEntry.area)
+        local itemPos = M.calculatePosition(currentPos, params)
+        local actualLen = 0
+        local anyItemCreated = false
 
-        -- For each instance requested
-        for instance = 1, params.instanceAmount do
-            -- Calculate aligned position
-            local itemPos = M.calculatePosition(currentPos, params)
-            local actualLen = 0
-            local anyItemCreated = false
+        -- Place item on target tracks (handles multi-channel)
+        for tIdx, track in ipairs(targetTracks) do
+            local realTrackIdx = trackStructure.trackIndices
+                and trackStructure.trackIndices[tIdx] or tIdx
 
-            -- Place item on target tracks (handles multi-channel)
-            for tIdx, track in ipairs(targetTracks) do
-                -- CRITICAL FIX: Use real track index from trackStructure, not loop counter
-                -- This ensures correct channel extraction for multichannel configurations
-                local realTrackIdx = trackStructure.trackIndices
-                    and trackStructure.trackIndices[tIdx] or tIdx
+            local newItem, length = globals.Generation.placeSingleItem(
+                track,
+                itemData,
+                itemPos,
+                genParams,
+                trackStructure,
+                realTrackIdx,
+                trackStructure.channelSelectionMode,
+                true -- ignoreBounds
+            )
 
-                -- Use placeSingleItem from Generation Engine
-                -- Pass ignoreBounds=true to ignore project time selection limits
-                local newItem, length = globals.Generation.placeSingleItem(
-                    track,
-                    itemData,
-                    itemPos,
-                    genParams,
-                    trackStructure,
-                    realTrackIdx,
-                    trackStructure.channelSelectionMode,
-                    true -- ignoreBounds
-                )
-
-                if newItem then
-                    anyItemCreated = true
-                    actualLen = math.max(actualLen, length)
-                    -- Record placed item
-                    table.insert(placedItems, {
-                        item = newItem,
-                        track = track,
-                        position = itemPos,
-                        length = length,
-                        trackIdx = realTrackIdx
-                    })
-                end
-            end
-
-            if anyItemCreated then
-                -- Advance position by item length plus spacing
-                currentPos = itemPos + actualLen + params.spacing
-                -- Optionally align again after spacing
-                if params.alignToSeconds and params.spacing > 0 then
-                    currentPos = math.ceil(currentPos)
-                end
+            if newItem then
+                anyItemCreated = true
+                actualLen = math.max(actualLen, length)
+                table.insert(placedItems, {
+                    item = newItem,
+                    track = track,
+                    position = itemPos,
+                    length = length,
+                    trackIdx = realTrackIdx
+                })
             end
         end
 
-        ::nextEntry::
+        if anyItemCreated then
+            -- Advance position by item length plus interval
+            -- For loop mode with negative interval (overlap), ensure we don't go backwards
+            local newPos = itemPos + actualLen + effectiveInterval
+            -- Clamp to prevent negative progress (overlap cannot exceed item length)
+            if newPos <= currentPos then
+                newPos = currentPos + 0.001 -- Minimal forward progress
+            end
+            currentPos = newPos
+            -- Optionally align after interval
+            if params.alignToSeconds and effectiveInterval > 0 then
+                currentPos = math.ceil(currentPos)
+            end
+        end
+
+        return anyItemCreated, actualLen
+    end
+
+    -- Main placement logic
+    if isLoopMode then
+        -- Loop mode: cycle through pool until loopDuration is reached
+        -- NOTE: Items may extend past loopDuration - this is intentional.
+        -- Story 3.2 (loop processing) handles trimming via zero-crossing split/swap.
+        local poolIndex = 1
+        local itemsPlaced = 0
+        local Constants = globals.Constants
+        local maxIterations = Constants and Constants.EXPORT and Constants.EXPORT.LOOP_MAX_ITERATIONS or 10000
+
+        while (currentPos - startPos) < targetDuration and itemsPlaced < maxIterations do
+            local poolEntry = pool[poolIndex]
+            if not poolEntry then break end
+
+            -- Place for each instance requested
+            for instance = 1, params.instanceAmount do
+                if (currentPos - startPos) >= targetDuration then break end
+                placePoolEntry(poolEntry)
+                itemsPlaced = itemsPlaced + 1
+            end
+
+            -- Cycle through pool
+            poolIndex = poolIndex + 1
+            if poolIndex > #pool then
+                poolIndex = 1 -- Loop back to start of pool
+            end
+        end
+    else
+        -- Standard mode: iterate once through pool
+        for _, poolEntry in ipairs(pool) do
+            for instance = 1, params.instanceAmount do
+                placePoolEntry(poolEntry)
+            end
+        end
     end
 
     return placedItems

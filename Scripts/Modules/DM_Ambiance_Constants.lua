@@ -1,5 +1,5 @@
 --[[
-@version 1.4
+@version 1.5
 @noindex
 --]]
 
@@ -505,6 +505,14 @@ Constants.EXPORT = {
     LOOP_MODE_OFF = "off",              -- Force loop off
     LOOP_MODE_DEFAULT = "auto",         -- Default loop mode
     LOOP_ZERO_CROSSING_WINDOW = 0.05,   -- Zero crossing search window (50ms)
+    -- Loop Duration & Interval (v2 - Story 3.1)
+    LOOP_DURATION_MIN = 5,              -- Minimum loop duration (seconds)
+    LOOP_DURATION_MAX = 300,            -- Maximum loop duration (seconds)
+    LOOP_DURATION_DEFAULT = 30,         -- Default loop duration (seconds)
+    LOOP_INTERVAL_MIN = -10,            -- Minimum interval (negative = overlap)
+    LOOP_INTERVAL_MAX = 10,             -- Maximum interval (positive = gap)
+    LOOP_INTERVAL_DEFAULT = 0,          -- Default interval (seconds)
+    LOOP_MAX_ITERATIONS = 10000,        -- Safety limit for loop mode placement iterations
 }
 
 return Constants

@@ -1,5 +1,5 @@
 --[[
-@version 1.4
+@version 1.5
 @noindex
 DM Ambiance Creator - Export Engine Module
 Handles export orchestration, region creation, and export execution.
@@ -7,6 +7,8 @@ Migrated from Export_Core.lua (performExport, parseRegionPattern, shallowCopy).
 v1.2: Added instanceCount to PreviewEntry, optimized pool size calculation, fixed trackType default.
 v1.3: Story 2.1 - Added validateMaxPoolItems() call before resolvePool(), empty pool handling.
 v1.4: Code review fixes - math.randomseed moved here (once per export), validateMaxPoolItems uses containerInfo, empty pool warning.
+v1.5: Story 3.1 - Added loopDuration to PreviewEntry, updated estimateDuration for loop mode.
+      Code review fix: estimateDuration now uses Settings.resolveLoopMode for consistency.
 --]]
 
 local M = {}
@@ -193,6 +195,7 @@ function M.generatePreview()
             poolSelected = poolSelected,
             loopMode = loopModeResolved,
             loopModeAuto = loopModeAuto,
+            loopDuration = loopModeResolved and (params.loopDuration or 30) or nil,
             trackCount = trackCount,
             trackType = trackType,
             estimatedDuration = estimatedDuration,
@@ -239,11 +242,13 @@ function M.estimateDuration(poolSize, params, container)
         duration = duration + ((totalItems - 1) * spacing)
     end
 
-    -- If loop mode is enabled, check if loopDuration is specified
-    local loopMode = params.loopMode or "auto"
-    if loopMode == "on" or (loopMode == "auto" and container and container.triggerRate and container.triggerRate < 0) then
-        -- For loop mode, return estimated duration based on items
-        -- (loopDuration from params could override this in future Story 3.2)
+    -- If loop mode is enabled, return loopDuration as the estimated duration
+    -- Use resolveLoopMode for consistency with actual export behavior
+    local isLoopMode = Settings and Settings.resolveLoopMode
+        and Settings.resolveLoopMode(container, params)
+        or false
+    if isLoopMode then
+        -- For loop mode, loopDuration defines the target duration
         if params.loopDuration and params.loopDuration > 0 then
             return params.loopDuration
         end

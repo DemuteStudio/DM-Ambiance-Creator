@@ -1,10 +1,11 @@
 --[[
-@version 1.1
+@version 1.2
 @noindex
 DM Ambiance Creator - Export Settings Module
 Handles export settings state management, container collection, and parameter resolution.
 Migrated from Export_Core.lua with new v2 fields (maxPoolItems, loopMode).
 v1.1: Code review fix - validateMaxPoolItems now uses containerInfo for proper pool size (items × areas).
+v1.2: Story 3.1 - Added loopDuration and loopInterval parameters for loop mode configuration.
 --]]
 
 local M = {}
@@ -24,6 +25,8 @@ local exportSettings = {
         regionPattern = "$container",
         maxPoolItems = 0,      -- 0 = export all items, >0 = random subset
         loopMode = "auto",     -- "auto" | "on" | "off"
+        loopDuration = 30,     -- Target loop duration in seconds
+        loopInterval = 0,      -- Interval between items in loop mode (negative = overlap)
     },
     containerOverrides = {},   -- {[containerKey] = {enabled, params}}
     enabledContainers = {},    -- {[containerKey] = true/false}
@@ -57,6 +60,8 @@ function M.resetSettings()
         regionPattern = EXPORT.REGION_PATTERN_DEFAULT or "$container",
         maxPoolItems = EXPORT.MAX_POOL_ITEMS_DEFAULT or 0,
         loopMode = EXPORT.LOOP_MODE_DEFAULT or "auto",
+        loopDuration = EXPORT.LOOP_DURATION_DEFAULT or 30,
+        loopInterval = EXPORT.LOOP_INTERVAL_DEFAULT or 0,
     }
     exportSettings.containerOverrides = {}
     exportSettings.enabledContainers = {}
@@ -145,6 +150,14 @@ function M.setGlobalParam(param, value)
         if not validModes[value] then
             value = EXPORT.LOOP_MODE_DEFAULT or "auto"
         end
+    elseif param == "loopDuration" then
+        local min = EXPORT.LOOP_DURATION_MIN or 5
+        local max = EXPORT.LOOP_DURATION_MAX or 300
+        value = math.max(min, math.min(max, value))
+    elseif param == "loopInterval" then
+        local min = EXPORT.LOOP_INTERVAL_MIN or -10
+        local max = EXPORT.LOOP_INTERVAL_MAX or 10
+        value = math.max(min, math.min(max, value))
     end
 
     exportSettings.globalParams[param] = value

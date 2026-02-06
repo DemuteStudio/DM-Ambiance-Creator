@@ -1,10 +1,11 @@
 --[[
-@version 1.3
+@version 1.4
 @noindex
 DM Ambiance Creator - Export UI Module
 Handles the Export modal window rendering with multi-selection and new widgets.
 v1.2: Fixed BeginChild/EndChild bug, added visual distinction for override values.
 v1.3: Code review fixes - added error display, all 11 override params, constants extraction, nil checks, caching.
+v1.4: Story 3.1 - Added loopDuration and loopInterval UI controls for loop mode configuration.
 --]]
 
 local Export_UI = {}
@@ -208,6 +209,33 @@ function Export_UI.renderModal()
             end
             imgui.PopItemWidth(ctx)
 
+            -- Loop Duration & Interval (only visible when loopMode != "off")
+            if globalParams.loopMode ~= "off" then
+                imgui.Text(ctx, "Loop Duration (s):")
+                imgui.SameLine(ctx, 150)
+                imgui.PushItemWidth(ctx, 120)
+                local loopDurMin = EXPORT.LOOP_DURATION_MIN or 5
+                local loopDurMax = EXPORT.LOOP_DURATION_MAX or 300
+                local changedLoopDur, newLoopDur = imgui.DragInt(ctx, "##LoopDuration",
+                    globalParams.loopDuration or 30, 1, loopDurMin, loopDurMax)
+                if changedLoopDur then
+                    Export_Settings.setGlobalParam("loopDuration", newLoopDur)
+                end
+                imgui.PopItemWidth(ctx)
+
+                imgui.Text(ctx, "Loop Interval (s):")
+                imgui.SameLine(ctx, 150)
+                imgui.PushItemWidth(ctx, 120)
+                local loopIntMin = EXPORT.LOOP_INTERVAL_MIN or -10
+                local loopIntMax = EXPORT.LOOP_INTERVAL_MAX or 10
+                local changedLoopInt, newLoopInt = imgui.DragDouble(ctx, "##LoopInterval",
+                    globalParams.loopInterval or 0, 0.1, loopIntMin, loopIntMax, "%.1f")
+                if changedLoopInt then
+                    Export_Settings.setGlobalParam("loopInterval", newLoopInt)
+                end
+                imgui.PopItemWidth(ctx)
+            end
+
             imgui.Spacing(ctx)
 
             -- Align to whole seconds
@@ -309,6 +337,8 @@ function Export_UI.renderModal()
                             regionPattern = globalParams.regionPattern,
                             maxPoolItems = globalParams.maxPoolItems,
                             loopMode = globalParams.loopMode,
+                            loopDuration = globalParams.loopDuration,
+                            loopInterval = globalParams.loopInterval,
                         }
                     }
                 end
@@ -362,6 +392,8 @@ function Export_UI.renderModal()
                                     regionPattern = globalParams.regionPattern,
                                     maxPoolItems = globalParams.maxPoolItems,
                                     loopMode = globalParams.loopMode,
+                                    loopDuration = globalParams.loopDuration,
+                                    loopInterval = globalParams.loopInterval,
                                 }
                             }
                         else
@@ -409,12 +441,16 @@ function Export_UI.renderModal()
                             local poolTotal = entry.poolTotal or 0
                             local poolDisplay = string.format("%d/%d", poolSelected, poolTotal)
 
-                            -- Format loop indicator: checkmark or X, with "(auto)" suffix
+                            -- Format loop indicator: checkmark or X, with "(auto)" suffix and duration
                             local loopIndicator
                             if entry.loopMode then
                                 loopIndicator = "Loop \226\156\147"  -- ✓
                                 if entry.loopModeAuto then
                                     loopIndicator = loopIndicator .. " (auto)"
+                                end
+                                -- Add loop duration if available
+                                if entry.loopDuration then
+                                    loopIndicator = loopIndicator .. " " .. entry.loopDuration .. "s"
                                 end
                             else
                                 loopIndicator = "Loop \226\156\151"  -- ✗
@@ -602,6 +638,46 @@ function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPO
     end
     imgui.PopItemWidth(ctx)
 
+    -- Override Loop Duration (only visible when loopMode != "off")
+    if (override.params.loopMode or "auto") ~= "off" then
+        local loopDurDiff = (override.params.loopDuration or 30) ~= (globalParams.loopDuration or 30)
+        if loopDurDiff then
+            imgui.TextColored(ctx, MODIFIED_COLOR, "Loop Dur: *")
+        else
+            imgui.Text(ctx, "Loop Dur:")
+        end
+        imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+        imgui.PushItemWidth(ctx, 100)
+        local loopDurMin = EXPORT.LOOP_DURATION_MIN or 5
+        local loopDurMax = EXPORT.LOOP_DURATION_MAX or 300
+        local changedLoopDurOvr, newLoopDurOvr = imgui.DragInt(ctx, "##OverrideLoopDuration",
+            override.params.loopDuration or 30, 1, loopDurMin, loopDurMax)
+        if changedLoopDurOvr then
+            override.params.loopDuration = newLoopDurOvr
+            Export_Settings.setContainerOverride(containerKey, override)
+        end
+        imgui.PopItemWidth(ctx)
+
+        -- Override Loop Interval
+        local loopIntDiff = (override.params.loopInterval or 0) ~= (globalParams.loopInterval or 0)
+        if loopIntDiff then
+            imgui.TextColored(ctx, MODIFIED_COLOR, "Loop Int: *")
+        else
+            imgui.Text(ctx, "Loop Int:")
+        end
+        imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+        imgui.PushItemWidth(ctx, 100)
+        local loopIntMin = EXPORT.LOOP_INTERVAL_MIN or -10
+        local loopIntMax = EXPORT.LOOP_INTERVAL_MAX or 10
+        local changedLoopIntOvr, newLoopIntOvr = imgui.DragDouble(ctx, "##OverrideLoopInterval",
+            override.params.loopInterval or 0, 0.1, loopIntMin, loopIntMax, "%.1f")
+        if changedLoopIntOvr then
+            override.params.loopInterval = newLoopIntOvr
+            Export_Settings.setContainerOverride(containerKey, override)
+        end
+        imgui.PopItemWidth(ctx)
+    end
+
     -- Override Align to seconds
     local alignDiff = override.params.alignToSeconds ~= globalParams.alignToSeconds
     local changedAlignOvr, newAlignOvr = imgui.Checkbox(ctx,
@@ -771,6 +847,44 @@ function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverri
         Export_Settings.applyParamToSelected("loopMode", LOOP_MODE_INDEX_TO_VALUE[newLoopIdxBatch] or "auto")
     end
     imgui.PopItemWidth(ctx)
+
+    -- Batch Loop Duration (only visible when loopMode != "off")
+    if (refOverride.params.loopMode or "auto") ~= "off" then
+        local loopDurDiff = (refOverride.params.loopDuration or 30) ~= (globalParams.loopDuration or 30)
+        if loopDurDiff then
+            imgui.TextColored(ctx, MODIFIED_COLOR, "Loop Dur: *")
+        else
+            imgui.Text(ctx, "Loop Dur:")
+        end
+        imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+        imgui.PushItemWidth(ctx, 100)
+        local loopDurMin = EXPORT.LOOP_DURATION_MIN or 5
+        local loopDurMax = EXPORT.LOOP_DURATION_MAX or 300
+        local changedLoopDurBatch, newLoopDurBatch = imgui.DragInt(ctx, "##BatchLoopDuration",
+            refOverride.params.loopDuration or 30, 1, loopDurMin, loopDurMax)
+        if changedLoopDurBatch then
+            Export_Settings.applyParamToSelected("loopDuration", newLoopDurBatch)
+        end
+        imgui.PopItemWidth(ctx)
+
+        -- Batch Loop Interval
+        local loopIntDiff = (refOverride.params.loopInterval or 0) ~= (globalParams.loopInterval or 0)
+        if loopIntDiff then
+            imgui.TextColored(ctx, MODIFIED_COLOR, "Loop Int: *")
+        else
+            imgui.Text(ctx, "Loop Int:")
+        end
+        imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+        imgui.PushItemWidth(ctx, 100)
+        local loopIntMin = EXPORT.LOOP_INTERVAL_MIN or -10
+        local loopIntMax = EXPORT.LOOP_INTERVAL_MAX or 10
+        local changedLoopIntBatch, newLoopIntBatch = imgui.DragDouble(ctx, "##BatchLoopInterval",
+            refOverride.params.loopInterval or 0, 0.1, loopIntMin, loopIntMax, "%.1f")
+        if changedLoopIntBatch then
+            Export_Settings.applyParamToSelected("loopInterval", newLoopIntBatch)
+        end
+        imgui.PopItemWidth(ctx)
+    end
 
     -- Batch Align to seconds
     local alignDiff = refOverride.params.alignToSeconds ~= globalParams.alignToSeconds
