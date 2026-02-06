@@ -113,14 +113,15 @@ end
 local function processContainerExport(containerInfo, params, currentExportPosition, containerExportIndex)
     local warnings = {}
 
-    -- Get target tracks for this container
-    local targetTracks = Placement.resolveTargetTracks(containerInfo, params)
+    -- Get track structure first (delegates to Generation engine)
+    -- Computed once and passed through to avoid redundant analysis
+    local trackStructure = Placement.resolveTrackStructure(containerInfo)
+
+    -- Get target tracks for this container (may create hierarchy based on trackStructure)
+    local targetTracks = Placement.resolveTargetTracks(containerInfo, trackStructure, params)
     if #targetTracks == 0 then
         error("No target tracks available for container")
     end
-
-    -- Get track structure (delegates to Generation engine)
-    local trackStructure = Placement.resolveTrackStructure(containerInfo)
 
     -- Validate and clamp maxPoolItems to actual pool size (AC #3, #4)
     local validatedMax = Settings.validateMaxPoolItems(containerInfo, params.maxPoolItems)

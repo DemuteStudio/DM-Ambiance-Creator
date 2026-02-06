@@ -1,6 +1,6 @@
 # Story 5.1: Export Track Hierarchy Creation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -138,13 +138,36 @@ N/A - No debug issues encountered during implementation.
 ### File List
 
 - Scripts/Modules/Export/Export_Placement.lua (modified)
-  - Added `createExportTrackHierarchy()` function (lines 75-126)
-  - Added `needsTrackHierarchy()` helper function (lines 170-187)
-  - Refactored `resolveTargetTracks()` (lines 189-284)
-  - Updated version to 1.10 with changelog
+  - Added `createExportTrackHierarchy()` function (lines 78-138)
+  - Refactored `resolveTargetTracks()` to accept trackStructure parameter (lines 182-277)
+  - Updated version to 1.11 with changelog
+- Scripts/Modules/Export/Export_Engine.lua (modified)
+  - Reordered `resolveTrackStructure` before `resolveTargetTracks` (lines 116-124)
+  - Passes trackStructure to resolveTargetTracks to avoid redundant analysis
+- Scripts/Modules/Audio/Generation/Generation_TrackManagement.lua (modified)
+  - Guarded view zoom commands with `globals.suppressViewRefresh` flag (lines 259-263)
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Antho | **Date:** 2026-02-06 | **Model:** Claude Opus 4.6
+
+**Issues Found:** 3 High, 2 Medium, 2 Low — **All Fixed**
+
+| # | Severity | Issue | Fix Applied |
+|---|----------|-------|-------------|
+| H1 | HIGH | View zoom commands (Main_OnCommand 40031/40295) fired during export via createMultiChannelTracks | Guarded with `globals.suppressViewRefresh` flag in Generation_TrackManagement.lua |
+| H2 | HIGH | Container `previousChannelMode` mutated by detectAndHandleConfigurationChanges during export | Save/restore `previousChannelMode` around createMultiChannelTracks call |
+| H3 | HIGH | Dead code: `needsTrackHierarchy()` defined but never called | Deleted |
+| M1 | MEDIUM | Triple redundant `analyzeContainerItems`+`determineTrackStructure` per container | Reordered Export_Engine calls, passed pre-computed trackStructure through |
+| M2 | MEDIUM | Track naming inconsistency: stereo="Export - Name", multichannel folder=just "Name" | Multichannel folders now use "Export - Name" prefix consistently |
+| L1 | LOW | Unused second return value (folderTrack) from createExportTrackHierarchy | Removed second return value |
+| L2 | LOW | Inconsistent defensive checks for Generation sub-functions | Added checks for analyzeContainerItems and determineTrackStructure |
+
+**Outcome:** Approve (all issues fixed)
 
 ## Change Log
 
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-02-06 | Initial implementation of Story 5.1 - Export track hierarchy creation | Claude Opus 4.5 |
+| 2026-02-06 | Code review fixes: 7 issues resolved (3H/2M/2L) | Claude Opus 4.6 |

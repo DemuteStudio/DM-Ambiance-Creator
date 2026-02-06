@@ -256,9 +256,11 @@ function Generation_TrackManagement.createMultiChannelTracks(containerTrack, con
     reaper.UpdateArrange()
     reaper.TrackList_AdjustWindows(false)
 
-    -- Additional refresh to ensure hierarchy is visible
-    reaper.Main_OnCommand(40031, 0) -- View: Zoom out project
-    reaper.Main_OnCommand(40295, 0) -- View: Zoom to project
+    -- Additional refresh to ensure hierarchy is visible (suppressed during export)
+    if not globals.suppressViewRefresh then
+        reaper.Main_OnCommand(40031, 0) -- View: Zoom out project
+        reaper.Main_OnCommand(40295, 0) -- View: Zoom to project
+    end
 
     -- Store GUIDs for future reference
     Generation_TrackManagement.storeTrackGUIDs(container, containerTrack, channelTracks)

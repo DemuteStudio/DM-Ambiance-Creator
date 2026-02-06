@@ -42,15 +42,15 @@ development_status:
   4-4-loop-interval-auto-mode-ui: done
 
   # Epic 5 - Bug Fixes (CURRENT SPRINT)
-  5-1-export-track-hierarchy-creation: review
+  5-1-export-track-hierarchy-creation: done
   5-2-export-multichannel-item-distribution: ready-for-dev
   5-3-loop-overlap-after-split-swap: ready-for-dev
 
 # Sprint Summary
 stories_total: 14
-stories_done: 11
+stories_done: 12
 stories_in_progress: 0
-stories_ready: 3
+stories_ready: 2
 stories_backlog: 0
 
 # Notes
