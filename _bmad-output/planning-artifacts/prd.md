@@ -205,6 +205,7 @@ REAPER plugin/extension in Lua with ReaImGui. Cross-platform (Windows, Mac, Linu
 - **FR10:** User can define interval/overlap between items in loop mode per container
 - **FR11:** System creates seamless loops using zero-crossing detection for split points
 - **FR12:** System splits the last item at nearest zero-crossing and moves right portion before first item to create loop point
+- **FR33:** User can see a visual indicator when Loop Interval is set to 0 (auto-mode), clarifying that container-specific intervals will be used
 
 ### Export Configuration (J1, J2, J3, J4)
 

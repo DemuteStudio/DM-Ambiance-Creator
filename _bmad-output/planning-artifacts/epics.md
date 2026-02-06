@@ -468,29 +468,39 @@ So that **a single problematic container doesn't waste my entire export and I kn
 
 **FRs:** FR31, FR32
 
-### Story 4.4: Loop Interval Auto-Mode UI
+### Story 4.4: Loop Interval Auto-Mode UI Indicator
 
 As a **game sound designer**,
-I want **the export modal to clearly indicate when Loop Interval is in "auto" mode and uses container-specific overlap values**,
-So that **I understand what interval will actually be used for each autoloop container during export**.
+I want **the export modal to clearly indicate when Loop Interval is in "auto" mode (value=0) and will use each container's own overlap setting**,
+So that **I understand exactly what interval will be applied to each autoloop container, avoiding confusion between the displayed "0" and the actual behavior**.
+
+**Context:** When exporting loop containers, the Loop Interval parameter controls the overlap between items. A value of 0 means "auto-mode" — each container uses its own `triggerRate` value. However, the current UI shows "0" without explaining this semantic, creating ambiguity for users who don't know that 0 has special meaning.
 
 **Acceptance Criteria:**
 
-**Given** the global Loop Interval is set to 0
-**When** the user views the Loop Interval field
-**Then** a visual indicator shows "(auto: uses container intervals)"
+**Given** the global Loop Interval field in the Export modal
+**When** the value is set to 0
+**Then** a helper text "(auto: uses container intervals)" is displayed next to the field
+**And** the helper text is visually distinct (e.g., greyed/disabled style) to indicate it's informational
 
-**Given** the global Loop Interval is set to 0
-**And** a container has `triggerRate < 0` (autoloop)
-**When** the export runs
-**Then** that container uses its own `triggerRate` as the interval
+**Given** a container's per-container override section
+**When** the loopInterval override is set to 0
+**Then** the same "(auto: uses container intervals)" indicator is displayed
 
-**Given** the global Loop Interval is set to a non-zero value (e.g., -2)
-**When** the export runs
-**Then** all autoloop containers use the global value instead of their individual `triggerRate`
+**Given** the global Loop Interval is set to 0 and a container has `triggerRate = -1.5` (autoloop with 1.5s overlap)
+**When** the export runs for that container
+**Then** the container uses its own triggerRate (-1.5s) as the effective interval
+**And** items are placed with 1.5s overlap
 
-**Given** a container override has loopInterval set to 0
-**When** that container exports
-**Then** it uses its own `triggerRate` (auto-mode per container)
+**Given** the global Loop Interval is set to a non-zero value (e.g., -2.0)
+**When** the export runs for any autoloop container
+**Then** all autoloop containers use the global value (-2.0s) regardless of their individual triggerRate
+**And** the UI does NOT show the "(auto)" indicator since a specific value is set
+
+**Given** multiple containers with different triggerRate values (-0.5s, -1.0s, -2.0s) and global loopInterval = 0
+**When** batch export runs
+**Then** each container uses its own triggerRate as interval
+**And** the user can see in the per-container preview what interval will be applied (future enhancement)
 
 **FRs:** FR33
+**Journey:** J3 (Seamless Loop Export) — clarifies loop configuration UX
