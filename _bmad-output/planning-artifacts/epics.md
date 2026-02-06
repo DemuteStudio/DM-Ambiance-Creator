@@ -51,6 +51,7 @@ FR29: User can see all containers with enable/disable toggles
 FR30: User can configure per-container parameters when a container is selected
 FR31: System continues export for remaining containers if one fails
 FR32: System reports errors and warnings per container after completion
+FR33: Loop interval auto-mode (0=use container interval) with UI indicator
 
 ### NonFunctional Requirements
 
@@ -113,6 +114,7 @@ NFR6: Empty containers or missing source files gracefully skipped with warning
 | FR30 | Epic 2 | Per-container parameter UI |
 | FR31 | Epic 4 | Continue on container failure |
 | FR32 | Epic 4 | Error/warning reporting per container |
+| FR33 | Epic 4 | Loop interval auto-mode with UI indicator |
 
 ## Epic List
 
@@ -130,7 +132,7 @@ User can export containers with negative intervals as seamless loops ready for g
 
 ### Epic 4: Batch Export, Regions & Error Resilience
 User can batch-export multiple containers with mixed configurations in a single operation, create named REAPER regions, and receive reliable per-container error reporting.
-**FRs covered:** FR22, FR23, FR24, FR25, FR26, FR27, FR31, FR32
+**FRs covered:** FR22, FR23, FR24, FR25, FR26, FR27, FR31, FR32, FR33
 
 ## Epic 1: Export Foundation & Multichannel Fix
 
@@ -465,3 +467,30 @@ So that **a single problematic container doesn't waste my entire export and I kn
 **And** the error message identifies the missing source
 
 **FRs:** FR31, FR32
+
+### Story 4.4: Loop Interval Auto-Mode UI
+
+As a **game sound designer**,
+I want **the export modal to clearly indicate when Loop Interval is in "auto" mode and uses container-specific overlap values**,
+So that **I understand what interval will actually be used for each autoloop container during export**.
+
+**Acceptance Criteria:**
+
+**Given** the global Loop Interval is set to 0
+**When** the user views the Loop Interval field
+**Then** a visual indicator shows "(auto: uses container intervals)"
+
+**Given** the global Loop Interval is set to 0
+**And** a container has `triggerRate < 0` (autoloop)
+**When** the export runs
+**Then** that container uses its own `triggerRate` as the interval
+
+**Given** the global Loop Interval is set to a non-zero value (e.g., -2)
+**When** the export runs
+**Then** all autoloop containers use the global value instead of their individual `triggerRate`
+
+**Given** a container override has loopInterval set to 0
+**When** that container exports
+**Then** it uses its own `triggerRate` (auto-mode per container)
+
+**FRs:** FR33
