@@ -1,5 +1,5 @@
 --[[
-@version 1.9
+@version 1.10
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
@@ -18,6 +18,9 @@ v1.8: Code review fixes - Nil filePath now throws error instead of silent skip, 
       for cleaner UI display without file:line prefix.
 v1.9: Story 4.4 - Fixed effectiveInterval logic to properly support auto-mode semantics.
       loopInterval=0 means auto-mode (use container.triggerRate), non-zero overrides all containers.
+v1.10: Story 5.1 - Export now creates proper track hierarchy (folder + channel tracks) for multichannel
+       containers. Uses Generation_TrackManagement.createMultiChannelTracks() for consistency.
+       Handles GUID fallback when tracks don't exist. Stores GUIDs after track creation.
 --]]
 
 local M = {}
@@ -45,7 +48,8 @@ function M.makeItemKey(path, containerIndex, itemIndex)
     return pathStr .. "::" .. containerIndex .. "::" .. itemIndex
 end
 
--- Helper: Create a new track for export
+-- Helper: Create a new track for export (simple flat track)
+-- Used only for stereo containers that don't need hierarchy
 function M.createExportTrack(containerInfo, channelIndex)
     local trackCount = reaper.CountTracks(0)
     reaper.InsertTrackAtIndex(trackCount, false)
@@ -66,6 +70,59 @@ function M.createExportTrack(containerInfo, channelIndex)
     reaper.GetSetMediaTrackInfo_String(newTrack, "P_NAME", trackName, true)
 
     return newTrack
+end
+
+-- Helper: Create track hierarchy for multichannel containers
+-- Uses Generation engine's createMultiChannelTracks for consistency with generation
+-- @param containerInfo table: Container info from collectAllContainers
+-- @return table: Array of channel tracks (or single track for stereo)
+-- @return userdata: The folder track (same as first channel track for stereo)
+function M.createExportTrackHierarchy(containerInfo)
+    local container = containerInfo.container
+
+    -- Check if Generation module is available
+    if not globals.Generation or not globals.Generation.createMultiChannelTracks then
+        -- Fallback to simple track creation
+        local track = M.createExportTrack(containerInfo)
+        return {track}, track
+    end
+
+    -- Analyze items to determine if hierarchy is needed
+    local itemsAnalysis = globals.Generation.analyzeContainerItems(container)
+    local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
+
+    -- For single track (stereo with stereo items), create simple track
+    if trackStructure.numTracks == 1 then
+        local track = M.createExportTrack(containerInfo)
+        -- Set channel count to match requirements
+        local requiredChannels = trackStructure.trackChannels or 2
+        if requiredChannels % 2 == 1 then
+            requiredChannels = requiredChannels + 1
+        end
+        reaper.SetMediaTrackInfo_Value(track, "I_NCHAN", requiredChannels)
+
+        -- Store GUID for future exports
+        container.trackGUID = reaper.GetTrackGUID(track)
+        container.channelTrackGUIDs = nil
+
+        return {track}, track
+    end
+
+    -- Create folder track for multichannel container
+    local trackCount = reaper.CountTracks(0)
+    reaper.InsertTrackAtIndex(trackCount, false)
+    local folderTrack = reaper.GetTrack(0, trackCount)
+
+    -- Name the folder track with container name (matches Generation pattern)
+    reaper.GetSetMediaTrackInfo_String(folderTrack, "P_NAME", container.name or "Export", true)
+
+    -- Use Generation's createMultiChannelTracks to create the hierarchy
+    -- This handles all the complexity: track structure analysis, routing, folder depth
+    local channelTracks = globals.Generation.createMultiChannelTracks(folderTrack, container, false)
+
+    -- GUIDs are already stored by createMultiChannelTracks via storeTrackGUIDs
+
+    return channelTracks, folderTrack
 end
 
 -- Helper: Find track by name (fallback when GUID unavailable)
@@ -110,8 +167,30 @@ function M.getChildTracks(folderTrack)
     return children
 end
 
+-- Helper: Check if container needs multichannel track hierarchy
+-- @param container table: Container configuration
+-- @return boolean: true if hierarchy needed (multichannel or mono split)
+local function needsTrackHierarchy(container)
+    -- No hierarchy needed for standard stereo (channelMode 0 or nil)
+    if not container.channelMode or container.channelMode == 0 then
+        -- But check if mono items in stereo container need split tracks
+        if globals.Generation and globals.Generation.analyzeContainerItems then
+            local itemsAnalysis = globals.Generation.analyzeContainerItems(container)
+            local trackStructure = globals.Generation.determineTrackStructure(container, itemsAnalysis)
+            return trackStructure.numTracks > 1
+        end
+        return false
+    end
+
+    -- Multichannel modes need hierarchy
+    return true
+end
+
 -- Helper: Get target tracks for export (handles multi-channel)
--- Renamed from getTargetTracks for architecture compliance
+-- Story 5.1: Creates proper track hierarchy using Generation engine for consistency
+-- @param containerInfo table: Container info from collectAllContainers
+-- @param params table: Export params with exportMethod
+-- @return table: Array of target tracks
 function M.resolveTargetTracks(containerInfo, params)
     local tracks = {}
     local container = containerInfo.container
@@ -119,37 +198,38 @@ function M.resolveTargetTracks(containerInfo, params)
     local containerName = container.name or ""
 
     if params.exportMethod == 1 then  -- New Track
-        -- Create new track(s) based on container configuration
-        if container.channelMode and container.channelMode > 0 then
-            local config = globals.Constants and globals.Constants.CHANNEL_CONFIGS[container.channelMode]
-            local numCh = config and config.channels or 0
+        -- Story 5.1: Use track hierarchy creation for proper multichannel support
+        -- This delegates to Generation engine for consistent track structure
+        tracks = M.createExportTrackHierarchy(containerInfo)
 
-            if numCh > 0 then
-                -- Multi-channel: create one track per channel
-                for i = 1, numCh do
-                    local track = M.createExportTrack(containerInfo, i)
-                    table.insert(tracks, track)
-                end
-            else
-                table.insert(tracks, M.createExportTrack(containerInfo))
-            end
-        else
-            -- Single track
-            table.insert(tracks, M.createExportTrack(containerInfo))
-        end
     else  -- Current Track (exportMethod == 0)
+        local foundValidTracks = false
+
         -- Strategy 1: Try channelTrackGUIDs for multi-channel
         if container.channelTrackGUIDs and #container.channelTrackGUIDs > 0 then
+            local allTracksFound = true
+            local guidTracks = {}
+
             for _, guid in ipairs(container.channelTrackGUIDs) do
                 local track = reaper.BR_GetMediaTrackByGUID(0, guid)
                 if track then
-                    table.insert(tracks, track)
+                    table.insert(guidTracks, track)
+                else
+                    -- At least one GUID points to non-existent track
+                    allTracksFound = false
+                    break
                 end
             end
+
+            if allTracksFound and #guidTracks > 0 then
+                tracks = guidTracks
+                foundValidTracks = true
+            end
+            -- Story 5.1 AC#3: If GUIDs point to non-existent tracks, fall through to create hierarchy
         end
 
         -- Strategy 2: Try trackGUID for single track or folder
-        if #tracks == 0 and container.trackGUID then
+        if not foundValidTracks and container.trackGUID then
             local track = reaper.BR_GetMediaTrackByGUID(0, container.trackGUID)
             if track then
                 -- Check if it's a folder track with children
@@ -157,17 +237,22 @@ function M.resolveTargetTracks(containerInfo, params)
                 if folderDepth == 1 then
                     -- It's a folder, get child tracks
                     tracks = M.getChildTracks(track)
+                    if #tracks > 0 then
+                        foundValidTracks = true
+                    end
                 end
 
                 -- If no children found or it's not a folder, use the track itself
                 if #tracks == 0 then
                     table.insert(tracks, track)
+                    foundValidTracks = true
                 end
             end
+            -- Story 5.1 AC#3: If trackGUID points to non-existent track, fall through
         end
 
         -- Strategy 3: Fallback to name search
-        if #tracks == 0 then
+        if not foundValidTracks then
             local track = M.findTrackByName(groupName, containerName)
             if track then
                 -- Check if it's a folder track with children
@@ -175,18 +260,23 @@ function M.resolveTargetTracks(containerInfo, params)
                 if folderDepth == 1 then
                     -- It's a folder, get child tracks
                     tracks = M.getChildTracks(track)
+                    if #tracks > 0 then
+                        foundValidTracks = true
+                    end
                 end
 
                 -- If no children found or it's not a folder, use the track itself
                 if #tracks == 0 then
                     table.insert(tracks, track)
+                    foundValidTracks = true
                 end
             end
         end
 
-        -- Strategy 4: Ultimate fallback - create new track
-        if #tracks == 0 then
-            table.insert(tracks, M.createExportTrack(containerInfo))
+        -- Strategy 4: Ultimate fallback - create proper track hierarchy
+        -- Story 5.1 AC#3: Creates hierarchy instead of simple flat tracks
+        if not foundValidTracks then
+            tracks = M.createExportTrackHierarchy(containerInfo)
         end
     end
 

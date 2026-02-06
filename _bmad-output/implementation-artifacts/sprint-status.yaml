@@ -1,0 +1,67 @@
+# Sprint Status - Export v2 Bug Fixes
+# Generated: 2026-02-06
+#
+# STATUS DEFINITIONS:
+# - backlog: Not yet started
+# - ready-for-dev: Story file created with full context, ready for implementation
+# - in-progress: Currently being worked on
+# - review: Implementation complete, awaiting code review
+# - done: Completed and verified
+
+project_name: "Reaper Ambiance Creator - Export v2"
+current_sprint: "Bug Fixes Sprint"
+sprint_goal: "Fix critical bugs discovered after Export v2 implementation"
+
+# Epic Status
+epic_status:
+  epic-1: done  # Export Foundation & Multichannel Fix
+  epic-2: done  # Pool Control & Per-Container Configuration
+  epic-3: done  # Seamless Loop Export
+  epic-4: done  # Batch Export, Regions & Error Resilience
+  epic-5: in-progress  # Bug Fixes (Post-Implementation)
+
+# Story Status (development_status)
+development_status:
+  # Epic 1 - Export Foundation (DONE)
+  1-1-module-architecture-settings-management: done
+  1-2-multichannel-item-placement: done
+  1-3-export-modal-ui-integration: done
+
+  # Epic 2 - Pool Control (DONE)
+  2-1-pool-control-max-items-random-subset: done
+  2-2-per-container-parameter-overrides-container-list-ui: done
+
+  # Epic 3 - Seamless Loop (DONE)
+  3-1-loop-mode-configuration-auto-detection: done
+  3-2-zero-crossing-loop-processing-split-swap: done
+
+  # Epic 4 - Batch Export (DONE)
+  4-1-multi-container-selection-batch-export: done
+  4-2-region-creation-naming-patterns: done
+  4-3-per-container-error-isolation-reporting: done
+  4-4-loop-interval-auto-mode-ui: done
+
+  # Epic 5 - Bug Fixes (CURRENT SPRINT)
+  5-1-export-track-hierarchy-creation: review
+  5-2-export-multichannel-item-distribution: ready-for-dev
+  5-3-loop-overlap-after-split-swap: ready-for-dev
+
+# Sprint Summary
+stories_total: 14
+stories_done: 11
+stories_in_progress: 0
+stories_ready: 3
+stories_backlog: 0
+
+# Notes
+notes:
+  - "Epic 5 contains critical bug fixes discovered post-implementation"
+  - "Story 5.2 is a regression from Story 1.2 - multichannel distribution was supposed to work"
+  - "All 3 bugs affect core export functionality and should be fixed before production use"
+
+# Backlog (low priority)
+backlog:
+  - id: "generation-folder-nesting-edge-case"
+    description: "Winter Forest Multi channel preset: all groups become children of Birds group during generation. Order-dependent. Low priority edge case."
+    affected: "Generation_TrackManagement - I_FOLDERDEPTH calculation"
+    workaround: "Change group order in preset"
