@@ -504,3 +504,74 @@ So that **I understand exactly what interval will be applied to each autoloop co
 
 **FRs:** FR33
 **Journey:** J3 (Seamless Loop Export) — clarifies loop configuration UX
+
+## Epic 5: Bug Fixes (Post-Implementation)
+
+Critical bug fixes discovered after Export v2 implementation. These bugs affect core export functionality and must be resolved before production use.
+
+### Story 5.1: Export Track Hierarchy Creation
+
+As a **game sound designer**,
+I want **the export to create the proper track hierarchy (folder + channel tracks) when exporting a preset that hasn't been generated yet**,
+So that **I can export directly from a loaded preset without having to generate the ambiance first**.
+
+**Acceptance Criteria:**
+
+**Given** a preset is loaded with a multichannel container but no tracks exist in REAPER
+**When** the user exports with exportMethod = 1 (New Track)
+**Then** the export creates a folder track with child channel tracks matching the container's configuration
+**And** track routing is configured correctly (sends to parent with proper channel mapping)
+
+**Given** a container with channelTrackGUIDs pointing to non-existent tracks
+**When** the user exports with exportMethod = 0 (Current Track)
+**Then** the export falls back to creating the proper track hierarchy
+
+**Bug:** Export creates flat tracks instead of folder hierarchy when preset is loaded without generation
+**Root Cause:** `Export_Placement.resolveTargetTracks()` uses simple `createExportTrack()` instead of `Generation_TrackManagement.createMultiChannelTracks()`
+
+### Story 5.2: Export Multichannel Item Distribution
+
+As a **game sound designer**,
+I want **the export to place different items on each channel track when exporting multichannel containers**,
+So that **my exported multichannel audio has varied content per channel, matching Generation engine behavior**.
+
+**Acceptance Criteria:**
+
+**Given** a 4.0 quad container with stereo source items and round-robin distribution
+**When** the container is exported
+**Then** each stereo track pair (L-R, Ls-Rs) receives a DIFFERENT item from the pool
+
+**Given** a multichannel container with random distribution mode
+**When** the container is exported
+**Then** each track receives a randomly selected item (not deterministically the same)
+
+**Given** a container where trackStructure.useSmartRouting = true
+**When** the container is exported
+**Then** the SAME item is placed on all tracks (channel extraction from multichannel source)
+
+**Bug:** Same item placed on ALL channel tracks instead of distributing different items
+**Root Cause:** `placeContainerItems()` uses same `itemData` for all tracks in the loop
+**Regression:** Should have been fixed in Story 1.2
+
+### Story 5.3: Loop Overlap After Split/Swap
+
+As a **game sound designer**,
+I want **loop split/swap processing to maintain consistent overlap between ALL items including the repositioned piece**,
+So that **my seamless loops have uniform spacing throughout**.
+
+**Acceptance Criteria:**
+
+**Given** a loop export with loopInterval = -1.5s (1.5s overlap)
+**When** split/swap is performed
+**Then** the second item is positioned with the same -1.5s overlap relative to the moved right part
+
+**Given** a multichannel loop export
+**When** split/swap is performed
+**Then** each track maintains its own consistent overlap using the same interval value
+
+**Given** a loop where the right part is very short (< overlap amount)
+**When** split/swap is performed
+**Then** maximum possible overlap is applied and a warning is generated
+
+**Bug:** After split/swap, moved piece is adjacent to second item with NO overlap
+**Root Cause:** `splitAndSwap()` calculates `newPosition = firstItemPos - rightPartLen` without adding overlap
