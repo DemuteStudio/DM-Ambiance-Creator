@@ -529,49 +529,108 @@ So that **I can export directly from a loaded preset without having to generate 
 **Bug:** Export creates flat tracks instead of folder hierarchy when preset is loaded without generation
 **Root Cause:** `Export_Placement.resolveTargetTracks()` uses simple `createExportTrack()` instead of `Generation_TrackManagement.createMultiChannelTracks()`
 
-### Story 5.2: Export Multichannel Item Distribution
+### Story 5.2: Multichannel Export Mode Selection
 
 As a **game sound designer**,
-I want **the export to place different items on each channel track when exporting multichannel containers**,
-So that **my exported multichannel audio has varied content per channel, matching Generation engine behavior**.
+I want **to choose between exporting all items sequentially on a single track (Flatten) or preserving the multichannel distribution behavior (Preserve)**,
+So that **I can either prepare individual items for Wwise/FMOD import or create multichannel loops that match my configured ambiance**.
+
+**Context:** Multichannel containers use distribution modes (round-robin, random, all tracks) to spread items across channel tracks during Generation. During export, the user needs two distinct behaviors:
+- **Flatten**: Export all pool items sequentially on one track (ch 1-2) for middleware that handles spatialization.
+- **Preserve**: Reproduce the Generation engine's distribution logic across child tracks for direct use or looping.
+
+**Replaces previous Story 5.2** which only addressed the "same item on all tracks" bug. The new scope introduces explicit mode selection that covers both the original bug and the new flatten use case.
 
 **Acceptance Criteria:**
 
-**Given** a 4.0 quad container with stereo source items and round-robin distribution
-**When** the container is exported
-**Then** each stereo track pair (L-R, Ls-Rs) receives a DIFFERENT item from the pool
+#### Mode A: Flatten
 
-**Given** a multichannel container with random distribution mode
+**AC1** — **Given** a multichannel container (e.g., 4.0 quad from stereo items) with export mode set to "Flatten"
 **When** the container is exported
-**Then** each track receives a randomly selected item (not deterministically the same)
+**Then** ALL pool items (respecting `maxPoolItems`) are placed sequentially on the first child track (ch 1-2)
+**And** the distribution mode (round-robin/random/all tracks) is ignored
+**And** other child tracks in the hierarchy remain empty
 
-**Given** a container where trackStructure.useSmartRouting = true
+**AC2** — **Given** a container with native multichannel source files (4.0/5.0/7.0)
+**When** exported in Flatten mode
+**Then** items are placed as-is on the track without channel extraction
+
+**AC3** — **Given** exportMethod = 0 (Current Track) and tracks already exist from a previous generation
+**When** exported in Flatten mode
+**Then** the existing track hierarchy is reused
+**And** items are placed on the first child track only
+
+**AC4** — **Given** exportMethod = 1 (New Track) and no tracks exist
+**When** exported in Flatten mode
+**Then** the full track hierarchy is created (identical to what Generation would create)
+**And** items are placed on the first child track only
+
+#### Mode B: Preserve
+
+**AC5** — **Given** `itemDistributionMode = 0` (Round-Robin) and export mode "Preserve"
 **When** the container is exported
-**Then** the SAME item is placed on all tracks (channel extraction from multichannel source)
+**Then** pool entries are distributed across child tracks in round-robin order
+**And** each track receives different items (matching Generation engine behavior)
 
-**Bug:** Same item placed on ALL channel tracks instead of distributing different items
-**Root Cause:** `placeContainerItems()` uses same `itemData` for all tracks in the loop
-**Regression:** Should have been fixed in Story 1.2
+**AC6** — **Given** `itemDistributionMode = 1` (Random) in Preserve mode
+**When** exported
+**Then** each pool entry is placed on a randomly selected child track
+
+**AC7** — **Given** `itemDistributionMode = 2` (All Tracks) in Preserve mode
+**When** exported
+**Then** each child track receives its own independent sequence from the pool
+
+**AC8** — **Given** Preserve mode with loop enabled and All Tracks distribution
+**When** the loop is processed
+**Then** each track has the same `targetDuration`
+**And** split/swap is applied ONLY on tracks where the last item reaches or exceeds `targetDuration`
+**And** tracks where the last item finishes before `targetDuration` are left untouched
+
+#### UI
+
+**AC9** — **Given** the Export modal with a multichannel container selected (`channelMode != DEFAULT`)
+**Then** a "Multichannel Export Mode" selector is visible with options Flatten / Preserve
+**And** default is Flatten
+
+**AC10** — **Given** a stereo container (`channelMode == DEFAULT`, single track)
+**Then** the multichannel export mode selector is hidden (not applicable)
 
 ### Story 5.3: Loop Overlap After Split/Swap
 
 As a **game sound designer**,
-I want **loop split/swap processing to maintain consistent overlap between ALL items including the repositioned piece**,
+I want **the loop split/swap to maintain the same overlap between the moved piece and the second item as between all other items in the sequence**,
 So that **my seamless loops have uniform spacing throughout**.
+
+**Context:** After split/swap, the moved piece is adjacent to the 2nd item with ZERO overlap, while all other items respect the configured interval. **Architectural root cause**: `effectiveInterval` is computed in `placeContainerItems()` but never transmitted to `processLoop()` or `splitAndSwap()`. The fix requires propagating this value through the entire call chain.
 
 **Acceptance Criteria:**
 
-**Given** a loop export with loopInterval = -1.5s (1.5s overlap)
+**AC1** — **Given** a loop export with `effectiveInterval = -1.5s` (1.5s overlap)
 **When** split/swap is performed
-**Then** the second item is positioned with the same -1.5s overlap relative to the moved right part
+**Then** the moved right part overlaps with the first item (now second in sequence) by exactly 1.5s
+**And** the formula used is: `newPosition = firstItemPos - rightPartLen - effectiveInterval`
 
-**Given** a multichannel loop export
-**When** split/swap is performed
-**Then** each track maintains its own consistent overlap using the same interval value
+**AC2** — **Given** `effectiveInterval` is computed in `placeContainerItems()`
+**When** `processLoop()` is called from `Export_Engine`
+**Then** `effectiveInterval` is passed as parameter through the full chain:
+`placeContainerItems()` → return value → `Export_Engine.processContainerExport()` → `Loop.processLoop(placedItems, targetTracks, effectiveInterval)` → `splitAndSwap(lastItem, firstItem, zeroCrossingTime, effectiveInterval)`
 
-**Given** a loop where the right part is very short (< overlap amount)
-**When** split/swap is performed
-**Then** maximum possible overlap is applied and a warning is generated
+**AC3** — **Given** a loop with `targetDuration = 30s` and `effectiveInterval = -1.5s`
+**When** the loop is fully processed (placement + split/swap)
+**Then** the total loop region duration remains exactly 30s (the overlap on the moved piece does not extend the region)
 
-**Bug:** After split/swap, moved piece is adjacent to second item with NO overlap
-**Root Cause:** `splitAndSwap()` calculates `newPosition = firstItemPos - rightPartLen` without adding overlap
+**AC4** — **Given** a batch export of 3 containers (container 2 is a loop)
+**When** all containers are exported
+**Then** container 3 starts at `container2.endPosition + containerSpacing`
+**And** `endPosition` accounts correctly for the split/swap repositioning
+**And** no regression on inter-container spacing
+
+**AC5** — **Given** a multichannel loop in Preserve mode (Story 5.2 Mode B)
+**When** split/swap is performed per track
+**Then** each track uses the same `effectiveInterval` value
+**And** each track's overlap is applied independently
+
+**AC6** — **Given** a loop where the right part length is shorter than `|effectiveInterval|`
+**When** split/swap positions the piece
+**Then** maximum possible overlap is applied (right part starts at `firstItemPos`)
+**And** a warning is generated
