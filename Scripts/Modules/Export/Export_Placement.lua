@@ -423,6 +423,243 @@ function M.resolveTrackStructure(containerInfo)
     return trackStructure
 end
 
+-- Place a single pool entry at specified position on given tracks
+-- Replaces closure to eliminate upvalue mutation (Code Review H2)
+-- @param poolEntry table: PoolEntry object { item, area, itemIdx, itemKey }
+-- @param placementTracks table: Tracks to place on
+-- @param placementIndices table: Real track indices for channel extraction
+-- @param currentPos number: Timeline position in seconds
+-- @param params table: Export params with alignToSeconds
+-- @param genParams table: Generation params for placeSingleItem
+-- @param effectiveTrackStructure table: Track structure with channel selection mode
+-- @param effectiveInterval number: Interval between items
+-- @param placedItems table: Output array to append PlacedItem records
+-- @return number: New position after placement (or currentPos if nothing placed)
+local function placeSinglePoolEntry(poolEntry, placementTracks, placementIndices, currentPos, params, genParams, effectiveTrackStructure, effectiveInterval, placedItems)
+    -- Story 4.3 fix: Nil filePath should throw error, not silently skip
+    if not poolEntry.item.filePath then
+        error("Item has no file path configured")
+    end
+
+    -- Story 4.3: Check if source file exists before attempting placement
+    local filePath = poolEntry.item.filePath
+    if not reaper.file_exists(filePath) then
+        error("Missing source file: " .. filePath, 0)
+    end
+
+    local itemData = M.buildItemData(poolEntry.item, poolEntry.area)
+    local itemPos = M.calculatePosition(currentPos, params)
+    local actualLen = 0
+    local anyItemCreated = false
+
+    for tIdx, track in ipairs(placementTracks) do
+        local realTrackIdx = placementIndices and placementIndices[tIdx] or tIdx
+
+        local newItem, length = globals.Generation.placeSingleItem(
+            track,
+            itemData,
+            itemPos,
+            genParams,
+            effectiveTrackStructure,
+            realTrackIdx,
+            effectiveTrackStructure.channelSelectionMode,
+            true -- ignoreBounds
+        )
+
+        if newItem then
+            anyItemCreated = true
+            actualLen = math.max(actualLen, length)
+            table.insert(placedItems, {
+                item = newItem,
+                track = track,
+                position = itemPos,
+                length = length,
+                trackIdx = realTrackIdx
+            })
+        end
+    end
+
+    if anyItemCreated then
+        -- Advance position by item length plus interval
+        local newPos = itemPos + actualLen + effectiveInterval
+        -- Clamp to prevent negative progress (overlap cannot exceed item length)
+        if newPos <= currentPos then
+            newPos = currentPos + 0.001
+        end
+        -- Optionally align after interval
+        if params.alignToSeconds and effectiveInterval > 0 then
+            newPos = math.ceil(newPos)
+        end
+        return newPos
+    end
+
+    return currentPos
+end
+
+-- Resolve distribution target tracks for Round-Robin or Random modes
+-- Replaces closure to eliminate shared upvalue (Code Review H2)
+-- @param distributionMode number: 0 = Round-Robin, 1 = Random
+-- @param distributionCounter number: Current counter for Round-Robin (passed by reference via return)
+-- @param effectiveTargetTracks table: Array of tracks to distribute across
+-- @param effectiveTrackStructure table: Track structure with trackIndices
+-- @return table: Single-element array with target track
+-- @return table: Single-element array with real track index
+-- @return number: Updated distribution counter (for Round-Robin)
+local function getDistributionTargetTracks(distributionMode, distributionCounter, effectiveTargetTracks, effectiveTrackStructure)
+    local targetIdx
+    local newCounter = distributionCounter
+
+    if distributionMode == 0 then
+        -- Round-Robin: cycle through tracks sequentially
+        newCounter = newCounter + 1
+        targetIdx = ((newCounter - 1) % #effectiveTargetTracks) + 1
+    else
+        -- Random: pick random track per pool entry
+        targetIdx = math.random(1, #effectiveTargetTracks)
+    end
+
+    local track = effectiveTargetTracks[targetIdx]
+    local realIdx = effectiveTrackStructure.trackIndices
+        and effectiveTrackStructure.trackIndices[targetIdx] or targetIdx
+
+    return {track}, {realIdx}, newCounter
+end
+
+-- Place items in All Tracks mode (distributionMode == 2)
+-- Each track gets independent sequence from shuffled pool
+-- Code Review H1: Extracted to reduce placeContainerItems complexity
+-- @return table: placedItems array
+-- @return number: Final position (furthest across all tracks)
+local function placeItemsAllTracksMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, isLoopMode, targetDuration, placedItems)
+    local Constants = globals.Constants
+    local EXPORT = Constants and Constants.EXPORT or {}
+    local furthestPos = startPos
+
+    for tIdx, track in ipairs(effectiveTargetTracks) do
+        local realIdx = effectiveTrackStructure.trackIndices
+            and effectiveTrackStructure.trackIndices[tIdx] or tIdx
+        local trackPos = startPos
+        local trackTracks = {track}
+        local trackIndices = {realIdx}
+
+        -- Shuffle independent copy of pool for this track
+        local trackPool = {}
+        for i, entry in ipairs(pool) do trackPool[i] = entry end
+        M.shuffleArray(trackPool)
+
+        if isLoopMode then
+            -- Loop mode: cycle through shuffled pool until targetDuration
+            local poolIndex = 1
+            local itemsPlaced = 0
+            local maxIter = EXPORT.LOOP_MAX_ITERATIONS or 10000
+
+            while (trackPos - startPos) < targetDuration and itemsPlaced < maxIter do
+                local poolEntry = trackPool[poolIndex]
+                if not poolEntry then break end
+
+                for instance = 1, params.instanceAmount do
+                    if (trackPos - startPos) >= targetDuration then break end
+                    trackPos = placeSinglePoolEntry(poolEntry, trackTracks, trackIndices, trackPos, params, genParams, effectiveTrackStructure, effectiveInterval, placedItems)
+                    itemsPlaced = itemsPlaced + 1
+                end
+
+                poolIndex = poolIndex + 1
+                if poolIndex > #trackPool then
+                    poolIndex = 1
+                end
+            end
+        else
+            -- Standard mode: iterate once through shuffled pool per track
+            for _, poolEntry in ipairs(trackPool) do
+                for instance = 1, params.instanceAmount do
+                    trackPos = placeSinglePoolEntry(poolEntry, trackTracks, trackIndices, trackPos, params, genParams, effectiveTrackStructure, effectiveInterval, placedItems)
+                end
+            end
+        end
+
+        -- Track furthest position across all tracks
+        if trackPos > furthestPos then
+            furthestPos = trackPos
+        end
+    end
+
+    return placedItems, furthestPos
+end
+
+-- Place items in Loop mode (non-All Tracks)
+-- Cycles through pool until targetDuration reached
+-- Code Review H1: Extracted to reduce placeContainerItems complexity
+-- @return table: placedItems array
+-- @return number: Final position
+local function placeItemsLoopMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, targetDuration, preserveDistribution, distributionMode, distributionCounter, placedItems)
+    local Constants = globals.Constants
+    local EXPORT = Constants and Constants.EXPORT or {}
+    local currentPos = startPos
+    local poolIndex = 1
+    local itemsPlaced = 0
+    local maxIterations = EXPORT.LOOP_MAX_ITERATIONS or 10000
+
+    while (currentPos - startPos) < targetDuration and itemsPlaced < maxIterations do
+        local poolEntry = pool[poolIndex]
+        if not poolEntry then break end
+
+        -- Place for each instance requested
+        -- Code Review M3: Advance distribution counter PER INSTANCE (not per pool entry)
+        for instance = 1, params.instanceAmount do
+            if (currentPos - startPos) >= targetDuration then break end
+
+            -- Resolve distribution target for Preserve Round-Robin/Random
+            local distTracks, distIndices
+            if preserveDistribution then
+                distTracks, distIndices, distributionCounter = getDistributionTargetTracks(distributionMode, distributionCounter, effectiveTargetTracks, effectiveTrackStructure)
+            else
+                distTracks = effectiveTargetTracks
+                distIndices = effectiveTrackStructure.trackIndices
+            end
+
+            currentPos = placeSinglePoolEntry(poolEntry, distTracks, distIndices, currentPos, params, genParams, effectiveTrackStructure, effectiveInterval, placedItems)
+            itemsPlaced = itemsPlaced + 1
+        end
+
+        -- Cycle through pool
+        poolIndex = poolIndex + 1
+        if poolIndex > #pool then
+            poolIndex = 1
+        end
+    end
+
+    return placedItems, currentPos
+end
+
+-- Place items in Standard mode (non-loop, non-All Tracks)
+-- Single pass through pool with optional distribution
+-- Code Review H1: Extracted to reduce placeContainerItems complexity
+-- Code Review M3: Distribution counter now advances per instance (matching Generation engine)
+-- @return table: placedItems array
+-- @return number: Final position
+local function placeItemsStandardMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, preserveDistribution, distributionMode, distributionCounter, placedItems)
+    local currentPos = startPos
+
+    for _, poolEntry in ipairs(pool) do
+        -- Place for each instance requested
+        -- Code Review M3: Advance distribution counter PER INSTANCE (not per pool entry)
+        for instance = 1, params.instanceAmount do
+            -- Resolve distribution target for Preserve Round-Robin/Random
+            local distTracks, distIndices
+            if preserveDistribution then
+                distTracks, distIndices, distributionCounter = getDistributionTargetTracks(distributionMode, distributionCounter, effectiveTargetTracks, effectiveTrackStructure)
+            else
+                distTracks = effectiveTargetTracks
+                distIndices = effectiveTrackStructure.trackIndices
+            end
+
+            currentPos = placeSinglePoolEntry(poolEntry, distTracks, distIndices, currentPos, params, genParams, effectiveTrackStructure, effectiveInterval, placedItems)
+        end
+    end
+
+    return placedItems, currentPos
+end
+
 -- Place container items on target tracks with correct multichannel channel distribution
 -- CRITICAL: Uses real track indices from trackStructure for correct channel extraction
 -- In loop mode: uses loopInterval instead of spacing, continues until loopDuration reached
@@ -432,6 +669,8 @@ end
 -- effectiveInterval is calculated independently based on its own triggerRate when in auto-mode.
 -- Do NOT refactor Export_Engine to batch multiple containers in a single call without updating
 -- the effectiveInterval logic accordingly.
+--
+-- Code Review H1: Refactored from 281 lines to ~60 lines by extracting helpers
 --
 -- @param pool table: Array of PoolEntry objects from resolvePool { item, area, itemIdx, itemKey }
 -- @param targetTracks table: Array of REAPER tracks from resolveTargetTracks
@@ -445,68 +684,60 @@ end
 --        calculate next container's start position for sequential batch export.
 function M.placeContainerItems(pool, targetTracks, trackStructure, params, containerInfo, startPosition)
     local placedItems = {}
-    -- Validate and resolve start position (must be >= 0 if provided)
     local startPos = startPosition or reaper.GetCursorPosition()
     if startPos < 0 then
-        startPos = 0 -- Clamp negative positions to timeline start
+        startPos = 0
     end
-    local currentPos = startPos
-    local genParams = M.buildGenParams(params, containerInfo)
 
-    -- Story 5.2: Multichannel export mode handling
-    -- Flatten: restrict to first child track only, skip channel extraction
-    -- Preserve: distribute items across child tracks per distribution mode
+    local genParams = M.buildGenParams(params, containerInfo)
+    local container = containerInfo.container
     local Constants = globals.Constants
     local EXPORT = Constants and Constants.EXPORT or {}
+
+    -- Story 5.2: Multichannel export mode handling
     local multichannelMode = params.multichannelExportMode
         or EXPORT.MULTICHANNEL_EXPORT_MODE_DEFAULT or "flatten"
     local isFlattenMode = (multichannelMode == (EXPORT.MULTICHANNEL_EXPORT_MODE_FLATTEN or "flatten"))
     local isPreserveMode = (multichannelMode == (EXPORT.MULTICHANNEL_EXPORT_MODE_PRESERVE or "preserve"))
 
-    -- Apply flatten mode: use only the first target track, no channel extraction
+    -- Code Review L2: Defensive guard for invalid mode
+    if not isFlattenMode and not isPreserveMode then
+        error(string.format("Invalid multichannelExportMode: %s (must be 'flatten' or 'preserve')", tostring(multichannelMode)), 0)
+    end
+
+    -- Apply flatten mode: restrict to first track, disable channel extraction
     local effectiveTargetTracks = targetTracks
     local effectiveTrackStructure = trackStructure
     if isFlattenMode and #targetTracks > 1 then
         effectiveTargetTracks = {targetTracks[1]}
-        -- Override trackStructure to skip channel extraction (AC #2: place items as-is)
         effectiveTrackStructure = {}
         for k, v in pairs(trackStructure) do
             effectiveTrackStructure[k] = v
         end
         effectiveTrackStructure.channelSelectionMode = "none"
         effectiveTrackStructure.needsChannelSelection = false
-        -- Map trackIndices to just the first track's real index
         if trackStructure.trackIndices then
             effectiveTrackStructure.trackIndices = {trackStructure.trackIndices[1]}
         end
     end
 
-    -- Detect loop mode and configure placement behavior
-    local isLoopMode = Settings and Settings.resolveLoopMode(containerInfo.container, params) or false
-    local container = containerInfo.container
-    -- Story 4.4: Loop Interval auto-mode semantics
-    -- loopInterval=0 (auto-mode): each container uses its own triggerRate for overlap
-    -- loopInterval!=0 (explicit): all containers use the specified loopInterval value
+    -- Resolve loop mode and effective interval
+    local isLoopMode = Settings and Settings.resolveLoopMode(container, params) or false
     local effectiveInterval
     if isLoopMode then
         if (params.loopInterval or 0) ~= 0 then
-            -- Explicit override: all containers use the specified loopInterval
             effectiveInterval = params.loopInterval
         elseif container.triggerRate and container.triggerRate < 0 then
-            -- Auto-mode: container has negative triggerRate (overlap), use it
             effectiveInterval = container.triggerRate
         else
-            -- Auto-mode: container has non-negative triggerRate (no overlap requested)
             effectiveInterval = 0
         end
     else
-        effectiveInterval = params.spacing or 0  -- Non-loop mode uses spacing
+        effectiveInterval = params.spacing or 0
     end
     local targetDuration = isLoopMode and (params.loopDuration or 30) or math.huge
 
-    -- Story 5.2: Preserve mode distribution state
-    -- Determines whether items should be distributed across tracks (Round-Robin/Random)
-    -- vs placed on all tracks (Smart Routing) or handled as All Tracks (mode 2)
+    -- Story 5.2: Determine distribution mode and flags
     local preserveDistribution = false
     local distributionCounter = 0
     local distributionMode = container.itemDistributionMode or 0
@@ -514,216 +745,27 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
 
     if isPreserveMode and #effectiveTargetTracks > 1 then
         if effectiveTrackStructure.useSmartRouting then
-            -- Smart Routing: same item on all tracks with channel extraction (AC #3.5)
             preserveDistribution = false
         elseif effectiveTrackStructure.useDistribution then
             if distributionMode == 2 then
-                -- All Tracks mode: handled separately with track-outer/pool-inner loop (Task 4)
                 isAllTracksMode = true
             else
-                -- Round-Robin (0) or Random (1): distribute per-item
                 preserveDistribution = true
             end
         end
     end
 
-    -- Helper: place a single pool entry at current position on specified tracks
-    -- @param poolEntry table: PoolEntry object
-    -- @param overrideTracks table|nil: If provided, place only on these tracks (for distribution)
-    -- @param overrideTrackIndices table|nil: If provided, use these real track indices
-    local function placePoolEntry(poolEntry, overrideTracks, overrideTrackIndices)
-        -- Story 4.3 fix: Nil filePath should throw error, not silently skip
-        if not poolEntry.item.filePath then
-            error("Item has no file path configured")
-        end
-
-        -- Story 4.3: Check if source file exists before attempting placement
-        local filePath = poolEntry.item.filePath
-        if not reaper.file_exists(filePath) then
-            -- Use error level 0 to suppress file:line prefix for cleaner UI display
-            error("Missing source file: " .. filePath, 0)
-        end
-
-        local itemData = M.buildItemData(poolEntry.item, poolEntry.area)
-        local itemPos = M.calculatePosition(currentPos, params)
-        local actualLen = 0
-        local anyItemCreated = false
-
-        -- Story 5.2: Use override tracks if provided (Preserve distribution),
-        -- otherwise use all effective target tracks (Flatten or Smart Routing)
-        local placementTracks = overrideTracks or effectiveTargetTracks
-        local placementIndices = overrideTrackIndices or (effectiveTrackStructure.trackIndices)
-
-        for tIdx, track in ipairs(placementTracks) do
-            local realTrackIdx = placementIndices and placementIndices[tIdx] or tIdx
-
-            local newItem, length = globals.Generation.placeSingleItem(
-                track,
-                itemData,
-                itemPos,
-                genParams,
-                effectiveTrackStructure,
-                realTrackIdx,
-                effectiveTrackStructure.channelSelectionMode,
-                true -- ignoreBounds
-            )
-
-            if newItem then
-                anyItemCreated = true
-                actualLen = math.max(actualLen, length)
-                table.insert(placedItems, {
-                    item = newItem,
-                    track = track,
-                    position = itemPos,
-                    length = length,
-                    trackIdx = realTrackIdx
-                })
-            end
-        end
-
-        if anyItemCreated then
-            -- Advance position by item length plus interval
-            -- For loop mode with negative interval (overlap), ensure we don't go backwards
-            local newPos = itemPos + actualLen + effectiveInterval
-            -- Clamp to prevent negative progress (overlap cannot exceed item length)
-            if newPos <= currentPos then
-                newPos = currentPos + 0.001 -- Minimal forward progress
-            end
-            currentPos = newPos
-            -- Optionally align after interval
-            if params.alignToSeconds and effectiveInterval > 0 then
-                currentPos = math.ceil(currentPos)
-            end
-        end
-
-        return anyItemCreated, actualLen
-    end
-
-    -- Story 5.2: Helper to resolve distribution target for a single pool entry
-    -- Returns the single-element track/index tables for Round-Robin or Random modes
-    local function getDistributionTarget()
-        local targetIdx
-        if distributionMode == 0 then
-            -- Round-Robin (AC #5): cycle through tracks sequentially
-            distributionCounter = distributionCounter + 1
-            targetIdx = ((distributionCounter - 1) % #effectiveTargetTracks) + 1
-        else
-            -- Random (AC #6): pick random track per pool entry
-            targetIdx = math.random(1, #effectiveTargetTracks)
-        end
-        local track = effectiveTargetTracks[targetIdx]
-        local realIdx = effectiveTrackStructure.trackIndices
-            and effectiveTrackStructure.trackIndices[targetIdx] or targetIdx
-        return {track}, {realIdx}
-    end
-
-    -- Main placement logic
-    -- Story 5.2: All Tracks mode (mode 2) uses a completely different loop structure:
-    -- iterate tracks OUTER, pool INNER — each track gets its own independent sequence
+    -- Route to appropriate placement strategy
+    local finalPos
     if isAllTracksMode then
-        -- AC #7: All Tracks Preserve mode — each track generates independently
-        -- Each track gets its own shuffled copy of the pool so sequences differ
-        for tIdx, track in ipairs(effectiveTargetTracks) do
-            local realIdx = effectiveTrackStructure.trackIndices
-                and effectiveTrackStructure.trackIndices[tIdx] or tIdx
-            local trackPos = startPos
-            local trackTracks = {track}
-            local trackIndices = {realIdx}
-
-            -- Shuffle an independent copy of the pool for this track
-            -- This ensures each track gets a different item sequence
-            local trackPool = {}
-            for i, entry in ipairs(pool) do trackPool[i] = entry end
-            M.shuffleArray(trackPool)
-
-            if isLoopMode then
-                -- Loop mode: cycle through shuffled pool until targetDuration
-                local poolIndex = 1
-                local itemsPlaced = 0
-                local maxIter = EXPORT.LOOP_MAX_ITERATIONS or 10000
-
-                while (trackPos - startPos) < targetDuration and itemsPlaced < maxIter do
-                    local poolEntry = trackPool[poolIndex]
-                    if not poolEntry then break end
-
-                    for instance = 1, params.instanceAmount do
-                        if (trackPos - startPos) >= targetDuration then break end
-                        -- Temporarily set currentPos for this track's placement
-                        currentPos = trackPos
-                        placePoolEntry(poolEntry, trackTracks, trackIndices)
-                        trackPos = currentPos  -- Capture advanced position
-                        itemsPlaced = itemsPlaced + 1
-                    end
-
-                    poolIndex = poolIndex + 1
-                    if poolIndex > #trackPool then
-                        poolIndex = 1
-                    end
-                end
-            else
-                -- Standard mode: iterate once through shuffled pool per track
-                for _, poolEntry in ipairs(trackPool) do
-                    for instance = 1, params.instanceAmount do
-                        currentPos = trackPos
-                        placePoolEntry(poolEntry, trackTracks, trackIndices)
-                        trackPos = currentPos
-                    end
-                end
-            end
-
-            -- Track the furthest position across all tracks
-            if trackPos > currentPos then
-                currentPos = trackPos
-            end
-        end
-
+        placedItems, finalPos = placeItemsAllTracksMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, isLoopMode, targetDuration, placedItems)
     elseif isLoopMode then
-        -- Loop mode: cycle through pool until loopDuration is reached
-        -- NOTE: Items may extend past loopDuration - this is intentional.
-        -- Story 3.2 (loop processing) handles trimming via zero-crossing split/swap.
-        local poolIndex = 1
-        local itemsPlaced = 0
-        local maxIterations = EXPORT.LOOP_MAX_ITERATIONS or 10000
-
-        while (currentPos - startPos) < targetDuration and itemsPlaced < maxIterations do
-            local poolEntry = pool[poolIndex]
-            if not poolEntry then break end
-
-            -- Story 5.2: Resolve distribution target for Preserve Round-Robin/Random
-            local distTracks, distIndices
-            if preserveDistribution then
-                distTracks, distIndices = getDistributionTarget()
-            end
-
-            -- Place for each instance requested
-            for instance = 1, params.instanceAmount do
-                if (currentPos - startPos) >= targetDuration then break end
-                placePoolEntry(poolEntry, distTracks, distIndices)
-                itemsPlaced = itemsPlaced + 1
-            end
-
-            -- Cycle through pool
-            poolIndex = poolIndex + 1
-            if poolIndex > #pool then
-                poolIndex = 1 -- Loop back to start of pool
-            end
-        end
+        placedItems, finalPos = placeItemsLoopMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, targetDuration, preserveDistribution, distributionMode, distributionCounter, placedItems)
     else
-        -- Standard mode: iterate once through pool
-        for _, poolEntry in ipairs(pool) do
-            -- Story 5.2: Resolve distribution target for Preserve Round-Robin/Random
-            local distTracks, distIndices
-            if preserveDistribution then
-                distTracks, distIndices = getDistributionTarget()
-            end
-
-            for instance = 1, params.instanceAmount do
-                placePoolEntry(poolEntry, distTracks, distIndices)
-            end
-        end
+        placedItems, finalPos = placeItemsStandardMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, preserveDistribution, distributionMode, distributionCounter, placedItems)
     end
 
-    return placedItems, currentPos
+    return placedItems, finalPos
 end
 
 return M

@@ -190,11 +190,14 @@ function M.splitAndSwap(lastItem, firstItem, splitPoint)
 end
 
 -- Process loop for all placed items, applying split/swap per track
+-- Code Review M1: Added targetDuration parameter to explicitly validate AC#8
+--   (split/swap only applied to tracks where last item reaches/exceeds targetDuration)
 -- @param placedItems table: Array of PlacedItem { item, track, position, length, trackIdx }
 -- @param targetTracks table: Array of REAPER tracks (for validation)
+-- @param targetDuration number|nil: Target loop duration in seconds (nil = apply to all tracks)
 -- @return table: { success = bool, warnings = table, errors = table, newItems = table }
 --         newItems contains { item = MediaItem, position = number, length = number, trackIdx = number } for each rightPart created
-function M.processLoop(placedItems, targetTracks)
+function M.processLoop(placedItems, targetTracks, targetDuration)
     local result = {
         success = true,
         warnings = {},
@@ -233,6 +236,22 @@ function M.processLoop(placedItems, targetTracks)
         -- Get first and last items
         local firstPlaced = trackItems[1]
         local lastPlaced = trackItems[#trackItems]
+
+        -- Code Review M1: AC#8 explicit validation
+        -- Split/swap only applied to tracks where last item reaches/exceeds targetDuration
+        if targetDuration then
+            local lastItemEnd = lastPlaced.position + lastPlaced.length
+            local firstItemStart = firstPlaced.position
+            local trackDuration = lastItemEnd - firstItemStart
+
+            if trackDuration < targetDuration then
+                table.insert(result.warnings, string.format(
+                    "Track %d: Last item ends before targetDuration (%.2fs < %.2fs), skipping split/swap per AC#8",
+                    trackIdx, trackDuration, targetDuration
+                ))
+                goto nextTrack
+            end
+        end
 
         -- Verify items are valid
         if not reaper.ValidatePtr(firstPlaced.item, "MediaItem*") then

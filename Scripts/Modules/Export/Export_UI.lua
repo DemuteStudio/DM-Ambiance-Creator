@@ -407,7 +407,13 @@ function Export_UI.renderModal()
                 end
 
                 if override.enabled then
-                    Export_UI.renderOverrideParams(ctx, imgui, selectedKey, override, EXPORT, selectedContainerInfo)
+                    -- Code Review M2: Reduce parameter count from 6 to 4 using context table
+                    local renderContext = {
+                        EXPORT = EXPORT,
+                        containerInfo = selectedContainerInfo,
+                        globalParams = globalParams
+                    }
+                    Export_UI.renderOverrideParams(ctx, imgui, selectedKey, override, renderContext)
                 else
                     imgui.TextDisabled(ctx, "Using global parameters")
                 end
@@ -469,7 +475,13 @@ function Export_UI.renderModal()
                     -- Get first selected container's override as reference
                     local refOverride = Export_Settings.getContainerOverride(selectedKeys[1])
                     if refOverride then
-                        Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, EXPORT, containers)
+                        -- Code Review M2: Reduce parameter count from 6 to 4 using context table
+                        local renderContext = {
+                            EXPORT = EXPORT,
+                            containers = containers,
+                            globalParams = globalParams
+                        }
+                        Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, renderContext)
                     end
                 end
             end
@@ -707,13 +719,15 @@ end
 
 -- Render override parameters for single selection
 -- Visual distinction: orange text with * suffix for values that differ from global
--- @param containerInfo table|nil: Container info for multichannel check (Story 5.2)
-function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPORT, containerInfo)
+-- Code Review M2: Reduced from 6 to 5 parameters using context table
+-- @param renderContext table: { EXPORT, containerInfo, globalParams }
+function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, renderContext)
     imgui.Indent(ctx, 15)
     imgui.Spacing(ctx)
 
-    -- Get global params for comparison (visual distinction per AC #2)
-    local globalParams = Export_Settings.getGlobalParams()
+    local EXPORT = renderContext.EXPORT
+    local containerInfo = renderContext.containerInfo
+    local globalParams = renderContext.globalParams
     local MODIFIED_COLOR = 0xFFAA00FF  -- Orange
 
     -- Story 5.2: Multichannel Export Mode override (only for multichannel containers)
@@ -953,12 +967,14 @@ end
 
 -- Render override parameters for multi-selection (batch editing)
 -- Visual distinction: orange text with * suffix for values that differ from global
--- @param containers table|nil: Cached container list for multichannel check (Story 5.2)
-function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, EXPORT, containers)
+-- Code Review M2: Reduced from 6 to 5 parameters using context table
+-- @param renderContext table: { EXPORT, containers, globalParams }
+function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, renderContext)
     imgui.Indent(ctx, 15)
 
-    -- Get global params for comparison (visual distinction per AC #2)
-    local globalParams = Export_Settings.getGlobalParams()
+    local EXPORT = renderContext.EXPORT
+    local containers = renderContext.containers
+    local globalParams = renderContext.globalParams
     local MODIFIED_COLOR = 0xFFAA00FF  -- Orange
 
     -- Story 5.2: Check if any selected container is multichannel

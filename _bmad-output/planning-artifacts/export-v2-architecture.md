@@ -76,6 +76,9 @@ exportSettings = {
         -- New in v2
         maxPoolItems      = 0,              -- 0 = all items, >0 = random subset
         loopMode          = "auto",         -- "auto" | "on" | "off"
+
+        -- Story 5.2: Multichannel export mode (Code Review L1)
+        multichannelExportMode = "flatten", -- "flatten" | "preserve" (Story 5.2)
     },
     containerOverrides    = {},             -- Per-container param overrides (same keys as globalParams)
     enabledContainers     = {},             -- {[containerKey] = true/false}

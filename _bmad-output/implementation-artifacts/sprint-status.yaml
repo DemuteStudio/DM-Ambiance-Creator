@@ -43,12 +43,12 @@ development_status:
 
   # Epic 5 - Bug Fixes (CURRENT SPRINT)
   5-1-export-track-hierarchy-creation: done
-  5-2-export-multichannel-item-distribution: review
+  5-2-export-multichannel-item-distribution: done  # Code review complete (7 issues fixed)
   5-3-loop-overlap-after-split-swap: ready-for-dev
 
 # Sprint Summary
 stories_total: 14
-stories_done: 12
+stories_done: 13
 stories_in_progress: 0
 stories_ready: 1
 stories_backlog: 0

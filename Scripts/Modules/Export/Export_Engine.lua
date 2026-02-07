@@ -160,7 +160,9 @@ local function processContainerExport(containerInfo, params, currentExportPositi
     end
 
     if isLoopMode and Loop and #placedItems > 1 then
-        local loopResult = Loop.processLoop(placedItems, targetTracks)
+        -- Code Review M1: Pass targetDuration for AC#8 validation
+        local targetDuration = params.loopDuration or 30
+        local loopResult = Loop.processLoop(placedItems, targetTracks, targetDuration)
         if loopResult.warnings then
             for _, warn in ipairs(loopResult.warnings) do
                 table.insert(warnings, warn)
