@@ -1,10 +1,14 @@
 --[[
-@version 1.1
+@version 1.2
 @noindex
 DM Ambiance Creator - Export Loop Module
 Handles zero-crossing detection and seamless loop creation via split/swap processing.
 For Story 3.2: Zero-Crossing Loop Processing (Split/Swap)
 v1.1: Code review fixes - MIDI check, locked item check, position clamp warning, track newItems for region bounds.
+v1.2 (2026-02-07): Story 5.3 - Added effectiveInterval parameter to processLoop() and splitAndSwap().
+      Maintains consistent overlap between moved right part and first item after split/swap.
+      Fixes bug where overlap was ignored, causing adjacent placement (0s gap) instead of configured overlap.
+      Handles edge case where right part is shorter than target overlap with warning.
 --]]
 
 local M = {}
@@ -135,11 +139,16 @@ function M.findNearestZeroCrossing(item, targetTime)
 end
 
 -- Split an item at a specified point and move the right portion before the first item
+-- Story 5.3: Added effectiveInterval parameter to maintain consistent overlap
 -- @param lastItem MediaItem: The last item to split
 -- @param firstItem MediaItem: The first item (right part moves before this)
 -- @param splitPoint number: Project time position to split at
+-- @param effectiveInterval number|nil: Interval between items (negative for overlap, e.g., -1.5).
+--        If provided, the moved right part will overlap with firstItem by abs(effectiveInterval).
+--        Formula: newPosition = firstItemPos - rightPartLen - effectiveInterval
+--        With effectiveInterval = -1.5: newPosition = firstItemPos - rightPartLen + 1.5
 -- @return table: { success = bool, rightPart = MediaItem or nil, rightPartPos = number or nil, warning = string or nil }
-function M.splitAndSwap(lastItem, firstItem, splitPoint)
+function M.splitAndSwap(lastItem, firstItem, splitPoint, effectiveInterval)
     -- Check if item is locked
     local isLocked = reaper.GetMediaItemInfo_Value(lastItem, "C_LOCK")
     if isLocked and isLocked ~= 0 then
@@ -168,13 +177,44 @@ function M.splitAndSwap(lastItem, firstItem, splitPoint)
     -- Get the length of the right part
     local rightPartLen = reaper.GetMediaItemInfo_Value(rightPart, "D_LENGTH")
 
-    -- Calculate new position: firstItem.position - rightPart.length
-    local newPosition = firstItemPos - rightPartLen
+    -- Story 5.3: Calculate new position with effectiveInterval for consistent overlap
+    -- Formula: newPosition = firstItemPos - rightPartLen - effectiveInterval
+    -- With effectiveInterval = -1.5 (overlap):
+    --   newPosition = firstItemPos - rightPartLen - (-1.5)
+    --   newPosition = firstItemPos - rightPartLen + 1.5
+    -- This creates 1.5s overlap between rightPart and firstItem
+    --
+    -- AC#3: Total loop duration preservation
+    -- The overlap extends INTO the firstItem but doesn't extend the overall timeline.
+    -- If this moves the right part before the container start, Export_Engine will
+    -- shift all items forward to maintain the configured start position (see Export_Engine lines 186-216).
+    local overlapTarget = math.abs(effectiveInterval or 0)
+    local newPosition
     local warning = nil
+
+    -- Edge case: right part shorter than overlap amount (AC #6)
+    if effectiveInterval and effectiveInterval < 0 and rightPartLen < overlapTarget then
+        -- Maximum possible overlap is limited by right part length
+        newPosition = firstItemPos - rightPartLen
+        warning = string.format(
+            "Loop overlap reduced to %.2fs (target: %.2fs) due to short split",
+            rightPartLen, overlapTarget
+        )
+    else
+        -- Apply configured overlap (or default adjacent placement if effectiveInterval is nil)
+        -- Note: effectiveInterval should never be explicitly 0 in practice (either negative for overlap,
+        -- positive for gap, or nil for adjacent placement)
+        local interval = effectiveInterval ~= nil and effectiveInterval or 0
+        newPosition = firstItemPos - rightPartLen - interval
+    end
 
     -- Prevent negative positions with warning
     if newPosition < 0 then
-        warning = "Right part position clamped to 0 (would have been " .. string.format("%.3f", newPosition) .. "s)"
+        if warning then
+            warning = warning .. "; Position clamped to 0 (would have been " .. string.format("%.3f", newPosition) .. "s)"
+        else
+            warning = "Right part position clamped to 0 (would have been " .. string.format("%.3f", newPosition) .. "s)"
+        end
         newPosition = 0
     end
 
@@ -192,12 +232,15 @@ end
 -- Process loop for all placed items, applying split/swap per track
 -- Code Review M1: Added targetDuration parameter to explicitly validate AC#8
 --   (split/swap only applied to tracks where last item reaches/exceeds targetDuration)
+-- Story 5.3: Added effectiveInterval parameter for consistent overlap after split/swap
 -- @param placedItems table: Array of PlacedItem { item, track, position, length, trackIdx }
 -- @param targetTracks table: Array of REAPER tracks (for validation)
 -- @param targetDuration number|nil: Target loop duration in seconds (nil = apply to all tracks)
+-- @param effectiveInterval number|nil: Interval between items (negative for overlap). Used to
+--        maintain consistent overlap when positioning the moved right part after split/swap.
 -- @return table: { success = bool, warnings = table, errors = table, newItems = table }
 --         newItems contains { item = MediaItem, position = number, length = number, trackIdx = number } for each rightPart created
-function M.processLoop(placedItems, targetTracks, targetDuration)
+function M.processLoop(placedItems, targetTracks, targetDuration, effectiveInterval)
     local result = {
         success = true,
         warnings = {},
@@ -276,8 +319,8 @@ function M.processLoop(placedItems, targetTracks, targetDuration)
             table.insert(result.warnings, "Track " .. trackIdx .. ": Using center point (no zero-crossing found)")
         end
 
-        -- Perform split and swap
-        local swapResult = M.splitAndSwap(lastPlaced.item, firstPlaced.item, zeroCrossingTime)
+        -- Perform split and swap (Story 5.3: pass effectiveInterval for overlap consistency)
+        local swapResult = M.splitAndSwap(lastPlaced.item, firstPlaced.item, zeroCrossingTime, effectiveInterval)
         if not swapResult.success then
             table.insert(result.errors, "Track " .. trackIdx .. ": " .. (swapResult.warning or "Split/swap failed"))
             result.success = false

@@ -1,5 +1,5 @@
 --[[
-@version 1.15
+@version 1.16
 @noindex
 DM Ambiance Creator - Export Engine Module
 Handles export orchestration, region creation, and export execution.
@@ -22,6 +22,8 @@ v1.14: Story 4.3 - Per-container error isolation with pcall, structured ExportRe
        Empty pool now recorded as warning (not just console), missing source files detected and reported.
 v1.15: Code review fixes - Log warning when ValidatePtr fails, log all warnings (not just first),
        remove redundant success check condition.
+v1.16 (2026-02-07): Story 5.3 - Capture effectiveInterval from placeContainerItems() and pass to Loop.processLoop()
+       for consistent overlap after split/swap in seamless loops.
 --]]
 
 local M = {}
@@ -141,7 +143,8 @@ local function processContainerExport(containerInfo, params, currentExportPositi
     end
 
     -- Place items on tracks using Placement module
-    local placedItems, endPosition = Placement.placeContainerItems(
+    -- Story 5.3: Capture effectiveInterval for loop processing
+    local placedItems, endPosition, effectiveInterval = Placement.placeContainerItems(
         pool,
         targetTracks,
         trackStructure,
@@ -161,8 +164,9 @@ local function processContainerExport(containerInfo, params, currentExportPositi
 
     if isLoopMode and Loop and #placedItems > 1 then
         -- Code Review M1: Pass targetDuration for AC#8 validation
+        -- Story 5.3: Pass effectiveInterval for consistent overlap in split/swap
         local targetDuration = params.loopDuration or 30
-        local loopResult = Loop.processLoop(placedItems, targetTracks, targetDuration)
+        local loopResult = Loop.processLoop(placedItems, targetTracks, targetDuration, effectiveInterval)
         if loopResult.warnings then
             for _, warn in ipairs(loopResult.warnings) do
                 table.insert(warnings, warn)

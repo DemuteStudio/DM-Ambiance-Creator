@@ -634,3 +634,133 @@ So that **my seamless loops have uniform spacing throughout**.
 **When** split/swap positions the piece
 **Then** maximum possible overlap is applied (right part starts at `firstItemPos`)
 **And** a warning is generated
+
+### Story 5.4: Fix All Tracks Mode - Respect Container Interval
+
+As a **game sound designer**,
+I want **All Tracks export mode to respect the container's configured interval (triggerRate) instead of only using the global spacing parameter**,
+So that **my exported items have the same spacing as they would during generation, matching the ambiance's rhythm**.
+
+**Context:** In non-loop standard mode, `Export_Placement.placeContainerItems()` computes `effectiveInterval = params.spacing or 0`, completely ignoring `container.triggerRate`. This means All Tracks exports always use the global spacing (default 1.0s) regardless of the container's configured interval. Users expect the container's triggerRate to be respected, as it defines the rhythmic spacing of the ambiance.
+
+**Architectural Root Cause:** Lines 739-741 in `Export_Placement.lua`:
+```lua
+else
+    effectiveInterval = params.spacing or 0  -- Only uses global spacing!
+end
+```
+
+The else branch (non-loop mode) doesn't check `container.triggerRate`, unlike the loop mode branch which correctly uses it as fallback.
+
+**Acceptance Criteria:**
+
+**AC1** — **Given** a container with `triggerRate = 2.5s` and `intervalMode = ABSOLUTE` (positive interval)
+**When** exported in All Tracks standard mode with `params.spacing = 1.0s`
+**Then** items are spaced 2.5s apart (container.triggerRate wins)
+**And** `params.spacing` is ignored
+
+**AC2** — **Given** a container with `triggerRate = nil` or `triggerRate = 0`
+**When** exported in All Tracks standard mode
+**Then** items use `params.spacing` as fallback (default 1.0s)
+
+**AC3** — **Given** a container with `triggerRate = 3.0s` in Round-Robin standard mode
+**When** exported in Preserve mode
+**Then** items use container.triggerRate (3.0s) for spacing
+**And** same logic applies to both All Tracks and Round-Robin
+
+**AC4** — **Given** loop mode enabled (negative triggerRate or loopMode=on)
+**When** exported (any distribution mode)
+**Then** existing loop interval logic remains unchanged
+**And** uses loopInterval or container.triggerRate correctly (no regression)
+
+**AC5** — **Given** a container with `intervalMode = RELATIVE` or `COVERAGE`
+**When** exported in standard mode
+**Then** triggerRate is ignored (these modes don't apply to export)
+**And** falls back to `params.spacing`
+
+**AC6** — **Given** batch export with 3 containers: triggerRate [2s, nil, 4s]
+**When** all exported with global spacing = 1.0s
+**Then** container 1 uses 2s, container 2 uses 1s (fallback), container 3 uses 4s
+
+### Story 5.5: Fix Round-Robin/Random - Independent Track Positioning
+
+As a **game sound designer**,
+I want **Round-Robin and Random export modes to use independent position counters per track**,
+So that **each track starts from the beginning with proper spacing, not with large gaps caused by shared positioning**.
+
+**Context:** In Preserve mode with Round-Robin or Random distribution, `Export_Placement.placeItemsStandardMode()` uses a single `currentPos` variable that advances globally across all placement operations. This causes items distributed to different tracks to have large gaps on each individual track, since the position counter includes the lengths of items placed on OTHER tracks.
+
+**Current Behavior (Buggy):**
+```
+Round-Robin with 3 tracks, 6 items (2s each), interval=1s:
+- Item 1 → Track 1 @ 0s
+- Item 2 → Track 2 @ 3s (currentPos = 0 + 2 + 1 = 3s)
+- Item 3 → Track 3 @ 6s (currentPos = 3 + 2 + 1 = 6s)
+- Item 4 → Track 1 @ 9s (currentPos = 6 + 2 + 1 = 9s) ← HUGE GAP!
+
+Track 1: [Item1 @0s] ................... [Item4 @9s]
+         ^--- 9 second gap! Should be 3s!
+```
+
+**Expected Behavior:**
+```
+Each track maintains its own position counter starting at startPos:
+- Item 1 → Track 1 @ 0s (trackPos[1] = 0)
+- Item 2 → Track 2 @ 0s (trackPos[2] = 0)
+- Item 3 → Track 3 @ 0s (trackPos[3] = 0)
+- Item 4 → Track 1 @ 3s (trackPos[1] = 0 + 2 + 1 = 3s)
+
+Track 1: [Item1 @0s][Item4 @3s]
+Track 2: [Item2 @0s][Item5 @3s]
+Track 3: [Item3 @0s][Item6 @3s]
+```
+
+**Architectural Root Cause:** Lines 642-663 in `Export_Placement.lua`:
+```lua
+local currentPos = startPos  -- Shared across ALL tracks!
+
+for _, poolEntry in ipairs(pool) do
+    for instance = 1, params.instanceAmount do
+        local distTracks, distIndices
+        if preserveDistribution then
+            distTracks, distIndices, distributionCounter = getDistributionTargetTracks(...)
+        end
+        currentPos = placeSinglePoolEntry(..., currentPos, ...)  -- Advances globally!
+    end
+end
+```
+
+The function needs a **per-track position table** instead of a single `currentPos`.
+
+**Acceptance Criteria:**
+
+**AC1** — **Given** Round-Robin mode with 3 tracks, 6 items (2s each), interval=1s
+**When** exported in Preserve mode
+**Then** Track 1 has items at [0s, 3s], Track 2 at [0s, 3s], Track 3 at [0s, 3s]
+**And** NOT Track 1 [0s, 9s], Track 2 [3s, 12s], Track 3 [6s, 15s]
+
+**AC2** — **Given** Random distribution mode with 4 tracks and 8 items
+**When** exported in Preserve mode
+**Then** each track's items start from `startPos` (0s or cursor position)
+**And** items on same track respect `effectiveInterval` for end-to-start spacing
+**And** position counters are independent per track
+
+**AC3** — **Given** Round-Robin with `instanceAmount = 3` and 2 pool entries
+**When** exported (6 total placements: 2 entries × 3 instances)
+**Then** instances on same track are spaced correctly (end-to-start + interval)
+**And** no shared global position counter
+
+**AC4** — **Given** batch export with multiple containers using Round-Robin
+**When** exported
+**Then** each container's tracks start at their respective `startPosition`
+**And** inter-container spacing is preserved (finalPos calculation correct)
+
+**AC5** — **Given** Flatten mode (single track)
+**When** exported with Round-Robin container config
+**Then** distribution is ignored (all items on one track)
+**And** existing single-track positioning logic works correctly (no regression)
+
+**AC6** — **Given** Round-Robin with variable-length items: [1s, 3s, 0.5s, 2s] and interval=0.5s
+**When** distributed across 2 tracks
+**Then** Track 1: [Item1: 0-1s][Item3: 1.5-2s][...], Track 2: [Item2: 0-3s][Item4: 3.5-5.5s][...]
+**And** spacing accounts for each track's item lengths independently

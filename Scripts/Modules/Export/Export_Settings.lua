@@ -1,5 +1,5 @@
 --[[
-@version 1.3
+@version 1.4
 @noindex
 DM Ambiance Creator - Export Settings Module
 Handles export settings state management, container collection, and parameter resolution.
@@ -7,6 +7,9 @@ Migrated from Export_Core.lua with new v2 fields (maxPoolItems, loopMode).
 v1.1: Code review fix - validateMaxPoolItems now uses containerInfo for proper pool size (items × areas).
 v1.2: Story 3.1 - Added loopDuration and loopInterval parameters for loop mode configuration.
 v1.3: Story 5.2 - Added multichannelExportMode parameter (flatten/preserve) with validation.
+v1.4 (2026-02-07): Bug fix - resolveLoopMode() now activates loop mode for negative triggerRate
+      regardless of intervalMode. Previous bug: only ABSOLUTE mode triggered loop auto-detection,
+      causing RELATIVE/COVERAGE/CHUNK containers with negative intervals to ignore overlap.
 --]]
 
 local M = {}
@@ -308,9 +311,10 @@ function M.resolveLoopMode(container, params)
 
     if params.loopMode == Constants.EXPORT.LOOP_MODE_ON then return true end
     if params.loopMode == Constants.EXPORT.LOOP_MODE_OFF then return false end
-    -- "auto": check if container has negative interval in absolute mode
-    return container.triggerRate < 0
-        and container.intervalMode == Constants.TRIGGER_MODES.ABSOLUTE
+    -- "auto": check if container has negative interval (overlap = loop mode)
+    -- Note: Works regardless of intervalMode (ABSOLUTE, RELATIVE, COVERAGE, CHUNK)
+    -- because negative triggerRate always indicates overlap, which is loop-appropriate
+    return container.triggerRate and container.triggerRate < 0
 end
 
 -- NEW v2: Validate maxPoolItems against actual pool size (items × waveformAreas)
