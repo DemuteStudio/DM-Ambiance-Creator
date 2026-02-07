@@ -44,20 +44,23 @@ development_status:
   # Epic 5 - Bug Fixes (CURRENT SPRINT)
   5-1-export-track-hierarchy-creation: done
   5-2-export-multichannel-item-distribution: done  # Code review complete (7 issues fixed)
-  5-3-loop-overlap-after-split-swap: ready-for-dev
+  5-3-loop-overlap-after-split-swap: done  # Code review complete (9 issues fixed)
+  5-4-all-tracks-respect-container-interval: review
+  5-5-roundrobin-independent-track-positioning: ready-for-dev
 
 # Sprint Summary
-stories_total: 14
-stories_done: 13
+stories_total: 16
+stories_done: 14
 stories_in_progress: 0
-stories_ready: 1
+stories_ready: 2
 stories_backlog: 0
 
 # Notes
 notes:
   - "Epic 5 contains critical bug fixes discovered post-implementation"
   - "Story 5.2 is a regression from Story 1.2 - multichannel distribution was supposed to work"
-  - "All 3 bugs affect core export functionality and should be fixed before production use"
+  - "Stories 5.4 and 5.5 discovered during manual testing - affect item spacing in All Tracks and Round-Robin modes"
+  - "All 5 bugs affect core export functionality and should be fixed before production use"
 
 # Backlog (low priority)
 backlog:

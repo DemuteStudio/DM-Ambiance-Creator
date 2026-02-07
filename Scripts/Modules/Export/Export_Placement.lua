@@ -1,5 +1,5 @@
 --[[
-@version 1.12
+@version 1.13
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
@@ -26,6 +26,8 @@ v1.11: Code review fixes - Removed dead needsTrackHierarchy(), suppressed Genera
        consistent "Export -" naming for multichannel folders, defensive checks for Generation API.
 v1.12: Story 5.2 - Multichannel export mode: Flatten restricts to first child track,
        Preserve distributes via Round-Robin/Random/All Tracks matching Generation engine.
+v1.13 (2026-02-07): Story 5.3 - placeContainerItems() now returns effectiveInterval as third return value.
+       Enables Export_Loop to maintain consistent overlap after split/swap for seamless loops.
 --]]
 
 local M = {}
@@ -448,7 +450,13 @@ local function placeSinglePoolEntry(poolEntry, placementTracks, placementIndices
     end
 
     local itemData = M.buildItemData(poolEntry.item, poolEntry.area)
-    local itemPos = M.calculatePosition(currentPos, params)
+    -- Story 5.4: Don't align to seconds in loop mode with overlap (negative interval)
+    local itemPos
+    if effectiveInterval < 0 then
+        itemPos = currentPos  -- Preserve precise positioning for overlaps
+    else
+        itemPos = M.calculatePosition(currentPos, params)
+    end
     local actualLen = 0
     local anyItemCreated = false
 
@@ -682,6 +690,8 @@ end
 -- @return table: Array of PlacedItem records {item, track, position, length, trackIdx}
 -- @return number: End position (in seconds) after all items placed. Used by Export_Engine to
 --        calculate next container's start position for sequential batch export.
+-- @return number: effectiveInterval used for item spacing (negative for overlap). Used by
+--        Export_Loop for maintaining consistent overlap after split/swap (Story 5.3).
 function M.placeContainerItems(pool, targetTracks, trackStructure, params, containerInfo, startPosition)
     local placedItems = {}
     local startPos = startPosition or reaper.GetCursorPosition()
@@ -733,7 +743,21 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
             effectiveInterval = 0
         end
     else
-        effectiveInterval = params.spacing or 0
+        -- Standard mode: respect container interval
+        -- Story 5.4: Use container.triggerRate if defined (ABSOLUTE mode only)
+        local intervalMode = container.intervalMode or Constants.TRIGGER_MODES.ABSOLUTE
+        if container.triggerRate
+            and container.triggerRate > 0
+            and intervalMode == Constants.TRIGGER_MODES.ABSOLUTE then
+            -- Use container's configured interval (positive absolute mode)
+            effectiveInterval = container.triggerRate
+        else
+            -- Fallback to global spacing for:
+            -- - No triggerRate defined
+            -- - triggerRate is 0
+            -- - Non-ABSOLUTE modes (RELATIVE, COVERAGE, CHUNK)
+            effectiveInterval = params.spacing or 0
+        end
     end
     local targetDuration = isLoopMode and (params.loopDuration or 30) or math.huge
 
@@ -765,7 +789,7 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
         placedItems, finalPos = placeItemsStandardMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, preserveDistribution, distributionMode, distributionCounter, placedItems)
     end
 
-    return placedItems, finalPos
+    return placedItems, finalPos, effectiveInterval
 end
 
 return M
