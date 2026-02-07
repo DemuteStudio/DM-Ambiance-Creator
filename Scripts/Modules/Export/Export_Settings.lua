@@ -1,11 +1,12 @@
 --[[
-@version 1.2
+@version 1.3
 @noindex
 DM Ambiance Creator - Export Settings Module
 Handles export settings state management, container collection, and parameter resolution.
 Migrated from Export_Core.lua with new v2 fields (maxPoolItems, loopMode).
 v1.1: Code review fix - validateMaxPoolItems now uses containerInfo for proper pool size (items × areas).
 v1.2: Story 3.1 - Added loopDuration and loopInterval parameters for loop mode configuration.
+v1.3: Story 5.2 - Added multichannelExportMode parameter (flatten/preserve) with validation.
 --]]
 
 local M = {}
@@ -27,6 +28,7 @@ local exportSettings = {
         loopMode = "auto",     -- "auto" | "on" | "off"
         loopDuration = 30,     -- Target loop duration in seconds
         loopInterval = 0,      -- Interval between items in loop mode (negative = overlap)
+        multichannelExportMode = "flatten", -- "flatten" | "preserve" (Story 5.2)
     },
     containerOverrides = {},   -- {[containerKey] = {enabled, params}}
     enabledContainers = {},    -- {[containerKey] = true/false}
@@ -62,6 +64,7 @@ function M.resetSettings()
         loopMode = EXPORT.LOOP_MODE_DEFAULT or "auto",
         loopDuration = EXPORT.LOOP_DURATION_DEFAULT or 30,
         loopInterval = EXPORT.LOOP_INTERVAL_DEFAULT or 0,
+        multichannelExportMode = EXPORT.MULTICHANNEL_EXPORT_MODE_DEFAULT or "flatten",
     }
     exportSettings.containerOverrides = {}
     exportSettings.enabledContainers = {}
@@ -158,6 +161,14 @@ function M.setGlobalParam(param, value)
         local min = EXPORT.LOOP_INTERVAL_MIN or -10
         local max = EXPORT.LOOP_INTERVAL_MAX or 10
         value = math.max(min, math.min(max, value))
+    elseif param == "multichannelExportMode" then
+        local validModes = {
+            [EXPORT.MULTICHANNEL_EXPORT_MODE_FLATTEN or "flatten"] = true,
+            [EXPORT.MULTICHANNEL_EXPORT_MODE_PRESERVE or "preserve"] = true,
+        }
+        if not validModes[value] then
+            value = EXPORT.MULTICHANNEL_EXPORT_MODE_DEFAULT or "flatten"
+        end
     end
 
     exportSettings.globalParams[param] = value

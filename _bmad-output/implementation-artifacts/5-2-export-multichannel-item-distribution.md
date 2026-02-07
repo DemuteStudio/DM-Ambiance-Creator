@@ -1,6 +1,6 @@
 # Story 5.2: Multichannel Export Mode Selection
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -103,35 +103,35 @@ Items distributed across tracks following the container's `itemDistributionMode`
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add Constants and Settings support (AC: #9, #10)
-  - [ ] 1.1: Add `MULTICHANNEL_EXPORT_MODE_FLATTEN`, `MULTICHANNEL_EXPORT_MODE_PRESERVE`, `MULTICHANNEL_EXPORT_MODE_DEFAULT` to `Constants.EXPORT`
-  - [ ] 1.2: Add `multichannelExportMode` to `globalParams` in Export_Settings.lua with default "flatten"
-  - [ ] 1.3: Add validation in `setGlobalParam()` for "flatten"/"preserve" values
-  - [ ] 1.4: Ensure `getEffectiveParams()` includes the new parameter (automatic via existing override copy pattern)
+- [x] Task 1: Add Constants and Settings support (AC: #9, #10)
+  - [x] 1.1: Add `MULTICHANNEL_EXPORT_MODE_FLATTEN`, `MULTICHANNEL_EXPORT_MODE_PRESERVE`, `MULTICHANNEL_EXPORT_MODE_DEFAULT` to `Constants.EXPORT`
+  - [x] 1.2: Add `multichannelExportMode` to `globalParams` in Export_Settings.lua with default "flatten"
+  - [x] 1.3: Add validation in `setGlobalParam()` for "flatten"/"preserve" values
+  - [x] 1.4: Ensure `getEffectiveParams()` includes the new parameter (automatic via existing override copy pattern)
 
-- [ ] Task 2: Implement Flatten mode in placeContainerItems() (AC: #1, #2, #3, #4)
-  - [ ] 2.1: At the start of `placeContainerItems()`, check effective `multichannelExportMode`
-  - [ ] 2.2: When "flatten": restrict `targetTracks` to first child track only (`targetTracks = {targetTracks[1]}`)
-  - [ ] 2.3: When "flatten": set `trackStructure.channelSelectionMode = "none"` to skip channel extraction
-  - [ ] 2.4: Verify that track hierarchy is still created fully for both export methods (needed for Preserve mode compatibility)
+- [x] Task 2: Implement Flatten mode in placeContainerItems() (AC: #1, #2, #3, #4)
+  - [x] 2.1: At the start of `placeContainerItems()`, check effective `multichannelExportMode`
+  - [x] 2.2: When "flatten": restrict `targetTracks` to first child track only (`targetTracks = {targetTracks[1]}`)
+  - [x] 2.3: When "flatten": set `trackStructure.channelSelectionMode = "none"` to skip channel extraction
+  - [x] 2.4: Verify that track hierarchy is still created fully for both export methods (needed for Preserve mode compatibility)
 
-- [ ] Task 3: Implement Preserve mode distribution in placeContainerItems() (AC: #5, #6, #7)
-  - [ ] 3.1: When "preserve" AND `trackStructure.useDistribution == true`: implement per-item track assignment
-  - [ ] 3.2: Round-Robin (mode 0): Add distribution counter, cycle through tracks using `((counter - 1) % #targetTracks) + 1`
-  - [ ] 3.3: Random (mode 1): Select track via `math.random(1, #targetTracks)` per pool entry
-  - [ ] 3.4: All Tracks (mode 2): Restructure to iterate tracks OUTER, pool INNER — each track gets its own independent sequence from the full pool
-  - [ ] 3.5: When `trackStructure.useSmartRouting == true` (native multichannel sources): keep existing behavior (same item on all tracks with channel extraction)
+- [x] Task 3: Implement Preserve mode distribution in placeContainerItems() (AC: #5, #6, #7)
+  - [x] 3.1: When "preserve" AND `trackStructure.useDistribution == true`: implement per-item track assignment
+  - [x] 3.2: Round-Robin (mode 0): Add distribution counter, cycle through tracks using `((counter - 1) % #targetTracks) + 1`
+  - [x] 3.3: Random (mode 1): Select track via `math.random(1, #targetTracks)` per pool entry
+  - [x] 3.4: All Tracks (mode 2): Restructure to iterate tracks OUTER, pool INNER — each track gets its own independent sequence from the full pool
+  - [x] 3.5: When `trackStructure.useSmartRouting == true` (native multichannel sources): keep existing behavior (same item on all tracks with channel extraction)
 
-- [ ] Task 4: Handle Preserve + Loop + All Tracks (AC: #8)
-  - [ ] 4.1: In All Tracks mode, each track independently fills to `targetDuration`
-  - [ ] 4.2: After placement, `processLoop()` split/swap only applies to tracks where the last item reaches/exceeds `targetDuration`
-  - [ ] 4.3: Tracks where items finish before `targetDuration` are left untouched (no split/swap)
+- [x] Task 4: Handle Preserve + Loop + All Tracks (AC: #8)
+  - [x] 4.1: In All Tracks mode, each track independently fills to `targetDuration`
+  - [x] 4.2: After placement, `processLoop()` split/swap only applies to tracks where the last item reaches/exceeds `targetDuration`
+  - [x] 4.3: Tracks where items finish before `targetDuration` are left untouched (no split/swap)
 
-- [ ] Task 5: Add UI controls (AC: #9, #10)
-  - [ ] 5.1: Add "Multichannel Export Mode" Combo widget in Export_UI.lua global parameters section
-  - [ ] 5.2: Only show when at least one enabled container has `channelMode != DEFAULT` (0)
-  - [ ] 5.3: Add same control in `renderOverrideParams()` for per-container override (visible only when selected container is multichannel)
-  - [ ] 5.4: Add same control in `renderBatchOverrideParams()` for batch editing
+- [x] Task 5: Add UI controls (AC: #9, #10)
+  - [x] 5.1: Add "Multichannel Export Mode" Combo widget in Export_UI.lua global parameters section
+  - [x] 5.2: Only show when at least one enabled container has `channelMode != DEFAULT` (0)
+  - [x] 5.3: Add same control in `renderOverrideParams()` for per-container override (visible only when selected container is multichannel)
+  - [x] 5.4: Add same control in `renderBatchOverrideParams()` for batch editing
 
 ## Dev Notes
 
@@ -360,10 +360,43 @@ cb8848e docs: Rework Story 4.4 with proper structure and formalize FR33
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.6 (claude-opus-4-6)
 
 ### Debug Log References
 
+N/A — REAPER script project, no automated tests.
+
 ### Completion Notes List
 
+- **Task 1**: Added 3 constants to `Constants.EXPORT` (`MULTICHANNEL_EXPORT_MODE_FLATTEN`, `MULTICHANNEL_EXPORT_MODE_PRESERVE`, `MULTICHANNEL_EXPORT_MODE_DEFAULT`). Added `multichannelExportMode` to `Export_Settings.globalParams` with default "flatten". Added validation in `setGlobalParam()`. Parameter flows through existing `getEffectiveParams()` automatically.
+
+- **Task 2 (Flatten)**: At start of `placeContainerItems()`, detects multichannel mode. When "flatten" and multiple target tracks: creates `effectiveTargetTracks` restricted to first child track only, shallow-copies `trackStructure` with `channelSelectionMode = "none"` to prevent channel extraction. Track hierarchy is still fully created (needed for routing).
+
+- **Task 3 (Preserve Round-Robin/Random)**: Added `preserveDistribution` flag, `distributionCounter`, and `getDistributionTarget()` helper inside `placeContainerItems()`. For Round-Robin (mode 0): cycles through tracks using modulo counter. For Random (mode 1): picks random track per pool entry. Smart Routing containers keep existing behavior (same item on all tracks with channel extraction).
+
+- **Task 4 (Preserve All Tracks)**: Implemented as `isAllTracksMode` branch with track-OUTER/pool-INNER loop structure. Each track independently iterates the full pool. In loop mode, each track fills to `targetDuration` independently. The existing `processLoop()` in Export_Loop.lua already handles per-track split/swap correctly (groups by `trackIdx`, skips tracks with < 2 items) — no changes needed there.
+
+- **Task 5 (UI)**: Added Combo selector "Multichannel Mode" (Flatten/Preserve) in 3 locations: global params section (visible only when at least one enabled container is multichannel), single override section (visible only when selected container is multichannel), and batch override section (visible when any selected container is multichannel). Added `multichannelExportMode` to all 3 override templates. Used module-level lookup tables for consistent value mapping.
+
+### Implementation Plan
+
+**Approach**: Minimal modification to existing placement flow. Flatten mode restricts the target to a single track via `effectiveTargetTracks`. Preserve mode adds distribution logic (Round-Robin/Random) via `getDistributionTarget()` helper, and All Tracks via restructured outer loop. No changes needed to Export_Engine, Export_Loop, or Generation modules.
+
+**Key Design Decisions**:
+1. Shallow copy of `trackStructure` in Flatten mode to avoid mutating the original (which is used by Export_Engine for bounds calculations)
+2. Distribution counter is local to `placeContainerItems()` (reset per container), matching Generation engine behavior
+3. All Tracks mode uses the `currentPos` upvar from the closure to coordinate with `placePoolEntry`, then tracks maximum position across all tracks
+4. UI visibility tied to `channelMode != 0` matching AC #10 exactly
+
 ### File List
+
+| File | Action | Description |
+|------|--------|-------------|
+| Scripts/Modules/DM_Ambiance_Constants.lua | Modified | Added 3 MULTICHANNEL_EXPORT_MODE constants to EXPORT section |
+| Scripts/Modules/Export/Export_Settings.lua | Modified | Added multichannelExportMode param to globalParams, resetSettings(), and setGlobalParam() validation |
+| Scripts/Modules/Export/Export_Placement.lua | Modified | Major: Flatten/Preserve mode logic in placeContainerItems() with Round-Robin, Random, All Tracks distribution |
+| Scripts/Modules/Export/Export_UI.lua | Modified | Added Multichannel Mode Combo in global, single override, and batch override sections |
+
+### Change Log
+
+- 2026-02-07: Story 5.2 implementation — Multichannel Export Mode Selection (Flatten/Preserve) with full distribution support

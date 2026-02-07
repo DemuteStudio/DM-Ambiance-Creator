@@ -1,5 +1,5 @@
 --[[
-@version 1.5
+@version 1.6
 @noindex
 --]]
 
@@ -513,6 +513,10 @@ Constants.EXPORT = {
     LOOP_INTERVAL_MAX = 10,             -- Maximum interval (positive = gap)
     LOOP_INTERVAL_DEFAULT = 0,          -- Default interval (seconds)
     LOOP_MAX_ITERATIONS = 10000,        -- Safety limit for loop mode placement iterations
+    -- Multichannel Export Mode (Story 5.2)
+    MULTICHANNEL_EXPORT_MODE_FLATTEN = "flatten",   -- All items on first child track
+    MULTICHANNEL_EXPORT_MODE_PRESERVE = "preserve",  -- Distribute items across child tracks
+    MULTICHANNEL_EXPORT_MODE_DEFAULT = "flatten",    -- Default mode for multichannel containers
 }
 
 return Constants

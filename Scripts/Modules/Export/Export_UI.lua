@@ -1,5 +1,5 @@
 --[[
-@version 1.7
+@version 1.8
 @noindex
 DM Ambiance Creator - Export UI Module
 Handles the Export modal window rendering with multi-selection and new widgets.
@@ -12,6 +12,8 @@ v1.6: Code review fixes - Clearer success count labels (OK vs with warnings), co
       across summary displays.
 v1.7: Story 4.4 - Added "(auto: uses container intervals)" indicator when loopInterval=0 in global,
       single override, and batch override sections.
+v1.8: Story 5.2 - Added Multichannel Export Mode selector (Flatten/Preserve) in global, override,
+      and batch sections. Hidden for stereo-only containers (AC #10).
 --]]
 
 local Export_UI = {}
@@ -30,6 +32,10 @@ local LOOP_MODE_VALUE_TO_INDEX = { ["auto"] = 0, ["on"] = 1, ["off"] = 2 }
 local LOOP_MODE_INDEX_TO_VALUE = { [0] = "auto", [1] = "on", [2] = "off" }
 local OVERRIDE_LABEL_WIDTH = 100
 local MAX_POOL_UI_LIMIT = 999
+-- Story 5.2: Multichannel Export Mode UI constants
+local MULTICHANNEL_MODE_OPTIONS = "Flatten\0Preserve\0"
+local MULTICHANNEL_MODE_VALUE_TO_INDEX = { ["flatten"] = 0, ["preserve"] = 1 }
+local MULTICHANNEL_MODE_INDEX_TO_VALUE = { [0] = "flatten", [1] = "preserve" }
 
 function Export_UI.initModule(g)
     if not g then
@@ -250,6 +256,33 @@ function Export_UI.renderModal()
                 end
             end
 
+            -- Story 5.2: Multichannel Export Mode (AC #9, #10)
+            -- Only show when at least one enabled container has channelMode != DEFAULT (0)
+            local hasMultichannelContainer = false
+            for _, c in ipairs(containers) do
+                if Export_Settings.isContainerEnabled(c.key) then
+                    local channelMode = c.container.channelMode or 0
+                    if channelMode ~= 0 then
+                        hasMultichannelContainer = true
+                        break
+                    end
+                end
+            end
+
+            if hasMultichannelContainer then
+                imgui.Text(ctx, "Multichannel Mode:")
+                imgui.SameLine(ctx, 150)
+                imgui.PushItemWidth(ctx, 120)
+                local currentMchIdx = MULTICHANNEL_MODE_VALUE_TO_INDEX[globalParams.multichannelExportMode or "flatten"] or 0
+                local changedMch, newMchIdx = imgui.Combo(ctx, "##MultichannelMode",
+                    currentMchIdx, MULTICHANNEL_MODE_OPTIONS)
+                if changedMch then
+                    local newMchValue = MULTICHANNEL_MODE_INDEX_TO_VALUE[newMchIdx] or "flatten"
+                    Export_Settings.setGlobalParam("multichannelExportMode", newMchValue)
+                end
+                imgui.PopItemWidth(ctx)
+            end
+
             imgui.Spacing(ctx)
 
             -- Align to whole seconds
@@ -336,6 +369,15 @@ function Export_UI.renderModal()
 
                 -- Get or create override
                 local override = Export_Settings.getContainerOverride(selectedKey)
+                -- Find selected containerInfo for multichannel check
+                local selectedContainerInfo = nil
+                for _, c in ipairs(containers) do
+                    if c.key == selectedKey then
+                        selectedContainerInfo = c
+                        break
+                    end
+                end
+
                 if not override then
                     override = {
                         enabled = false,
@@ -353,6 +395,7 @@ function Export_UI.renderModal()
                             loopMode = globalParams.loopMode,
                             loopDuration = globalParams.loopDuration,
                             loopInterval = globalParams.loopInterval,
+                            multichannelExportMode = globalParams.multichannelExportMode,
                         }
                     }
                 end
@@ -364,7 +407,7 @@ function Export_UI.renderModal()
                 end
 
                 if override.enabled then
-                    Export_UI.renderOverrideParams(ctx, imgui, selectedKey, override, EXPORT)
+                    Export_UI.renderOverrideParams(ctx, imgui, selectedKey, override, EXPORT, selectedContainerInfo)
                 else
                     imgui.TextDisabled(ctx, "Using global parameters")
                 end
@@ -408,6 +451,7 @@ function Export_UI.renderModal()
                                     loopMode = globalParams.loopMode,
                                     loopDuration = globalParams.loopDuration,
                                     loopInterval = globalParams.loopInterval,
+                                    multichannelExportMode = globalParams.multichannelExportMode,
                                 }
                             }
                         else
@@ -425,7 +469,7 @@ function Export_UI.renderModal()
                     -- Get first selected container's override as reference
                     local refOverride = Export_Settings.getContainerOverride(selectedKeys[1])
                     if refOverride then
-                        Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, EXPORT)
+                        Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, EXPORT, containers)
                     end
                 end
             end
@@ -663,13 +707,36 @@ end
 
 -- Render override parameters for single selection
 -- Visual distinction: orange text with * suffix for values that differ from global
-function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPORT)
+-- @param containerInfo table|nil: Container info for multichannel check (Story 5.2)
+function Export_UI.renderOverrideParams(ctx, imgui, containerKey, override, EXPORT, containerInfo)
     imgui.Indent(ctx, 15)
     imgui.Spacing(ctx)
 
     -- Get global params for comparison (visual distinction per AC #2)
     local globalParams = Export_Settings.getGlobalParams()
     local MODIFIED_COLOR = 0xFFAA00FF  -- Orange
+
+    -- Story 5.2: Multichannel Export Mode override (only for multichannel containers)
+    local isMultichannel = containerInfo and containerInfo.container
+        and (containerInfo.container.channelMode or 0) ~= 0
+    if isMultichannel then
+        local mchDiff = (override.params.multichannelExportMode or "flatten") ~= (globalParams.multichannelExportMode or "flatten")
+        if mchDiff then
+            imgui.TextColored(ctx, MODIFIED_COLOR, "MCh Mode: *")
+        else
+            imgui.Text(ctx, "MCh Mode:")
+        end
+        imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+        imgui.PushItemWidth(ctx, 100)
+        local currentMchIdx = MULTICHANNEL_MODE_VALUE_TO_INDEX[override.params.multichannelExportMode or "flatten"] or 0
+        local changedMchOvr, newMchOvrIdx = imgui.Combo(ctx, "##OverrideMultichannelMode",
+            currentMchIdx, MULTICHANNEL_MODE_OPTIONS)
+        if changedMchOvr then
+            override.params.multichannelExportMode = MULTICHANNEL_MODE_INDEX_TO_VALUE[newMchOvrIdx] or "flatten"
+            Export_Settings.setContainerOverride(containerKey, override)
+        end
+        imgui.PopItemWidth(ctx)
+    end
 
     -- Override Instance Amount
     local instDiff = override.params.instanceAmount ~= globalParams.instanceAmount
@@ -886,12 +953,45 @@ end
 
 -- Render override parameters for multi-selection (batch editing)
 -- Visual distinction: orange text with * suffix for values that differ from global
-function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, EXPORT)
+-- @param containers table|nil: Cached container list for multichannel check (Story 5.2)
+function Export_UI.renderBatchOverrideParams(ctx, imgui, selectedKeys, refOverride, EXPORT, containers)
     imgui.Indent(ctx, 15)
 
     -- Get global params for comparison (visual distinction per AC #2)
     local globalParams = Export_Settings.getGlobalParams()
     local MODIFIED_COLOR = 0xFFAA00FF  -- Orange
+
+    -- Story 5.2: Check if any selected container is multichannel
+    local hasMultichannelSelected = false
+    if containers then
+        for _, key in ipairs(selectedKeys) do
+            for _, c in ipairs(containers) do
+                if c.key == key and (c.container.channelMode or 0) ~= 0 then
+                    hasMultichannelSelected = true
+                    break
+                end
+            end
+            if hasMultichannelSelected then break end
+        end
+    end
+
+    if hasMultichannelSelected then
+        local mchDiff = (refOverride.params.multichannelExportMode or "flatten") ~= (globalParams.multichannelExportMode or "flatten")
+        if mchDiff then
+            imgui.TextColored(ctx, MODIFIED_COLOR, "MCh Mode: *")
+        else
+            imgui.Text(ctx, "MCh Mode:")
+        end
+        imgui.SameLine(ctx, OVERRIDE_LABEL_WIDTH)
+        imgui.PushItemWidth(ctx, 100)
+        local currentMchIdxBatch = MULTICHANNEL_MODE_VALUE_TO_INDEX[refOverride.params.multichannelExportMode or "flatten"] or 0
+        local changedMchBatch, newMchIdxBatch = imgui.Combo(ctx, "##BatchMultichannelMode",
+            currentMchIdxBatch, MULTICHANNEL_MODE_OPTIONS)
+        if changedMchBatch then
+            Export_Settings.applyParamToSelected("multichannelExportMode", MULTICHANNEL_MODE_INDEX_TO_VALUE[newMchIdxBatch] or "flatten")
+        end
+        imgui.PopItemWidth(ctx)
+    end
 
     -- Batch Instance Amount
     local instDiff = refOverride.params.instanceAmount ~= globalParams.instanceAmount
