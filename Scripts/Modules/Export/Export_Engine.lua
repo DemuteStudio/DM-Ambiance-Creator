@@ -517,7 +517,7 @@ function M.performExport()
         if presetName and presetName ~= "" then
             reaper.InsertTrackAtIndex(firstNewTrackIdx, true)
             local presetParent = reaper.GetTrack(0, firstNewTrackIdx)
-            reaper.GetSetMediaTrackInfo_String(presetParent, "P_NAME", "Export - " .. presetName, true)
+            reaper.GetSetMediaTrackInfo_String(presetParent, "P_NAME", presetName, true)
             reaper.SetMediaTrackInfo_Value(presetParent, "I_FOLDERDEPTH", 1)
 
             local newLastIdx = reaper.GetNumTracks() - 1

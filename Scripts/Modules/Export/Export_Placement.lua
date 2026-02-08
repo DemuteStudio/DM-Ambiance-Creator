@@ -119,7 +119,7 @@ function M.createExportTrack(containerInfo, channelIndex)
     reaper.InsertTrackAtIndex(trackCount, false)
     local newTrack = reaper.GetTrack(0, trackCount)
 
-    local trackName = "Export - " .. containerInfo.container.name
+    local trackName = containerInfo.container.name
     if channelIndex then
         local label = ""
         local mode = containerInfo.container.channelMode or 0
@@ -176,9 +176,9 @@ function M.createExportTrackHierarchy(containerInfo, trackStructure)
     reaper.InsertTrackAtIndex(trackCount, false)
     local folderTrack = reaper.GetTrack(0, trackCount)
 
-    -- Name the folder track (consistent "Export - " prefix with stereo tracks)
+    -- Name the folder track
     reaper.GetSetMediaTrackInfo_String(folderTrack, "P_NAME",
-        "Export - " .. (container.name or "Container"), true)
+        (container.name or "Container"), true)
 
     -- Suppress Generation-specific side effects during export:
     -- 1. View zoom commands (inappropriate during export)
