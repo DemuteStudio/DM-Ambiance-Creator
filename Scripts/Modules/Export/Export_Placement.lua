@@ -1,5 +1,5 @@
 --[[
-@version 1.18
+@version 1.19
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
@@ -73,6 +73,16 @@ v1.18 (2026-02-08): Story 5.6 FIX - Trim first items after rightPart wrap
        - FIX: After wrapping rightPart(s), trim existing first item from the left so that
          overlap matches effectiveInterval. Formula: requiredFirstItemStart = targetStart + rightPartLen + effectiveInterval
        - Handles edge case: if rightPartLen + effectiveInterval >= firstItem.length, delete item entirely
+v1.19 (2026-02-08): Story 5.5 - Fix export interval inheritance for Round-Robin/Random
+       - INVESTIGATION: Per-track independent positioning was implemented and tested but
+         REVERTED — Generation engine itself uses shared position counter for round-robin,
+         creating a staggered pattern. Export must match this behavior, not fix it independently.
+       - PROBLEM: Export used raw container.triggerRate/intervalMode without inheritance
+         When container.overrideParent=false, generation inherits from group but export
+         used the container's default values (10.0s), causing interval mismatch
+       - FIX: Added inheritance resolution matching Structures.getEffectiveContainerParams()
+         Now uses group.triggerRate/intervalMode when container doesn't override
+       - Added documentation comment on placeItemsStandardMode explaining shared position design
 --]]
 
 local M = {}
@@ -699,6 +709,9 @@ end
 -- Single pass through pool with optional distribution
 -- Code Review H1: Extracted to reduce placeContainerItems complexity
 -- Code Review M3: Distribution counter now advances per instance (matching Generation engine)
+-- Story 5.5: Uses shared position counter matching Generation engine's round-robin behavior.
+--   Generation advances position globally across all tracks, creating a staggered pattern
+--   where each track's items are spaced by N*(itemLen+interval) where N=number of tracks.
 -- @return table: placedItems array
 -- @return number: Final position
 local function placeItemsStandardMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, preserveDistribution, distributionMode, distributionCounter, placedItems)
@@ -1071,26 +1084,36 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
         end
     end
 
+    -- Story 5.5: Resolve effective trigger settings with inheritance
+    -- Generation uses Structures.getEffectiveContainerParams() which inherits from group
+    -- when container.overrideParent is false. Export must match this behavior.
+    local effectiveTriggerRate = container.triggerRate
+    local effectiveIntervalMode = container.intervalMode
+    if not container.overrideParent and containerInfo.group then
+        effectiveTriggerRate = containerInfo.group.triggerRate
+        effectiveIntervalMode = containerInfo.group.intervalMode
+    end
+    effectiveIntervalMode = effectiveIntervalMode or Constants.TRIGGER_MODES.ABSOLUTE
+
     -- Resolve loop mode and effective interval
     local isLoopMode = Settings and Settings.resolveLoopMode(container, params) or false
     local effectiveInterval
     if isLoopMode then
         if (params.loopInterval or 0) ~= 0 then
             effectiveInterval = params.loopInterval
-        elseif container.triggerRate and container.triggerRate < 0 then
-            effectiveInterval = container.triggerRate
+        elseif effectiveTriggerRate and effectiveTriggerRate < 0 then
+            effectiveInterval = effectiveTriggerRate
         else
             effectiveInterval = 0
         end
     else
         -- Standard mode: respect container interval
-        -- Story 5.4: Use container.triggerRate if defined (ABSOLUTE mode only)
-        local intervalMode = container.intervalMode or Constants.TRIGGER_MODES.ABSOLUTE
-        if container.triggerRate
-            and container.triggerRate > 0
-            and intervalMode == Constants.TRIGGER_MODES.ABSOLUTE then
-            -- Use container's configured interval (positive absolute mode)
-            effectiveInterval = container.triggerRate
+        -- Story 5.4: Use effective triggerRate if defined (ABSOLUTE mode only)
+        if effectiveTriggerRate
+            and effectiveTriggerRate > 0
+            and effectiveIntervalMode == Constants.TRIGGER_MODES.ABSOLUTE then
+            -- Use effective interval (inherited from group if container doesn't override)
+            effectiveInterval = effectiveTriggerRate
         else
             -- Fallback to global spacing for:
             -- - No triggerRate defined
