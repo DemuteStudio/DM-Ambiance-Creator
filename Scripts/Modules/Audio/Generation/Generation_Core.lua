@@ -52,6 +52,89 @@ local function collectAllGroups(items, groups)
     end
 end
 
+-- Find the index of the last child track within a folder
+-- Only searches up to maxIdx (exclusive) to avoid looking at newly generated tracks
+local function findFolderLastChildIdx(parentIdx, maxIdx)
+    local parentTrack = reaper.GetTrack(0, parentIdx)
+    local depth = reaper.GetMediaTrackInfo_Value(parentTrack, "I_FOLDERDEPTH")
+    if depth ~= 1 then return parentIdx end
+
+    local folderDepth = 1
+    local lastChildIdx = parentIdx
+    local k = parentIdx + 1
+    while k < maxIdx and folderDepth > 0 do
+        local track = reaper.GetTrack(0, k)
+        local d = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+        folderDepth = folderDepth + d
+        lastChildIdx = k
+        k = k + 1
+    end
+    return lastChildIdx
+end
+
+-- Relocate generated tracks into a selected parent track
+-- After generation creates tracks at the end of the project, this function
+-- moves them inside the specified parent track and adjusts folder depths
+local function relocateTracksIntoParent(parentGUID, firstNewIdx, lastNewIdx)
+    -- Find parent track by GUID (only in pre-existing tracks)
+    local parentTrack, parentIdx = nil, nil
+    for i = 0, firstNewIdx - 1 do
+        local track = reaper.GetTrack(0, i)
+        if reaper.GetTrackGUID(track) == parentGUID then
+            parentTrack = track
+            parentIdx = i
+            break
+        end
+    end
+    if not parentTrack then return end
+
+    local isFolder = reaper.GetMediaTrackInfo_Value(parentTrack, "I_FOLDERDEPTH") == 1
+    local closingDepthToTransfer = -1
+    local insertBeforeIdx
+
+    if isFolder then
+        local lastChildIdx = findFolderLastChildIdx(parentIdx, firstNewIdx)
+        if lastChildIdx > parentIdx then
+            -- Neutralize the last child's folder closing so the folder stays open
+            local lastChild = reaper.GetTrack(0, lastChildIdx)
+            closingDepthToTransfer = reaper.GetMediaTrackInfo_Value(lastChild, "I_FOLDERDEPTH")
+            reaper.SetMediaTrackInfo_Value(lastChild, "I_FOLDERDEPTH", 0)
+            insertBeforeIdx = lastChildIdx + 1
+        else
+            insertBeforeIdx = parentIdx + 1
+        end
+    else
+        -- Make the selected track a folder
+        reaper.SetMediaTrackInfo_Value(parentTrack, "I_FOLDERDEPTH", 1)
+        insertBeforeIdx = parentIdx + 1
+    end
+
+    -- Select only the generated tracks for reorder
+    local trackCount = reaper.CountTracks(0)
+    for i = 0, trackCount - 1 do
+        reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
+    end
+    for i = firstNewIdx, lastNewIdx do
+        reaper.SetTrackSelected(reaper.GetTrack(0, i), true)
+    end
+
+    -- Move generated tracks inside the parent
+    reaper.ReorderSelectedTracks(insertBeforeIdx, 0)
+
+    -- The last generated track must also close the parent folder
+    -- Transfer the closing depth from the neutralized last child (or -1 for new folders)
+    local numNew = lastNewIdx - firstNewIdx + 1
+    local lastMovedIdx = insertBeforeIdx + numNew - 1
+    local lastMovedTrack = reaper.GetTrack(0, lastMovedIdx)
+    local currentDepth = reaper.GetMediaTrackInfo_Value(lastMovedTrack, "I_FOLDERDEPTH")
+    reaper.SetMediaTrackInfo_Value(lastMovedTrack, "I_FOLDERDEPTH", currentDepth + closingDepthToTransfer)
+
+    -- Clear track selection
+    for i = 0, reaper.CountTracks(0) - 1 do
+        reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
+    end
+end
+
 -- Helper function to process items recursively (folders and groups)
 local function processItems(items, generateFolderTracks, currentDepth, xfadeshape)
     if not items or #items == 0 then
@@ -265,6 +348,17 @@ function Generation_Core.generateGroups()
     end
 
     reaper.Main_OnCommand(40289, 0) -- "Item: Unselect all items"
+
+    -- Capture selected parent track before generation
+    -- If a track is selected, generated tracks will be nested inside it
+    local parentTrackGUID = nil
+    if reaper.CountSelectedTracks(0) >= 1 then
+        local selectedTrack = reaper.GetSelectedTrack(0, 0) -- topmost selected
+        if selectedTrack then
+            parentTrackGUID = reaper.GetTrackGUID(selectedTrack)
+        end
+    end
+
     reaper.Undo_BeginBlock()
     reaper.PreventUIRefresh(1)
 
@@ -275,6 +369,9 @@ function Generation_Core.generateGroups()
     local itemsSource = (globals.items and #globals.items > 0) and globals.items or nil
     local groupsSource = (not itemsSource and globals.groups and #globals.groups > 0) and globals.groups or nil
 
+    -- Track where new tracks start for parent track relocation
+    local firstNewTrackIdx = nil
+
     if globals.keepExistingTracks then
         -- Use regeneration logic for existing tracks (keep existing)
         -- Use new items structure or fall back to legacy groups
@@ -283,6 +380,7 @@ function Generation_Core.generateGroups()
             -- For now, silently fall back to recreate mode (delete and regenerate)
             -- NOTE: We don't modify globals.keepExistingTracks to preserve user's checkbox state
             Generation_Core.deleteExistingGroups()
+            firstNewTrackIdx = reaper.GetNumTracks()
             local generateFolderTracks = globals.Settings and globals.Settings.getSetting("generateFolderTracks")
             if generateFolderTracks == nil then
                 generateFolderTracks = true
@@ -297,6 +395,7 @@ function Generation_Core.generateGroups()
     else
         -- Original behavior: delete and recreate tracks (clear all)
         Generation_Core.deleteExistingGroups()
+        firstNewTrackIdx = reaper.GetNumTracks()
 
         -- NEW APPROACH: Use processItems for recursive folder/group generation
         if itemsSource then
@@ -392,6 +491,33 @@ function Generation_Core.generateGroups()
                     end
                 end
             end
+        end
+    end
+
+    -- Wrap generated tracks in a preset parent track if a preset is loaded
+    local presetName = globals.currentPresetName
+    if presetName and presetName ~= "" and firstNewTrackIdx then
+        local lastNewTrackIdx = reaper.GetNumTracks() - 1
+        if lastNewTrackIdx >= firstNewTrackIdx then
+            -- Insert preset parent track at the beginning of generated tracks
+            reaper.InsertTrackAtIndex(firstNewTrackIdx, true)
+            local presetParent = reaper.GetTrack(0, firstNewTrackIdx)
+            reaper.GetSetMediaTrackInfo_String(presetParent, "P_NAME", presetName, true)
+            reaper.SetMediaTrackInfo_Value(presetParent, "I_FOLDERDEPTH", 1)
+
+            -- Last generated track (shifted by 1) must close the preset folder
+            local newLastIdx = reaper.GetNumTracks() - 1
+            local lastTrack = reaper.GetTrack(0, newLastIdx)
+            local depth = reaper.GetMediaTrackInfo_Value(lastTrack, "I_FOLDERDEPTH")
+            reaper.SetMediaTrackInfo_Value(lastTrack, "I_FOLDERDEPTH", depth - 1)
+        end
+    end
+
+    -- Relocate generated tracks into selected parent track if applicable
+    if parentTrackGUID and firstNewTrackIdx then
+        local lastNewTrackIdx = reaper.GetNumTracks() - 1
+        if lastNewTrackIdx >= firstNewTrackIdx then
+            relocateTracksIntoParent(parentTrackGUID, firstNewTrackIdx, lastNewTrackIdx)
         end
     end
 
