@@ -49,6 +49,79 @@ function M.setDependencies(settings, placement, loop)
     Loop = loop
 end
 
+-- Find the index of the last child track within a folder
+-- Only searches up to maxIdx (exclusive)
+local function findFolderLastChildIdx(parentIdx, maxIdx)
+    local parentTrack = reaper.GetTrack(0, parentIdx)
+    local depth = reaper.GetMediaTrackInfo_Value(parentTrack, "I_FOLDERDEPTH")
+    if depth ~= 1 then return parentIdx end
+
+    local folderDepth = 1
+    local lastChildIdx = parentIdx
+    local k = parentIdx + 1
+    while k < maxIdx and folderDepth > 0 do
+        local track = reaper.GetTrack(0, k)
+        local d = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+        folderDepth = folderDepth + d
+        lastChildIdx = k
+        k = k + 1
+    end
+    return lastChildIdx
+end
+
+-- Relocate tracks into a parent track by GUID, adjusting folder depths
+local function relocateTracksIntoParent(parentGUID, firstNewIdx, lastNewIdx)
+    local parentTrack, parentIdx = nil, nil
+    for i = 0, firstNewIdx - 1 do
+        local track = reaper.GetTrack(0, i)
+        if reaper.GetTrackGUID(track) == parentGUID then
+            parentTrack = track
+            parentIdx = i
+            break
+        end
+    end
+    if not parentTrack then return end
+
+    local isFolder = reaper.GetMediaTrackInfo_Value(parentTrack, "I_FOLDERDEPTH") == 1
+    local closingDepthToTransfer = -1
+    local insertBeforeIdx
+
+    if isFolder then
+        local lastChildIdx = findFolderLastChildIdx(parentIdx, firstNewIdx)
+        if lastChildIdx > parentIdx then
+            local lastChild = reaper.GetTrack(0, lastChildIdx)
+            closingDepthToTransfer = reaper.GetMediaTrackInfo_Value(lastChild, "I_FOLDERDEPTH")
+            reaper.SetMediaTrackInfo_Value(lastChild, "I_FOLDERDEPTH", 0)
+            insertBeforeIdx = lastChildIdx + 1
+        else
+            insertBeforeIdx = parentIdx + 1
+        end
+    else
+        reaper.SetMediaTrackInfo_Value(parentTrack, "I_FOLDERDEPTH", 1)
+        insertBeforeIdx = parentIdx + 1
+    end
+
+    local trackCount = reaper.CountTracks(0)
+    for i = 0, trackCount - 1 do
+        reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
+    end
+    for i = firstNewIdx, lastNewIdx do
+        reaper.SetTrackSelected(reaper.GetTrack(0, i), true)
+    end
+
+    reaper.ReorderSelectedTracks(insertBeforeIdx, 0)
+
+    local numNew = lastNewIdx - firstNewIdx + 1
+    local lastMovedIdx = insertBeforeIdx + numNew - 1
+    local lastMovedTrack = reaper.GetTrack(0, lastMovedIdx)
+    local currentDepth = reaper.GetMediaTrackInfo_Value(lastMovedTrack, "I_FOLDERDEPTH")
+    reaper.SetMediaTrackInfo_Value(lastMovedTrack, "I_FOLDERDEPTH", currentDepth + closingDepthToTransfer)
+
+    for i = 0, reaper.CountTracks(0) - 1 do
+        reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
+    end
+end
+
 -- Helper: Create an ExportResult object for a single container
 -- @param containerKey string: Unique container identifier
 -- @param containerName string: Display name for UI
@@ -333,8 +406,20 @@ function M.performExport()
         return false, "No containers enabled", emptyResults
     end
 
+    -- Capture selected parent track before export modifies anything
+    local parentTrackGUID = nil
+    if reaper.CountSelectedTracks(0) >= 1 then
+        local selectedTrack = reaper.GetSelectedTrack(0, 0)
+        if selectedTrack then
+            parentTrackGUID = reaper.GetTrackGUID(selectedTrack)
+        end
+    end
+
     reaper.Undo_BeginBlock()
     reaper.PreventUIRefresh(1)
+
+    -- Record track count before export for post-export relocation
+    local firstNewTrackIdx = reaper.GetNumTracks()
 
     -- Seed random ONCE at export start for consistent randomness across all containers
     math.randomseed(os.time())
@@ -420,6 +505,32 @@ function M.performExport()
             -- Update position for next container
             if result.itemsExported > 0 and result.endPosition then
                 currentExportPosition = result.endPosition + containerSpacing
+            end
+        end
+    end
+
+    -- Wrap exported tracks in preset parent and/or selected track
+    local lastNewTrackIdx = reaper.GetNumTracks() - 1
+    if lastNewTrackIdx >= firstNewTrackIdx then
+        -- Wrap in preset parent track if a preset is loaded
+        local presetName = globals.currentPresetName
+        if presetName and presetName ~= "" then
+            reaper.InsertTrackAtIndex(firstNewTrackIdx, true)
+            local presetParent = reaper.GetTrack(0, firstNewTrackIdx)
+            reaper.GetSetMediaTrackInfo_String(presetParent, "P_NAME", "Export - " .. presetName, true)
+            reaper.SetMediaTrackInfo_Value(presetParent, "I_FOLDERDEPTH", 1)
+
+            local newLastIdx = reaper.GetNumTracks() - 1
+            local lastTrack = reaper.GetTrack(0, newLastIdx)
+            local depth = reaper.GetMediaTrackInfo_Value(lastTrack, "I_FOLDERDEPTH")
+            reaper.SetMediaTrackInfo_Value(lastTrack, "I_FOLDERDEPTH", depth - 1)
+        end
+
+        -- Relocate into selected parent track if applicable
+        if parentTrackGUID then
+            lastNewTrackIdx = reaper.GetNumTracks() - 1
+            if lastNewTrackIdx >= firstNewTrackIdx then
+                relocateTracksIntoParent(parentTrackGUID, firstNewTrackIdx, lastNewTrackIdx)
             end
         end
     end
