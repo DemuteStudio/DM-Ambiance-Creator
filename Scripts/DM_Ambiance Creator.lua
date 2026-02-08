@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.16.1-beta
+@version 0.17.6-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -14,6 +14,25 @@
     [nomain] Modules/Export/*.lua
     Icons/*.png
 @changelog
+  # Version 0.17.6-beta - Export Multichannel & Bug Fixes
+
+  ## New Features
+  + Export: Multichannel export mode selection (Flatten / Preserve)
+    - Flatten: merge all channels to single track
+    - Preserve: maintain Round-Robin/Random/All Tracks distribution
+  + Export: Proper track hierarchy creation for multichannel containers
+  + Export: Per-container error isolation with detailed reporting
+  + Export: Loop interval auto-mode UI with container triggerRate support
+  + Export: Zero-crossing loop processing for seamless loops
+  + Export: Multi-channel preserve loop timestamp synchronization
+
+  ## Bug Fixes
+  * Fix: Suppress Generation view/state side effects during export
+  * Fix: Multichannel export code review - refactor distribution logic
+  * Fix: All Tracks mode now respects container interval setting
+  * Fix: Multi-channel preserve loop sync with proper overlap handling
+  * Fix: Export triggerRate inheritance for overrideParent=false containers
+
   # Version 0.16.1-beta - Export Region Creation
 
   ## New Features
@@ -85,7 +104,7 @@ local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeCo
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.16.1-beta",          -- Script version (sync with @version header)
+    version = "0.17.6-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
