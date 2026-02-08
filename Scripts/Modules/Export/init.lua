@@ -34,7 +34,7 @@ function Export.initModule(g)
 
     -- Wire dependencies
     Export_Engine.setDependencies(Export_Settings, Export_Placement, Export_Loop)
-    Export_Placement.setDependencies(Export_Settings)
+    Export_Placement.setDependencies(Export_Settings, Export_Loop)
     Export_Loop.setDependencies(Export_Settings)
     Export_UI.setDependencies(Export_Settings, Export_Engine)
 end

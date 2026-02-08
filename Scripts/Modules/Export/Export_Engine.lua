@@ -1,5 +1,5 @@
 --[[
-@version 1.16
+@version 1.17
 @noindex
 DM Ambiance Creator - Export Engine Module
 Handles export orchestration, region creation, and export execution.
@@ -24,6 +24,10 @@ v1.15: Code review fixes - Log warning when ValidatePtr fails, log all warnings 
        remove redundant success check condition.
 v1.16 (2026-02-07): Story 5.3 - Capture effectiveInterval from placeContainerItems() and pass to Loop.processLoop()
        for consistent overlap after split/swap in seamless loops.
+v1.17 (2026-02-08): Story 5.6 Code Review v2 R2 - Skip processLoop() when multi-channel sync applied
+       Captures syncApplied flag from placeContainerItems() 4th return value.
+       When multi-channel preserve loop sync has already trimmed items to bounds,
+       processLoop() would do a destructive second split/swap, inflating the region.
 --]]
 
 local M = {}
@@ -144,7 +148,8 @@ local function processContainerExport(containerInfo, params, currentExportPositi
 
     -- Place items on tracks using Placement module
     -- Story 5.3: Capture effectiveInterval for loop processing
-    local placedItems, endPosition, effectiveInterval = Placement.placeContainerItems(
+    -- R2: Capture syncApplied flag to skip processLoop when multi-channel sync was applied
+    local placedItems, endPosition, effectiveInterval, syncApplied = Placement.placeContainerItems(
         pool,
         targetTracks,
         trackStructure,
@@ -162,7 +167,8 @@ local function processContainerExport(containerInfo, params, currentExportPositi
         table.insert(warnings, "Loop mode enabled but Export_Loop module not loaded. Loop processing skipped.")
     end
 
-    if isLoopMode and Loop and #placedItems > 1 then
+    -- R2: Skip processLoop when multi-channel sync was applied (sync already handles trim-to-bounds)
+    if isLoopMode and Loop and #placedItems > 1 and not syncApplied then
         -- Code Review M1: Pass targetDuration for AC#8 validation
         -- Story 5.3: Pass effectiveInterval for consistent overlap in split/swap
         local targetDuration = params.loopDuration or 30

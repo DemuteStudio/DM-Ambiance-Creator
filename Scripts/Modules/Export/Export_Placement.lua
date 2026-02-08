@@ -1,5 +1,5 @@
 --[[
-@version 1.13
+@version 1.18
 @noindex
 DM Ambiance Creator - Export Placement Module
 Handles track resolution, item placement helpers, and export track management.
@@ -28,11 +28,57 @@ v1.12: Story 5.2 - Multichannel export mode: Flatten restricts to first child tr
        Preserve distributes via Round-Robin/Random/All Tracks matching Generation engine.
 v1.13 (2026-02-07): Story 5.3 - placeContainerItems() now returns effectiveInterval as third return value.
        Enables Export_Loop to maintain consistent overlap after split/swap for seamless loops.
+v1.14 (2026-02-07): Story 5.6 - Fix Multi-Channel Preserve Loop - Synchronize Track Timestamps
+       - Added syncMultiChannelLoopTracks() to align start/end timestamps across all tracks
+       - Overfill phase: fills tracks to 110% (or based on abs(effectiveInterval)) for repositioning
+       - Timestamp detection: finds earliest start and latest end across all tracks
+       - Item shifting: aligns all tracks to synchronized start position
+       - Split & swap: uses zero-crossing from Story 3.2 to split excess items and move to beginning
+       - Integration: auto-detects multi-channel preserve loop mode and applies sync
+       - Ensures seamless loop export for all channels in surround configurations
+v1.15 (2026-02-07): Story 5.6 CODE REVIEW FIXES - Critical bugs in sync algorithm
+       - CRITICAL FIX #1: Added track extension logic for tracks ending before targetEnd
+         Previously only split tracks that exceeded targetEnd, leaving short tracks misaligned
+         Now duplicates items from track beginning to fill gap when track ends early
+       - CRITICAL FIX #2: Improved overfill calculation based on max item length in pool
+         Previously used fixed 5-10% overfill, insufficient for variable item lengths
+         Now calculates overfill as max(10%, maxItemLength/targetDuration) to guarantee all tracks overshoot
+       - HIGH FIX #3: Removed early exit for single-item tracks (#trackItems < 2)
+         Now handles single-item tracks correctly with shift and extension/split logic
+       - MEDIUM FIX: Added comprehensive debug logging (enabled via globals.debugExport)
+         Logs overfill calculation, sync bounds detection, per-track operations for troubleshooting
+       - Fixes misalignment bug where multi-channel tracks don't start/end at same timestamps
+v1.16 (2026-02-08): Story 5.6 CODE REVIEW v2 FIXES - Philosophy change: trim replaces split/swap
+       - R1 CRITICAL: Fixed split/wrap positioning in syncMultiChannelLoopTracks
+         Old splitAndSwap placed rightPart at (firstItemPos - rightPartLen - interval) → different starts
+         Fix: split at zero-crossing near targetEnd, move rightPart to EXACTLY targetStart
+         All tracks start at same position AND loop seamlessly (split item wraps at zero-crossing)
+       - R2 CRITICAL: placeContainerItems() now returns 4th value (syncApplied flag)
+         Allows Export_Engine to skip processLoop() when multi-channel sync already applied
+       - R3 CRITICAL: Fixed extension phase self-referencing trackItems
+         Captured originalTrackItemCount before extension loop to prevent infinite growth of wrap condition
+       - R5 MEDIUM: Fixed trackEnd calculation after extension phase
+         Now uses actual last item end position instead of next placement position (currentExtendPos)
+       - Deleted items cleaned up from placedItems array before return
+v1.17 (2026-02-08): Story 5.6 BUG FIX - Export_Loop dependency was never wired
+       - ROOT CAUSE: globals.Export_Loop was nil because init.lua never passed Export_Loop
+         to Export_Placement.setDependencies(). The split/wrap code always fell to trim fallback.
+       - FIX: Added Export_Loop as module-level dependency via setDependencies(settings, loop)
+       - Updated init.lua to pass Export_Loop: setDependencies(Export_Settings, Export_Loop)
+       - syncMultiChannelLoopTracks() now uses module-level Loop variable instead of globals.Export_Loop
+v1.18 (2026-02-08): Story 5.6 FIX - Trim first items after rightPart wrap
+       - PROBLEM: rightPart placed at targetStart overlapped fully with existing first items
+         Standard splitAndSwap places rightPart BEFORE firstItem (at firstItemPos - rightPartLen - interval)
+         but multi-channel sync places at targetStart (same position as firstItem) → full superposition
+       - FIX: After wrapping rightPart(s), trim existing first item from the left so that
+         overlap matches effectiveInterval. Formula: requiredFirstItemStart = targetStart + rightPartLen + effectiveInterval
+       - Handles edge case: if rightPartLen + effectiveInterval >= firstItem.length, delete item entirely
 --]]
 
 local M = {}
 local globals = {}
 local Settings = nil
+local Loop = nil
 
 function M.initModule(g)
     if not g then
@@ -41,8 +87,9 @@ function M.initModule(g)
     globals = g
 end
 
-function M.setDependencies(settings)
+function M.setDependencies(settings, loop)
     Settings = settings
+    Loop = loop
 end
 
 -- Helper: Make item key for waveformAreas lookup
@@ -536,9 +583,11 @@ end
 -- Place items in All Tracks mode (distributionMode == 2)
 -- Each track gets independent sequence from shuffled pool
 -- Code Review H1: Extracted to reduce placeContainerItems complexity
+-- Story 5.6: Added optional overfillDuration parameter for multi-channel sync
+-- @param overfillDuration number|nil: Optional overfill duration (uses targetDuration if nil)
 -- @return table: placedItems array
 -- @return number: Final position (furthest across all tracks)
-local function placeItemsAllTracksMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, isLoopMode, targetDuration, placedItems)
+local function placeItemsAllTracksMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, isLoopMode, targetDuration, placedItems, overfillDuration)
     local Constants = globals.Constants
     local EXPORT = Constants and Constants.EXPORT or {}
     local furthestPos = startPos
@@ -556,17 +605,19 @@ local function placeItemsAllTracksMode(pool, effectiveTargetTracks, effectiveTra
         M.shuffleArray(trackPool)
 
         if isLoopMode then
-            -- Loop mode: cycle through shuffled pool until targetDuration
+            -- Loop mode: cycle through shuffled pool until fillDuration
+            -- Story 5.6: Use overfill duration if provided (for multi-channel sync)
+            local fillDuration = overfillDuration or targetDuration
             local poolIndex = 1
             local itemsPlaced = 0
             local maxIter = EXPORT.LOOP_MAX_ITERATIONS or 10000
 
-            while (trackPos - startPos) < targetDuration and itemsPlaced < maxIter do
+            while (trackPos - startPos) < fillDuration and itemsPlaced < maxIter do
                 local poolEntry = trackPool[poolIndex]
                 if not poolEntry then break end
 
                 for instance = 1, params.instanceAmount do
-                    if (trackPos - startPos) >= targetDuration then break end
+                    if (trackPos - startPos) >= fillDuration then break end
                     trackPos = placeSinglePoolEntry(poolEntry, trackTracks, trackIndices, trackPos, params, genParams, effectiveTrackStructure, effectiveInterval, placedItems)
                     itemsPlaced = itemsPlaced + 1
                 end
@@ -597,9 +648,11 @@ end
 -- Place items in Loop mode (non-All Tracks)
 -- Cycles through pool until targetDuration reached
 -- Code Review H1: Extracted to reduce placeContainerItems complexity
+-- Story 5.6: Added optional overfillDuration parameter for multi-channel sync
+-- @param overfillDuration number|nil: Optional overfill duration (uses targetDuration if nil)
 -- @return table: placedItems array
 -- @return number: Final position
-local function placeItemsLoopMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, targetDuration, preserveDistribution, distributionMode, distributionCounter, placedItems)
+local function placeItemsLoopMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, targetDuration, preserveDistribution, distributionMode, distributionCounter, placedItems, overfillDuration)
     local Constants = globals.Constants
     local EXPORT = Constants and Constants.EXPORT or {}
     local currentPos = startPos
@@ -607,14 +660,17 @@ local function placeItemsLoopMode(pool, effectiveTargetTracks, effectiveTrackStr
     local itemsPlaced = 0
     local maxIterations = EXPORT.LOOP_MAX_ITERATIONS or 10000
 
-    while (currentPos - startPos) < targetDuration and itemsPlaced < maxIterations do
+    -- Story 5.6: Use overfill duration if provided (for multi-channel sync), otherwise use target duration
+    local fillDuration = overfillDuration or targetDuration
+
+    while (currentPos - startPos) < fillDuration and itemsPlaced < maxIterations do
         local poolEntry = pool[poolIndex]
         if not poolEntry then break end
 
         -- Place for each instance requested
         -- Code Review M3: Advance distribution counter PER INSTANCE (not per pool entry)
         for instance = 1, params.instanceAmount do
-            if (currentPos - startPos) >= targetDuration then break end
+            if (currentPos - startPos) >= fillDuration then break end
 
             -- Resolve distribution target for Preserve Round-Robin/Random
             local distTracks, distIndices
@@ -666,6 +722,290 @@ local function placeItemsStandardMode(pool, effectiveTargetTracks, effectiveTrac
     end
 
     return placedItems, currentPos
+end
+
+-- Synchronize multi-channel loop track timestamps (Story 5.6)
+-- Ensures all tracks start and end at the same timestamps for seamless loop export
+-- @param placedItems table: Array of PlacedItem records {item, track, position, length, trackIdx}
+-- @param effectiveTargetTracks table: Array of tracks that were filled
+-- @param targetDuration number: Original target duration (before overfill)
+-- @param effectiveInterval number: Interval between items (negative for overlap)
+-- @return table: Updated placedItems with new items from split/swap
+function M.syncMultiChannelLoopTracks(placedItems, effectiveTargetTracks, targetDuration, effectiveInterval)
+    -- Code Review Fix (Medium #2): Add debug logging
+    local debugSync = globals.debugExport or false
+    if debugSync then
+        reaper.ShowConsoleMsg("[Export Sync] ========== Multi-Channel Loop Sync ==========\n")
+        reaper.ShowConsoleMsg(string.format("  Target Duration: %.2fs\n", targetDuration))
+        reaper.ShowConsoleMsg(string.format("  Effective Interval: %.2fs\n", effectiveInterval))
+        reaper.ShowConsoleMsg(string.format("  Total Tracks: %d\n", #effectiveTargetTracks))
+        reaper.ShowConsoleMsg(string.format("  Total Items (pre-sync): %d\n", #placedItems))
+    end
+
+    -- Task 2: Detect timestamp bounds
+    local earliestStart = math.huge
+    local latestEnd = -math.huge
+
+    -- Group items by track for independent processing
+    local itemsByTrack = {}
+    for _, placed in ipairs(placedItems) do
+        local trackIdx = placed.trackIdx
+        if not itemsByTrack[trackIdx] then
+            itemsByTrack[trackIdx] = {}
+        end
+        table.insert(itemsByTrack[trackIdx], placed)
+    end
+
+    -- Find earliest start and latest end across all tracks
+    for trackIdx, trackItems in pairs(itemsByTrack) do
+        if #trackItems > 0 then
+            -- Sort by position to find first and last
+            table.sort(trackItems, function(a, b) return a.position < b.position end)
+            local firstItem = trackItems[1]
+            local lastItem = trackItems[#trackItems]
+
+            earliestStart = math.min(earliestStart, firstItem.position)
+            latestEnd = math.max(latestEnd, lastItem.position + lastItem.length)
+        end
+    end
+
+    -- Define target bounds
+    local targetStart = earliestStart
+    local targetEnd = targetStart + targetDuration
+
+    if debugSync then
+        reaper.ShowConsoleMsg(string.format("  Detected Bounds: [%.2fs → %.2fs] (span: %.2fs)\n",
+            earliestStart, latestEnd, latestEnd - earliestStart))
+        reaper.ShowConsoleMsg(string.format("  Target Bounds: [%.2fs → %.2fs]\n",
+            targetStart, targetEnd))
+    end
+
+    -- Task 3 & 4: Synchronize each track (shift + split/swap + extend)
+    for trackIdx, trackItems in pairs(itemsByTrack) do
+        -- Code Review Fix (High #3): Only skip empty tracks, handle single-item tracks
+        if #trackItems == 0 then
+            goto nextTrack
+        end
+
+        -- Sort items by position
+        table.sort(trackItems, function(a, b) return a.position < b.position end)
+
+        -- Task 3: Calculate shift amount to align all tracks to targetStart
+        local currentStart = trackItems[1].position
+        local shiftAmount = targetStart - currentStart
+
+        -- Apply shift to all items on this track
+        if math.abs(shiftAmount) > 0.001 then  -- Only shift if meaningful
+            for _, placed in ipairs(trackItems) do
+                local newPos = placed.position + shiftAmount
+                reaper.SetMediaItemInfo_Value(placed.item, "D_POSITION", newPos)
+                placed.position = newPos  -- Update record
+            end
+        end
+
+        -- Code Review Fix (Critical #1): Check if track ends before targetEnd and extend if needed
+        local lastItem = trackItems[#trackItems]
+        local trackEnd = lastItem.position + lastItem.length
+
+        if trackEnd < targetEnd - 0.001 then
+            -- Track is SHORT - need to extend it by duplicating items from the beginning
+            local gap = targetEnd - trackEnd
+            local currentExtendPos = trackEnd + effectiveInterval  -- Start after last item with proper interval
+            local extendPoolIdx = 1
+            local maxExtendIter = 1000  -- Safety limit to prevent infinite loop
+
+            local originalTrackItemCount = #trackItems  -- R3 fix: capture count before extension
+            while currentExtendPos < targetEnd and extendPoolIdx <= originalTrackItemCount and maxExtendIter > 0 do
+                local sourceItem = trackItems[extendPoolIdx]
+                maxExtendIter = maxExtendIter - 1
+
+                -- Calculate how much of this item we need
+                local remainingGap = targetEnd - currentExtendPos
+                local sourceLength = sourceItem.length
+                local useLength = math.min(sourceLength, remainingGap + math.abs(effectiveInterval))
+
+                -- Duplicate the media item
+                local newItem = reaper.AddMediaItemToTrack(sourceItem.track)
+                reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", currentExtendPos)
+                reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", useLength)
+
+                -- Copy properties from source item
+                local sourceTake = reaper.GetActiveTake(sourceItem.item)
+                if sourceTake then
+                    local newTake = reaper.AddTakeToMediaItem(newItem)
+                    local sourceSource = reaper.GetMediaItemTake_Source(sourceTake)
+                    if sourceSource then
+                        reaper.SetMediaItemTake_Source(newTake, sourceSource)
+
+                        -- Copy take properties
+                        local startOffset = reaper.GetMediaItemTakeInfo_Value(sourceTake, "D_STARTOFFS")
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_STARTOFFS", startOffset)
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PITCH",
+                            reaper.GetMediaItemTakeInfo_Value(sourceTake, "D_PITCH"))
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_VOL",
+                            reaper.GetMediaItemTakeInfo_Value(sourceTake, "D_VOL"))
+                        reaper.SetMediaItemTakeInfo_Value(newTake, "D_PAN",
+                            reaper.GetMediaItemTakeInfo_Value(sourceTake, "D_PAN"))
+                    end
+                end
+
+                -- Add to placedItems for region bounds
+                table.insert(placedItems, {
+                    item = newItem,
+                    track = sourceItem.track,
+                    position = currentExtendPos,
+                    length = useLength,
+                    trackIdx = trackIdx
+                })
+
+                -- Add to trackItems for potential split/swap processing
+                table.insert(trackItems, {
+                    item = newItem,
+                    track = sourceItem.track,
+                    position = currentExtendPos,
+                    length = useLength,
+                    trackIdx = trackIdx
+                })
+
+                -- Advance position
+                currentExtendPos = currentExtendPos + useLength + effectiveInterval
+                extendPoolIdx = extendPoolIdx + 1
+
+                -- Wrap around to beginning of pool if we run out
+                if extendPoolIdx > originalTrackItemCount then
+                    extendPoolIdx = 1
+                end
+
+                -- If we've filled the gap and possibly exceeded, prepare for split
+                if currentExtendPos >= targetEnd then
+                    break
+                end
+            end
+
+            -- Update trackEnd for next phase (R5 fix: use actual last item end, not next position)
+            trackEnd = trackItems[#trackItems].position + trackItems[#trackItems].length
+        end
+
+        -- Task 4: Split at targetEnd and wrap excess to targetStart for seamless loop
+        -- Place rightPart at EXACTLY targetStart so all tracks start at the same position.
+        -- Then trim existing first items to maintain correct overlap with the wrapped rightPart.
+        local trimCount = 0
+        local maxRightPartLen = 0  -- Track longest rightPart for first-item trimming
+        for _, placed in ipairs(trackItems) do
+            local itemEnd = placed.position + placed.length
+
+            if placed.position >= targetEnd - 0.001 then
+                -- Item starts at or past targetEnd: delete entirely
+                reaper.DeleteTrackMediaItem(placed.track, placed.item)
+                placed.deleted = true
+                trimCount = trimCount + 1
+            elseif itemEnd > targetEnd + 0.001 then
+                -- Item crosses targetEnd: split at zero-crossing, wrap right part to targetStart
+                if Loop and Loop.findNearestZeroCrossing then
+                    local zeroCrossingTime = Loop.findNearestZeroCrossing(placed.item, targetEnd)
+                    local rightPart = reaper.SplitMediaItem(placed.item, zeroCrossingTime)
+                    if rightPart then
+                        reaper.SetMediaItemPosition(rightPart, targetStart, false)
+
+                        local rightPartLen = reaper.GetMediaItemInfo_Value(rightPart, "D_LENGTH")
+                        table.insert(placedItems, {
+                            item = rightPart,
+                            track = placed.track,
+                            position = targetStart,
+                            length = rightPartLen,
+                            trackIdx = trackIdx
+                        })
+                        if rightPartLen > maxRightPartLen then
+                            maxRightPartLen = rightPartLen
+                        end
+                    end
+                else
+                    -- Fallback: trim length directly (no loop wrap, but at least aligned)
+                    reaper.SetMediaItemInfo_Value(placed.item, "D_LENGTH", targetEnd - placed.position)
+                end
+                -- Update left part record with actual length after split
+                placed.length = reaper.GetMediaItemInfo_Value(placed.item, "D_LENGTH")
+                trimCount = trimCount + 1
+            end
+        end
+
+        -- Task 4b: Trim existing first items to account for wrapped rightPart
+        -- In standard splitAndSwap: rightPartPos = firstItemPos - rightPartLen - effectiveInterval
+        -- In multi-channel sync: rightPartPos = targetStart (fixed for track alignment)
+        -- Therefore first item must start at: targetStart + rightPartLen + effectiveInterval
+        -- to maintain correct overlap (abs(effectiveInterval)) with the wrapped rightPart.
+        if maxRightPartLen > 0 then
+            local requiredFirstItemStart = targetStart + maxRightPartLen + effectiveInterval
+
+            if debugSync then
+                reaper.ShowConsoleMsg(string.format("  Track %d: rightPartLen=%.2fs, requiredFirstItemStart=%.2fs (trim=%.2fs)\n",
+                    trackIdx, maxRightPartLen, requiredFirstItemStart, maxRightPartLen + effectiveInterval))
+            end
+
+            if requiredFirstItemStart > targetStart + 0.001 then
+                for _, placed in ipairs(trackItems) do
+                    if not placed.deleted then
+                        local itemEnd = placed.position + placed.length
+
+                        if itemEnd <= requiredFirstItemStart + 0.001 then
+                            -- Item ends before required start: completely covered by rightPart, delete
+                            reaper.DeleteTrackMediaItem(placed.track, placed.item)
+                            placed.deleted = true
+                        elseif placed.position < requiredFirstItemStart - 0.001 then
+                            -- Item starts before required start: trim from left
+                            local trimFromLeft = requiredFirstItemStart - placed.position
+                            local take = reaper.GetActiveTake(placed.item)
+                            if take then
+                                local currentOffset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+                                reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", currentOffset + trimFromLeft)
+                            end
+                            reaper.SetMediaItemInfo_Value(placed.item, "D_POSITION", requiredFirstItemStart)
+                            reaper.SetMediaItemInfo_Value(placed.item, "D_LENGTH", placed.length - trimFromLeft)
+                            placed.position = requiredFirstItemStart
+                            placed.length = placed.length - trimFromLeft
+                            break  -- Remaining items are properly spaced
+                        else
+                            break  -- Item already past required start, no trimming needed
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Debug logging for each track
+        if debugSync then
+            -- Count remaining (non-deleted) items on this track
+            local remainingCount = 0
+            local finalTrackEnd = targetStart
+            for _, placed in ipairs(trackItems) do
+                if not placed.deleted then
+                    remainingCount = remainingCount + 1
+                    local itemEnd = placed.position + placed.length
+                    if itemEnd > finalTrackEnd then finalTrackEnd = itemEnd end
+                end
+            end
+            reaper.ShowConsoleMsg(string.format("  Track %d: %d items (-%d trimmed), shift=%.3fs, extended=%s, finalEnd=%.2fs\n",
+                trackIdx, remainingCount, trimCount, shiftAmount,
+                (trackEnd ~= lastItem.position + lastItem.length) and "YES" or "NO",
+                finalTrackEnd))
+        end
+
+        ::nextTrack::
+    end
+
+    -- R1: Remove deleted items from placedItems (trim-to-bounds cleanup)
+    local cleanedItems = {}
+    for _, placed in ipairs(placedItems) do
+        if not placed.deleted then
+            table.insert(cleanedItems, placed)
+        end
+    end
+
+    if debugSync then
+        reaper.ShowConsoleMsg(string.format("[Export Sync] ========== Sync Complete (Total Items: %d) ==========\n", #cleanedItems))
+    end
+
+    return cleanedItems
 end
 
 -- Place container items on target tracks with correct multichannel channel distribution
@@ -779,17 +1119,70 @@ function M.placeContainerItems(pool, targetTracks, trackStructure, params, conta
         end
     end
 
-    -- Route to appropriate placement strategy
+    -- Story 5.6: Detect multi-channel preserve loop mode and calculate overfill
+    local isMultiChannelPreserveLoop = isPreserveMode
+        and #effectiveTargetTracks > 1
+        and isLoopMode
+    local overfillDuration = nil
+
+    if isMultiChannelPreserveLoop then
+        -- Code Review Fix (Critical #2): Calculate overfill based on max item length
+        -- This ensures ALL tracks overshoot targetEnd, preventing short track misalignment
+
+        -- Calculate maximum item length in pool
+        local maxItemLength = 0
+        for _, poolEntry in ipairs(pool) do
+            local itemLen = poolEntry.area.endPos - poolEntry.area.startPos
+            if itemLen > maxItemLength then
+                maxItemLength = itemLen
+            end
+        end
+
+        -- Task 1: Calculate overfill factor based on interval AND max item length
+        -- Formula: overfillFactor = 1.0 + max(interval_factor, item_length_factor)
+        -- This guarantees all tracks overshoot by at least the shortest item in the pool
+        local overfillFactor = 1.0
+        local intervalFactor = math.abs(effectiveInterval) / targetDuration
+        local itemLengthFactor = maxItemLength / targetDuration
+
+        if effectiveInterval < 0 then
+            -- Overlap mode: use larger of interval or item length, minimum 5%
+            overfillFactor = 1.0 + math.max(0.05, intervalFactor, itemLengthFactor)
+        else
+            -- Non-overlap mode: use item length factor, minimum 10%
+            overfillFactor = 1.0 + math.max(0.10, itemLengthFactor)
+        end
+
+        overfillDuration = targetDuration * overfillFactor
+
+        -- Code Review Fix (Medium #2): Debug logging for overfill calculation
+        if globals.debugExport then
+            reaper.ShowConsoleMsg("[Export Overfill] Multi-Channel Preserve Loop Detected\n")
+            reaper.ShowConsoleMsg(string.format("  Max Item Length: %.2fs\n", maxItemLength))
+            reaper.ShowConsoleMsg(string.format("  Interval Factor: %.2f%%\n", intervalFactor * 100))
+            reaper.ShowConsoleMsg(string.format("  Item Length Factor: %.2f%%\n", itemLengthFactor * 100))
+            reaper.ShowConsoleMsg(string.format("  Overfill Factor: %.2f%% (%.2fx)\n", (overfillFactor - 1.0) * 100, overfillFactor))
+            reaper.ShowConsoleMsg(string.format("  Target Duration: %.2fs → Overfill Duration: %.2fs\n", targetDuration, overfillDuration))
+        end
+    end
+
+    -- Route to appropriate placement strategy (with overfill support)
     local finalPos
     if isAllTracksMode then
-        placedItems, finalPos = placeItemsAllTracksMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, isLoopMode, targetDuration, placedItems)
+        placedItems, finalPos = placeItemsAllTracksMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, isLoopMode, targetDuration, placedItems, overfillDuration)
     elseif isLoopMode then
-        placedItems, finalPos = placeItemsLoopMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, targetDuration, preserveDistribution, distributionMode, distributionCounter, placedItems)
+        placedItems, finalPos = placeItemsLoopMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, targetDuration, preserveDistribution, distributionMode, distributionCounter, placedItems, overfillDuration)
     else
         placedItems, finalPos = placeItemsStandardMode(pool, effectiveTargetTracks, effectiveTrackStructure, startPos, params, genParams, effectiveInterval, preserveDistribution, distributionMode, distributionCounter, placedItems)
     end
 
-    return placedItems, finalPos, effectiveInterval
+    -- Story 5.6: Synchronize multi-channel loop tracks (Tasks 2-4)
+    if isMultiChannelPreserveLoop and #placedItems > 0 then
+        placedItems = M.syncMultiChannelLoopTracks(placedItems, effectiveTargetTracks, targetDuration, effectiveInterval)
+    end
+
+    -- R2: Return sync flag so Export_Engine can skip processLoop() when sync was applied
+    return placedItems, finalPos, effectiveInterval, isMultiChannelPreserveLoop
 end
 
 return M

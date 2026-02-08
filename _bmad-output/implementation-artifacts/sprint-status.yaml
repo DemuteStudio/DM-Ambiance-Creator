@@ -47,13 +47,13 @@ development_status:
   5-3-loop-overlap-after-split-swap: done  # Code review complete (9 issues fixed)
   5-4-all-tracks-respect-container-interval: review
   5-5-roundrobin-independent-track-positioning: ready-for-dev
-  5-6-multichannel-preserve-loop-sync: ready-for-dev  # CRITICAL: Track timestamp sync
+  5-6-multichannel-preserve-loop-sync: review  # Code review v2 fixes applied: trim-to-bounds, skip processLoop, extension fix
 
 # Sprint Summary
 stories_total: 17
 stories_done: 14
 stories_in_progress: 0
-stories_ready: 3
+stories_ready: 1
 stories_backlog: 0
 
 # Notes
