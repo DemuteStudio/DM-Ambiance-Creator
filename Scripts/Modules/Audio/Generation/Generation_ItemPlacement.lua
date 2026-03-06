@@ -21,6 +21,27 @@ function Generation_ItemPlacement.setDependencies(trackMgmt, multiChannel)
     Generation_MultiChannel = multiChannel
 end
 
+-- Clear only items that overlap with the current time selection from a track
+-- Used when keepExistingTracks is true to preserve content outside the selection
+local function clearItemsInTimeSelection(track)
+    local itemsToDelete = {}
+    local itemCount = reaper.CountTrackMediaItems(track)
+    for i = 0, itemCount - 1 do
+        local item = reaper.GetTrackMediaItem(track, i)
+        local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+        local itemEnd = pos + len
+        -- Delete items that overlap with the time selection
+        if pos < globals.endTime and itemEnd > globals.startTime then
+            table.insert(itemsToDelete, item)
+        end
+    end
+    -- Delete in reverse order to avoid index issues
+    for i = #itemsToDelete, 1, -1 do
+        reaper.DeleteTrackMediaItem(track, itemsToDelete[i])
+    end
+end
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- CORE ITEM PLACEMENT FUNCTION
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -171,12 +192,23 @@ function Generation_ItemPlacement.placeItemsForContainer(group, container, conta
         channelTracks = Generation_TrackManagement.createMultiChannelTracks(containerGroup, container, isLastInGroup)
     else
         -- Structure is correct, just clear items
-        if hasChildTracks then
-            Generation_TrackManagement.clearChannelTracks(existingTracks)
+        if globals.keepExistingTracks then
+            -- Only clear items within the current time selection, preserving content outside
+            if hasChildTracks then
+                for _, track in ipairs(existingTracks) do
+                    clearItemsInTimeSelection(track)
+                end
+            else
+                clearItemsInTimeSelection(containerGroup)
+            end
         else
-            while reaper.CountTrackMediaItems(containerGroup) > 0 do
-                local item = reaper.GetTrackMediaItem(containerGroup, 0)
-                reaper.DeleteTrackMediaItem(containerGroup, item)
+            if hasChildTracks then
+                Generation_TrackManagement.clearChannelTracks(existingTracks)
+            else
+                while reaper.CountTrackMediaItems(containerGroup) > 0 do
+                    local item = reaper.GetTrackMediaItem(containerGroup, 0)
+                    reaper.DeleteTrackMediaItem(containerGroup, item)
+                end
             end
         end
         channelTracks = existingTracks

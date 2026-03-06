@@ -52,6 +52,31 @@ local function collectAllGroups(items, groups)
     end
 end
 
+-- Find the path (array of indices) to a group in the items hierarchy
+-- @param items table: Array of items to search
+-- @param targetGroup table: The group object to find
+-- @param currentPath table: Current path being built (for recursion)
+-- @return table|nil: Path array (indices) to the group, or nil if not found
+local function findGroupPath(items, targetGroup, currentPath)
+    for i, item in ipairs(items) do
+        local newPath = {}
+        for _, v in ipairs(currentPath) do table.insert(newPath, v) end
+        table.insert(newPath, i)
+
+        if item == targetGroup then
+            return newPath
+        end
+
+        if item.type == "folder" and item.children then
+            local path = findGroupPath(item.children, targetGroup, newPath)
+            if path then
+                return path
+            end
+        end
+    end
+    return nil
+end
+
 -- Find the index of the last child track within a folder
 -- Only searches up to maxIdx (exclusive) to avoid looking at newly generated tracks
 local function findFolderLastChildIdx(parentIdx, maxIdx)
@@ -376,16 +401,15 @@ function Generation_Core.generateGroups()
         -- Use regeneration logic for existing tracks (keep existing)
         -- Use new items structure or fall back to legacy groups
         if itemsSource then
-            -- TODO: Implement true regeneration for new items structure with folders
-            -- For now, silently fall back to recreate mode (delete and regenerate)
-            -- NOTE: We don't modify globals.keepExistingTracks to preserve user's checkbox state
-            Generation_Core.deleteExistingGroups()
-            firstNewTrackIdx = reaper.GetNumTracks()
-            local generateFolderTracks = globals.Settings and globals.Settings.getSetting("generateFolderTracks")
-            if generateFolderTracks == nil then
-                generateFolderTracks = true
+            -- Regenerate each group in place, preserving tracks and content outside time selection
+            local allGroups = {}
+            collectAllGroups(itemsSource, allGroups)
+            for _, group in ipairs(allGroups) do
+                local groupPath = findGroupPath(itemsSource, group, {})
+                if groupPath then
+                    Generation_Core.generateSingleGroupByPath(groupPath)
+                end
             end
-            processItems(itemsSource, generateFolderTracks, 0, xfadeshape)
         elseif groupsSource then
             -- Legacy regeneration for old globals.groups
             for i, group in ipairs(groupsSource) do
@@ -1078,26 +1102,14 @@ function Generation_Core.generateSingleContainer(groupIndex, containerIndex)
                 end
             end
         else
-            -- Structure matches, just clear items appropriately
-            if globals.keepExistingTracks then
-                -- Check if container is supposed to be multi-channel
-                local isMultiChannel = container.channelMode and container.channelMode > 0
-
-                if isMultiChannel then
-                    -- Multi-channel: clear items from channel tracks
-                    local channelTracks = Generation_TrackManagement.getExistingChannelTracks(containerGroup)
-                    Generation_TrackManagement.clearChannelTracks(channelTracks)
-                else
-                    -- Default mode: clear items from container itself
-                    while reaper.CountTrackMediaItems(containerGroup) > 0 do
-                        local item = reaper.GetTrackMediaItem(containerGroup, 0)
-                        reaper.DeleteTrackMediaItem(containerGroup, item)
-                    end
-                end
-            else
+            -- Structure matches - placeItemsForContainer will handle clearing
+            -- with proper time selection awareness when keepExistingTracks is true
+            if not globals.keepExistingTracks then
                 -- Delete all items from container and its children
                 Utils.clearGroupItems(containerGroup)
             end
+            -- When keepExistingTracks is true, clearing is handled by placeItemsForContainer
+            -- which only clears items within the current time selection
         end
 
         -- Apply container track volume
@@ -1274,23 +1286,9 @@ function Generation_Core.generateSingleContainerByPath(groupPath, containerIndex
                 end
             end
         else
-            -- Structure matches, just clear items appropriately
-            if globals.keepExistingTracks then
-                -- Check if container is supposed to be multi-channel
-                local isMultiChannel = container.channelMode and container.channelMode > 0
-
-                if isMultiChannel then
-                    -- Multi-channel: clear items from channel tracks
-                    local channelTracks = Generation_TrackManagement.getExistingChannelTracks(containerGroup)
-                    Generation_TrackManagement.clearChannelTracks(channelTracks)
-                else
-                    -- Default mode: clear items from container itself
-                    while reaper.CountTrackMediaItems(containerGroup) > 0 do
-                        local item = reaper.GetTrackMediaItem(containerGroup, 0)
-                        reaper.DeleteTrackMediaItem(containerGroup, item)
-                    end
-                end
-            end
+            -- Structure matches - placeItemsForContainer will handle clearing
+            -- with proper time selection awareness when keepExistingTracks is true
+            -- (no explicit clearing needed here, placeItemsForContainer handles it)
         end
 
         -- Apply container track volume

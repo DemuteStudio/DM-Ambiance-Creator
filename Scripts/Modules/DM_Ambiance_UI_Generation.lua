@@ -34,7 +34,7 @@ function UI_Generation.drawMainGenerationButton()
 end
 
 function UI_Generation.drawKeepExistingTracksButton()
-    local changed, newValue = globals.UndoWrappers.Checkbox(globals.ctx, "Keep existing tracks", globals.keepExistingTracks)
+    local changed, newValue = globals.UndoWrappers.Checkbox(globals.ctx, "Keep existing tracks and content", globals.keepExistingTracks)
     
     if changed then
         globals.keepExistingTracks = newValue
