@@ -514,6 +514,26 @@ end
 function RoutingValidator_UI.renderFooter(ctx, imgui)
     syncStateFromCore()
 
+    -- MCP Remote: handle programmatic modal actions
+    if globals._mcpRoutingAction then
+        local action = globals._mcpRoutingAction
+        globals._mcpRoutingAction = nil
+        if action == "autofix" and fixSuggestions and #fixSuggestions > 0 then
+            Fixes.autoFixRouting(globals.pendingIssuesList, fixSuggestions)
+            imgui.CloseCurrentPopup(ctx)
+            return
+        elseif action == "close" then
+            imgui.CloseCurrentPopup(ctx)
+            return
+        elseif action == "revalidate" then
+            Core.clearCache()
+            local newIssues = globals.RoutingValidator.validateProjectRouting()
+            imgui.CloseCurrentPopup(ctx)
+            RoutingValidator_UI.showValidationModal(newIssues, fixSuggestions)
+            return
+        end
+    end
+
     imgui.Separator(ctx)
     imgui.Spacing(ctx)
 

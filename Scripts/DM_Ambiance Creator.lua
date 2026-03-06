@@ -102,6 +102,17 @@ local UI_NoisePreview = dofile(script_path .. "Modules/DM_Ambiance_UI_NoisePrevi
 local UI_Folder = dofile(script_path .. "Modules/DM_Ambiance_UI_Folder.lua")
 local UI_VolumeControls = dofile(script_path .. "Modules/DM_Ambiance_UI_VolumeControls.lua")
 
+-- MCP Remote execution support (optional - allows Claude Code to control this script)
+local MCPRemote
+do
+    local remotePath = reaper.GetResourcePath() .. "/Scripts/reaper-dev-mcp-remote.lua"
+    local f = io.open(remotePath, "r")
+    if f then
+        f:close()
+        MCPRemote = dofile(remotePath)
+    end
+end
+
 -- Global state shared across modules and UI
 local globals = {
     version = "0.17.6-beta",          -- Script version (sync with @version header)
@@ -187,6 +198,9 @@ local function loop()
     end
 
     UI.PopStyle()
+
+    -- Poll MCP Remote for incoming commands
+    if MCPRemote then MCPRemote.poll() end
 
     -- Continue the loop if the window is still open
     if open then
@@ -307,6 +321,14 @@ if select(2, reaper.get_action_context()) == debug.getinfo(1, 'S').source:sub(2)
     UI_NoisePreview.initModule(globals)
     UI_Folder.initModule(globals)
     UI_VolumeControls.initModule(globals)
+
+    -- Initialize MCP Remote execution (allows Claude Code to control this script)
+    if MCPRemote then
+        MCPRemote.init("ambiance-creator", _G, {
+            name = "DM Ambiance Creator",
+            description = "Soundscape generator - load presets, generate ambiances, manage groups/containers"
+        })
+    end
 
     -- Migrate old groups structure to new items structure (for old presets)
     -- Presets.lua may load data into globals.groups temporarily, which we migrate to globals.items
