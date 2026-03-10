@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.17.7-beta
+@version 0.17.8-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -14,6 +14,26 @@
     [nomain] Modules/Export/*.lua
     Icons/*.png
 @changelog
+  # Version 0.17.8-beta - Noise Mode Resolution & Fixes
+
+  ## New Features
+  + Noise: Decouple resolution from frequency — new Resolution slider (1-100 samples/sec)
+  + Noise: Add Placement Anchor option (Start→Start / End→Start) for overlap control
+  + Noise: Hide Resolution slider in Accumulation mode (resolution-independent)
+  + Noise: Normalize preview Y-axis so peaks reach top only at 100% density
+
+  ## Bug Fixes
+  * Fix: noiseAlgorithm not inherited from group to containers (preview/generation mismatch)
+  * Fix: Curve formula mismatch between preview and generation algorithm
+  * Fix: PROBABILITY density scaling with resolution (more items at higher resolution)
+  * Fix: Replace Perlin decision noise with deterministic hash for uniform distribution
+  * Fix: Preview average item length computed from actual items instead of hardcoded
+  * Fix: noiseFrequency fallback default matching Constants
+
+  ## Technical Changes
+  + Add migration logic for pre-refactor presets (frequency scaling)
+  + Remove /10.0 divisor from Noise module (compensated by adjusted default)
+
   # Version 0.17.7-beta - Keep Existing Tracks Fix & Generation Improvements
 
   ## New Features
@@ -129,7 +149,7 @@ end
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.17.7-beta",          -- Script version (sync with @version header)
+    version = "0.17.8-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
