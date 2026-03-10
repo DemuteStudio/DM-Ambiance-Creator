@@ -111,6 +111,8 @@ function Structures.createGroup(name)
         noiseLacunarity = Constants.DEFAULTS.NOISE_LACUNARITY,
         noiseDensity = Constants.DEFAULTS.NOISE_DENSITY,
         noiseThreshold = Constants.DEFAULTS.NOISE_THRESHOLD,
+        noiseResolution = Constants.DEFAULTS.NOISE_RESOLUTION,
+        noisePlacementAnchor = Constants.DEFAULTS.NOISE_PLACEMENT_ANCHOR,
         densityLinkMode = "link", -- "unlink", "link", "mirror"
         -- Euclidean Mode parameters
         euclideanMode = Constants.DEFAULTS.EUCLIDEAN_MODE,
@@ -211,6 +213,8 @@ function Structures.createContainer(name)
         noiseLacunarity = Constants.DEFAULTS.NOISE_LACUNARITY,
         noiseDensity = Constants.DEFAULTS.NOISE_DENSITY,
         noiseThreshold = Constants.DEFAULTS.NOISE_THRESHOLD,
+        noiseResolution = Constants.DEFAULTS.NOISE_RESOLUTION,
+        noisePlacementAnchor = Constants.DEFAULTS.NOISE_PLACEMENT_ANCHOR,
         densityLinkMode = "link", -- "unlink", "link", "mirror"
         -- Euclidean Mode parameters
         euclideanMode = Constants.DEFAULTS.EUCLIDEAN_MODE,
@@ -379,6 +383,7 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.fadeLinkMode = group.fadeLinkMode or "link"
 
     -- Inherit noise mode settings
+    effectiveParams.noiseAlgorithm = group.noiseAlgorithm
     effectiveParams.noiseSeed = group.noiseSeed
     effectiveParams.noiseFrequency = group.noiseFrequency
     effectiveParams.noiseAmplitude = group.noiseAmplitude
@@ -387,6 +392,8 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.noiseLacunarity = group.noiseLacunarity
     effectiveParams.noiseDensity = group.noiseDensity
     effectiveParams.noiseThreshold = group.noiseThreshold
+    effectiveParams.noiseResolution = group.noiseResolution
+    effectiveParams.noisePlacementAnchor = group.noisePlacementAnchor
     effectiveParams.densityLinkMode = group.densityLinkMode or "link"
 
     -- Inherit euclidean mode settings
