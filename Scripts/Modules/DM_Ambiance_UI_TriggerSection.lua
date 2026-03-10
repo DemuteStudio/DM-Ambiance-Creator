@@ -459,6 +459,7 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
             setChunkSilenceVarDirection = function(v) obj.chunkSilenceVarDirection = v end,
             -- Noise mode callbacks
             setNoiseSeed = function(v) obj.noiseSeed = v end,
+            setNoiseType = function(v) obj.noiseType = v end,
             setNoiseAlgorithm = function(v) obj.noiseAlgorithm = v end,
             setNoiseFrequency = function(v) obj.noiseFrequency = v end,
             setNoiseAmplitude = function(v) obj.noiseAmplitude = v end,

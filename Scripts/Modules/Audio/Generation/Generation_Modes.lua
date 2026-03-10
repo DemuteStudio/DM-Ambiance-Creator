@@ -281,6 +281,9 @@ function Generation_Modes.placeItemsNoiseMode(effectiveParams, track, channelTra
     end
     local avgItemLength = totalLength / math.max(1, totalCount)
 
+    -- Noise type for density curve shape (Perlin, Ridged, Worley, Sine)
+    local noiseType = effectiveParams.noiseType or 0
+
     -- Helper function to get placement probability at a specific time (defined outside loop for performance)
     local function getPlacementProbability(time)
         local noiseValue = globals.Noise.getValueAtTime(
@@ -291,7 +294,8 @@ function Generation_Modes.placeItemsNoiseMode(effectiveParams, track, channelTra
             effectiveParams.noiseOctaves,
             effectiveParams.noisePersistence,
             effectiveParams.noiseLacunarity,
-            effectiveParams.noiseSeed
+            effectiveParams.noiseSeed,
+            noiseType
         )
 
         -- Convert noise (0-1) to -1 to +1 range for variation

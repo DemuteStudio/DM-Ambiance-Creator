@@ -60,6 +60,14 @@ Constants.TRIGGER_MODES = {
     EUCLIDEAN = 5,                      -- Euclidean rhythm: mathematically optimal distribution
 }
 
+-- Noise Type Constants (curve shape)
+Constants.NOISE_TYPES = {
+    PERLIN = 0,                         -- Classic Perlin fBm: smooth organic curves
+    RIDGED = 1,                         -- Ridged multifractal: sharp peaks, calm valleys
+    WORLEY = 2,                         -- Worley/Cellular: burst clusters separated by silence
+    SINE = 3,                           -- Sine wave: perfectly periodic pattern
+}
+
 -- Noise Algorithm Mode Constants
 Constants.NOISE_ALGORITHMS = {
     PROBABILITY = 0,                    -- Probability test at intervals with jitter
@@ -200,6 +208,7 @@ Constants.DEFAULTS = {
     NOISE_LACUNARITY = 2.0,             -- Default lacunarity (frequency increase per octave)
     NOISE_DENSITY = 50.0,               -- Default average density percentage
     NOISE_THRESHOLD = 0.0,              -- Default minimum noise value to place item
+    NOISE_TYPE = 0,                     -- Default noise type (PERLIN)
     NOISE_ALGORITHM = 0,                -- Default algorithm (PROBABILITY)
     NOISE_RESOLUTION = 10,              -- Default noise resolution (samples per second)
     NOISE_RESOLUTION_MIN = 1,           -- Minimum noise resolution

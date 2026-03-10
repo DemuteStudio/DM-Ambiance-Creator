@@ -37,6 +37,9 @@ function TriggerSection_Noise.draw(dataObj, callbacks, trackingKey, width, check
     -- Noise Density Range (Min Density + Max Density with link mode)
     TriggerSection_Noise.drawDensityRange(dataObj, callbacks, trackingKey, controlWidth, padding, checkAutoRegen)
 
+    -- Noise Type selector (curve shape)
+    TriggerSection_Noise.drawNoiseTypeSelector(dataObj, callbacks, trackingKey, controlWidth, padding, checkAutoRegen)
+
     -- Noise Algorithm selector
     TriggerSection_Noise.drawAlgorithmSelector(dataObj, callbacks, trackingKey, controlWidth, padding, checkAutoRegen)
 
@@ -215,6 +218,41 @@ function TriggerSection_Noise.drawDensityRange(dataObj, callbacks, trackingKey, 
         "• Hold Shift: Temporarily unlink (independent)\n" ..
         "• Hold Ctrl: Temporarily link (maintain range)\n" ..
         "• Hold Alt: Temporarily mirror (symmetric)"
+    )
+end
+
+-- Draw algorithm selector
+-- Draw noise type selector (curve shape: Perlin, Ridged, Worley, Sine)
+function TriggerSection_Noise.drawNoiseTypeSelector(dataObj, callbacks, trackingKey, controlWidth, padding, checkAutoRegen)
+    local imgui = globals.imgui
+
+    imgui.BeginGroup(globals.ctx)
+    imgui.PushItemWidth(globals.ctx, controlWidth)
+    local noiseTypeNames = "Perlin\0Ridged\0Worley\0Sine\0"
+    local currentType = dataObj.noiseType or globals.Constants.DEFAULTS.NOISE_TYPE
+    local rv, newType = globals.UndoWrappers.Combo(globals.ctx, "##NoiseType", currentType, noiseTypeNames)
+    if rv then
+        callbacks.setNoiseType(newType)
+        if checkAutoRegen then
+            checkAutoRegen("noiseType", currentType, newType)
+        end
+    end
+    imgui.PopItemWidth(globals.ctx)
+    imgui.EndGroup(globals.ctx)
+
+    imgui.SameLine(globals.ctx, controlWidth + padding)
+    imgui.Text(globals.ctx, "Noise Type")
+    imgui.SameLine(globals.ctx)
+    globals.Utils.HelpMarker(
+        "Shape of the noise curve:\n\n" ..
+        "• Perlin: Smooth organic curves, natural variation\n" ..
+        "  Best for: Wind, rain, ambient nature\n\n" ..
+        "• Ridged: Sharp peaks with calm valleys\n" ..
+        "  Best for: Thunder, sudden bursts, dramatic events\n\n" ..
+        "• Worley: Cluster patterns with gaps between\n" ..
+        "  Best for: Insect swarms, crowd murmurs, sporadic activity\n\n" ..
+        "• Sine: Perfectly periodic wave pattern\n" ..
+        "  Best for: Rhythmic pulses, breathing, ocean waves"
     )
 end
 

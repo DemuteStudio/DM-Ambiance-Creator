@@ -103,6 +103,7 @@ function Structures.createGroup(name)
         chunkSilenceVarDirection = Constants.DEFAULTS.CHUNK_SILENCE_VAR_DIRECTION,
         -- Noise Mode parameters
         noiseSeed = math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX),
+        noiseType = Constants.DEFAULTS.NOISE_TYPE,
         noiseAlgorithm = Constants.DEFAULTS.NOISE_ALGORITHM,
         noiseFrequency = Constants.DEFAULTS.NOISE_FREQUENCY,
         noiseAmplitude = Constants.DEFAULTS.NOISE_AMPLITUDE,
@@ -205,6 +206,7 @@ function Structures.createContainer(name)
         chunkSilenceVarDirection = Constants.DEFAULTS.CHUNK_SILENCE_VAR_DIRECTION,
         -- Noise Mode parameters
         noiseSeed = math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX),
+        noiseType = Constants.DEFAULTS.NOISE_TYPE,
         noiseAlgorithm = Constants.DEFAULTS.NOISE_ALGORITHM,
         noiseFrequency = Constants.DEFAULTS.NOISE_FREQUENCY,
         noiseAmplitude = Constants.DEFAULTS.NOISE_AMPLITUDE,
@@ -383,6 +385,7 @@ function Structures.getEffectiveContainerParams(group, container)
     effectiveParams.fadeLinkMode = group.fadeLinkMode or "link"
 
     -- Inherit noise mode settings
+    effectiveParams.noiseType = group.noiseType
     effectiveParams.noiseAlgorithm = group.noiseAlgorithm
     effectiveParams.noiseSeed = group.noiseSeed
     effectiveParams.noiseFrequency = group.noiseFrequency

@@ -1,8 +1,9 @@
 --[[
-@version 1.5
+@version 1.6
 @noindex
-Perlin Noise Generator for Ambiance Creator
-Provides 1D Perlin noise generation with octaves for organic patterns
+Noise Generator for Ambiance Creator
+Provides multiple 1D noise types with octaves for organic patterns:
+  Perlin (smooth), Ridged (sharp peaks), Worley (burst clusters), Sine (periodic)
 --]]
 
 local Noise = {}
@@ -64,13 +65,10 @@ local function interpolatedNoise(x, seed)
     return v0 * (1.0 - smooth) + v1 * smooth
 end
 
--- Generate Perlin noise value with multiple octaves
--- @param x number: Position
--- @param frequency number: Base frequency (larger = more variation)
--- @param octaves number: Number of noise layers (more = more detail)
--- @param persistence number: Amplitude decrease per octave (0-1, typical 0.5)
--- @param lacunarity number: Frequency increase per octave (typical 2.0)
--- @param seed number: Random seed for reproducibility
+-- ========================================
+-- NOISE TYPE: PERLIN
+-- Classic Perlin fBm: smooth organic curves
+-- ========================================
 -- @return number: Noise value between 0 and 1
 function Noise.perlin1D(x, frequency, octaves, persistence, lacunarity, seed)
     frequency = frequency or 1.0
@@ -103,6 +101,147 @@ function Noise.perlin1D(x, frequency, octaves, persistence, lacunarity, seed)
     return (total / maxValue + 1.0) * 0.5
 end
 
+-- ========================================
+-- NOISE TYPE: RIDGED
+-- Ridged multifractal: sharp peaks separated by calm valleys
+-- Takes abs(noise), inverts it, and squares for dramatic spikes
+-- ========================================
+-- @return number: Noise value between 0 and 1
+function Noise.ridged1D(x, frequency, octaves, persistence, lacunarity, seed)
+    frequency = frequency or 1.0
+    octaves = octaves or 1
+    persistence = persistence or 0.5
+    lacunarity = lacunarity or 2.0
+    seed = seed or 0
+
+    local total = 0.0
+    local amplitude = 1.0
+    local maxValue = 0.0
+    local freq = frequency
+    local weight = 1.0
+
+    for i = 1, octaves do
+        local noiseValue = interpolatedNoise(x * freq, seed + i)
+
+        -- Ridged transform: abs → invert → square
+        noiseValue = 1.0 - math.abs(noiseValue)
+        noiseValue = noiseValue * noiseValue
+
+        -- Weight successive octaves by previous signal
+        noiseValue = noiseValue * weight
+        weight = math.max(0, math.min(1, noiseValue))
+
+        total = total + noiseValue * amplitude
+        maxValue = maxValue + amplitude
+
+        amplitude = amplitude * persistence
+        freq = freq * lacunarity
+    end
+
+    return math.max(0, math.min(1, total / maxValue))
+end
+
+-- ========================================
+-- NOISE TYPE: WORLEY (Cellular)
+-- Distance to nearest random feature point in 1D
+-- Creates sharp valleys between broad peaks — burst cluster pattern
+-- ========================================
+-- @return number: Noise value between 0 and 1
+function Noise.worley1D(x, frequency, octaves, persistence, lacunarity, seed)
+    frequency = frequency or 1.0
+    octaves = octaves or 1
+    persistence = persistence or 0.5
+    lacunarity = lacunarity or 2.0
+    seed = seed or 0
+
+    local total = 0.0
+    local amplitude = 1.0
+    local maxValue = 0.0
+    local freq = frequency
+
+    for i = 1, octaves do
+        local scaledX = x * freq
+        local cell = math.floor(scaledX)
+
+        -- Find minimum distance to feature points in neighboring cells
+        local minDist = 1.0
+        for offset = -1, 1 do
+            local neighborCell = cell + offset
+            -- Deterministic feature point position within cell (0-1)
+            local rnd = pseudoRandom(neighborCell, seed + i)
+            local featurePoint = neighborCell + (rnd + 1.0) * 0.5
+            local dist = math.abs(scaledX - featurePoint)
+            if dist < minDist then
+                minDist = dist
+            end
+        end
+
+        -- Invert: close to feature point = high value (peak)
+        -- Clamp distance to [0,1] then invert
+        local value = 1.0 - math.min(1.0, minDist * 2.0)
+
+        total = total + value * amplitude
+        maxValue = maxValue + amplitude
+
+        amplitude = amplitude * persistence
+        freq = freq * lacunarity
+    end
+
+    return math.max(0, math.min(1, total / maxValue))
+end
+
+-- ========================================
+-- NOISE TYPE: SINE
+-- Pure periodic sine wave — perfectly rhythmic pattern
+-- Frequency = cycles per second, octaves add harmonics
+-- ========================================
+-- @return number: Noise value between 0 and 1
+function Noise.sine1D(x, frequency, octaves, persistence, lacunarity, seed)
+    frequency = frequency or 1.0
+    octaves = octaves or 1
+    persistence = persistence or 0.5
+    lacunarity = lacunarity or 2.0
+    seed = seed or 0
+
+    local total = 0.0
+    local amplitude = 1.0
+    local maxValue = 0.0
+    local freq = frequency
+
+    for i = 1, octaves do
+        -- Phase offset from seed for variety between different seeds
+        local phase = pseudoRandom(i, seed) * math.pi
+
+        local value = math.sin(2.0 * math.pi * x * freq + phase)
+
+        total = total + value * amplitude
+        maxValue = maxValue + amplitude
+
+        amplitude = amplitude * persistence
+        freq = freq * lacunarity
+    end
+
+    -- Normalize to 0-1 range
+    return (total / maxValue + 1.0) * 0.5
+end
+
+-- ========================================
+-- ROUTING: Get noise value by type
+-- ========================================
+-- @param noiseType number: Noise type constant (0=Perlin, 1=Ridged, 2=Worley, 3=Sine)
+-- @return number: Noise value between 0 and 1
+local function getNoiseByType(noiseType, x, frequency, octaves, persistence, lacunarity, seed)
+    if noiseType == 1 then
+        return Noise.ridged1D(x, frequency, octaves, persistence, lacunarity, seed)
+    elseif noiseType == 2 then
+        return Noise.worley1D(x, frequency, octaves, persistence, lacunarity, seed)
+    elseif noiseType == 3 then
+        return Noise.sine1D(x, frequency, octaves, persistence, lacunarity, seed)
+    else
+        return Noise.perlin1D(x, frequency, octaves, persistence, lacunarity, seed)
+    end
+end
+
 -- Generate noise curve data for visualization
 -- @param startTime number: Start time
 -- @param endTime number: End time
@@ -112,10 +251,12 @@ end
 -- @param persistence number: Amplitude decrease per octave
 -- @param lacunarity number: Frequency increase per octave
 -- @param seed number: Random seed
+-- @param noiseType number: Noise type (optional, default 0=Perlin)
 -- @return table: Array of {time, value} pairs
-function Noise.generateCurve(startTime, endTime, sampleCount, frequency, octaves, persistence, lacunarity, seed)
+function Noise.generateCurve(startTime, endTime, sampleCount, frequency, octaves, persistence, lacunarity, seed, noiseType)
     local duration = endTime - startTime
     local curve = {}
+    noiseType = noiseType or 0
 
     for i = 0, sampleCount - 1 do
         local t = i / (sampleCount - 1)
@@ -126,7 +267,7 @@ function Noise.generateCurve(startTime, endTime, sampleCount, frequency, octaves
         local noiseInput = timeInSeconds
 
         -- Get noise value at this time
-        local value = Noise.perlin1D(noiseInput, frequency, octaves, persistence, lacunarity, seed)
+        local value = getNoiseByType(noiseType, noiseInput, frequency, octaves, persistence, lacunarity, seed)
 
         table.insert(curve, {time = time, value = value})
     end
@@ -143,19 +284,17 @@ end
 -- @param persistence number: Amplitude decrease per octave
 -- @param lacunarity number: Frequency increase per octave
 -- @param seed number: Random seed
+-- @param noiseType number: Noise type (optional, default 0=Perlin)
 -- @return number: Noise value between 0 and 1
-function Noise.getValueAtTime(time, startTime, endTime, frequency, octaves, persistence, lacunarity, seed)
+function Noise.getValueAtTime(time, startTime, endTime, frequency, octaves, persistence, lacunarity, seed, noiseType)
     local duration = endTime - startTime
     if duration <= 0 then return 0.5 end
 
-    -- Use absolute time in seconds (not normalized to timeline)
-    -- frequency is real Hz: frequency = 1.0 means one cycle per second
-    -- frequency = 0.1 means one cycle every 10 seconds (slow)
-    -- frequency = 10.0 means ten cycles per second (fast)
     local timeInSeconds = time - startTime
     local noiseInput = timeInSeconds
+    noiseType = noiseType or 0
 
-    return Noise.perlin1D(noiseInput, frequency, octaves, persistence, lacunarity, seed)
+    return getNoiseByType(noiseType, noiseInput, frequency, octaves, persistence, lacunarity, seed)
 end
 
 return Noise

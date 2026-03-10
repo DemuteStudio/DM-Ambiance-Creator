@@ -531,6 +531,24 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
             end,
 
             -- Noise mode callbacks
+            setNoiseType = function(newValue)
+                for _, c in ipairs(containers) do
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseType = newValue
+                    end
+                end
+            end,
+
+            setNoiseAlgorithm = function(newValue)
+                for _, c in ipairs(containers) do
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseAlgorithm = newValue
+                    end
+                end
+            end,
+
             setNoiseSeed = function(newValue)
                 for _, c in ipairs(containers) do
                     local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)

@@ -58,6 +58,7 @@ function Utils_Validation.ensureNoiseDefaults(params)
     end
 
     params.noiseSeed = params.noiseSeed or math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX)
+    params.noiseType = params.noiseType or Constants.DEFAULTS.NOISE_TYPE
     params.noiseAlgorithm = params.noiseAlgorithm or Constants.DEFAULTS.NOISE_ALGORITHM
     params.noiseAmplitude = params.noiseAmplitude or Constants.DEFAULTS.NOISE_AMPLITUDE
     params.noiseOctaves = params.noiseOctaves or Constants.DEFAULTS.NOISE_OCTAVES
@@ -127,6 +128,11 @@ function Utils_Validation.validateNoiseParams(params)
     if params.noiseResolution then
         params.noiseResolution = math.max(Constants.DEFAULTS.NOISE_RESOLUTION_MIN,
             math.min(Constants.DEFAULTS.NOISE_RESOLUTION_MAX, math.floor(params.noiseResolution)))
+    end
+
+    -- Noise type must be 0-3
+    if params.noiseType and (params.noiseType < 0 or params.noiseType > 3) then
+        params.noiseType = Constants.DEFAULTS.NOISE_TYPE
     end
 
     -- Placement anchor must be 0 or 1

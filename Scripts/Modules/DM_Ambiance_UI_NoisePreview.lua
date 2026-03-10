@@ -24,6 +24,7 @@ function NoisePreview.draw(dataObj, width, height)
     local noiseLacunarity = dataObj.noiseLacunarity or 2.0
     local noiseDensity = dataObj.noiseDensity or 50.0
     local noiseThreshold = dataObj.noiseThreshold or 0.0
+    local noiseType = dataObj.noiseType or 0
 
     local imgui = globals.imgui
     local drawList = imgui.GetWindowDrawList(globals.ctx)
@@ -57,7 +58,8 @@ function NoisePreview.draw(dataObj, width, height)
         noiseOctaves,
         noisePersistence,
         noiseLacunarity,
-        noiseSeed
+        noiseSeed,
+        noiseType
     )
 
     -- Calculate amplitude scaling based on noiseAmplitude parameter
@@ -142,7 +144,8 @@ function NoisePreview.draw(dataObj, width, height)
             noiseOctaves,
             noisePersistence,
             noiseLacunarity,
-            noiseSeed
+            noiseSeed,
+            noiseType
         )
 
         -- Convert noise (0-1) to -1 to +1 range for variation
