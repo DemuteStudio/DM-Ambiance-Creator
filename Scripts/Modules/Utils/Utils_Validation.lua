@@ -59,7 +59,6 @@ function Utils_Validation.ensureNoiseDefaults(params)
 
     params.noiseSeed = params.noiseSeed or math.random(Constants.DEFAULTS.NOISE_SEED_MIN, Constants.DEFAULTS.NOISE_SEED_MAX)
     params.noiseAlgorithm = params.noiseAlgorithm or Constants.DEFAULTS.NOISE_ALGORITHM
-    params.noiseFrequency = params.noiseFrequency or Constants.DEFAULTS.NOISE_FREQUENCY
     params.noiseAmplitude = params.noiseAmplitude or Constants.DEFAULTS.NOISE_AMPLITUDE
     params.noiseOctaves = params.noiseOctaves or Constants.DEFAULTS.NOISE_OCTAVES
     params.noisePersistence = params.noisePersistence or Constants.DEFAULTS.NOISE_PERSISTENCE
@@ -67,6 +66,21 @@ function Utils_Validation.ensureNoiseDefaults(params)
     params.noiseDensity = params.noiseDensity or Constants.DEFAULTS.NOISE_DENSITY
     params.noiseThreshold = params.noiseThreshold or Constants.DEFAULTS.NOISE_THRESHOLD
     params.densityLinkMode = params.densityLinkMode or "link"
+
+    -- Migration: pre-refactor presets used /10.0 divisor, so frequency values
+    -- need to be scaled by 0.1 to produce identical noise curves
+    if not params.noiseResolution then
+        -- Pre-refactor preset detected: migrate frequency
+        if params.noiseFrequency and params.noiseFrequency >= 0.5 then
+            params.noiseFrequency = params.noiseFrequency * 0.1
+        end
+        params.noiseResolution = Constants.DEFAULTS.NOISE_RESOLUTION
+        params.noisePlacementAnchor = Constants.DEFAULTS.NOISE_PLACEMENT_ANCHOR
+    end
+
+    params.noiseFrequency = params.noiseFrequency or Constants.DEFAULTS.NOISE_FREQUENCY
+    params.noiseResolution = params.noiseResolution or Constants.DEFAULTS.NOISE_RESOLUTION
+    params.noisePlacementAnchor = params.noisePlacementAnchor or Constants.DEFAULTS.NOISE_PLACEMENT_ANCHOR
 
     return params
 end
@@ -107,6 +121,17 @@ function Utils_Validation.validateNoiseParams(params)
     -- Amplitude should be between 0 and 100
     if params.noiseAmplitude and (params.noiseAmplitude < 0 or params.noiseAmplitude > 100) then
         return false, "Noise amplitude must be between 0 and 100"
+    end
+
+    -- Resolution must be between 1 and 100
+    if params.noiseResolution then
+        params.noiseResolution = math.max(Constants.DEFAULTS.NOISE_RESOLUTION_MIN,
+            math.min(Constants.DEFAULTS.NOISE_RESOLUTION_MAX, math.floor(params.noiseResolution)))
+    end
+
+    -- Placement anchor must be 0 or 1
+    if params.noisePlacementAnchor and params.noisePlacementAnchor ~= 0 and params.noisePlacementAnchor ~= 1 then
+        params.noisePlacementAnchor = Constants.DEFAULTS.NOISE_PLACEMENT_ANCHOR
     end
 
     return true, ""

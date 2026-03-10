@@ -17,7 +17,7 @@ end
 function NoisePreview.draw(dataObj, width, height)
     -- Ensure noise parameters exist (for backwards compatibility with old presets)
     local noiseSeed = dataObj.noiseSeed or math.random(1, 999999)
-    local noiseFrequency = dataObj.noiseFrequency or 1.0
+    local noiseFrequency = dataObj.noiseFrequency or globals.Constants.DEFAULTS.NOISE_FREQUENCY
     local noiseAmplitude = dataObj.noiseAmplitude or 100.0
     local noiseOctaves = dataObj.noiseOctaves or 2
     local noisePersistence = dataObj.noisePersistence or 0.5
@@ -68,26 +68,30 @@ function NoisePreview.draw(dataObj, width, height)
     local prevX, prevY = nil, nil
     local thresholdNormalized = noiseThreshold / 100.0
 
+    -- Y-axis scale: top of frame = max possible value (density=100% + full amplitude)
+    -- This ensures peaks only reach the top when density is at 100%
+    local displayMax = 1.0 + amplitudeScale
+
     -- Use waveform color for consistency
     local waveformColor = globals.Settings.getSetting("waveformColor")
 
     for i, point in ipairs(curve) do
-        -- Apply same formula as generation algorithm
+        -- Apply same formula as generation algorithm (Generation_Modes.lua:297-308)
         local rawValue = point.value  -- 0-1
         local centered = (rawValue - 0.5) * 2  -- -1 to 1
-        -- Amplitude is relative to density
-        local variation = centered * amplitudeScale * density
+        -- densityVariation = normalizedNoiseValue * amplitudeScale (matches generation)
+        local variation = centered * amplitudeScale
         local final = density + variation
 
-        -- Clamp to 0-1
-        final = math.max(0, math.min(1, final))
+        -- Clamp to displayable range
+        final = math.max(0, math.min(displayMax, final))
 
         -- Apply min density threshold - clamp the curve from below
         final = math.max(thresholdNormalized, final)
 
-        -- Convert to screen coordinates
+        -- Convert to screen coordinates (scaled to displayMax)
         local x = cursorX + (i - 1) * (width / (sampleCount - 1))
-        local y = cursorY + height - (final * height)
+        local y = cursorY + height - (final / displayMax * height)
 
         if prevX and prevY then
             -- Draw line segment using waveform color
@@ -102,13 +106,31 @@ function NoisePreview.draw(dataObj, width, height)
     local zeroColor = 0x888888AA
     imgui.DrawList_AddLine(drawList, cursorX, zeroY, cursorX + width, zeroY, zeroColor, 1.0)
 
+    -- Get resolution and placement anchor parameters
+    local noiseResolution = dataObj.noiseResolution or globals.Constants.DEFAULTS.NOISE_RESOLUTION
+    local placementAnchor = dataObj.noisePlacementAnchor or globals.Constants.DEFAULTS.NOISE_PLACEMENT_ANCHOR
+
+    -- Draw resolution tick marks (subtle vertical lines showing evaluation points)
+    local duration = endTime - startTime
+    local resolutionInterval = 1.0 / math.max(1, noiseResolution)
+    local tickColor = 0x444444AA
+    local maxTicks = math.min(math.floor(duration / resolutionInterval), math.floor(width))  -- Don't draw more ticks than pixels
+    if maxTicks <= width / 2 then  -- Only draw if ticks are spaced enough to be visible
+        local tickTime = startTime
+        while tickTime < endTime do
+            local normalizedTime = (tickTime - startTime) / duration
+            local tickX = cursorX + normalizedTime * width
+            imgui.DrawList_AddLine(drawList, tickX, cursorY + height - 2, tickX, cursorY + height, tickColor, 1.0)
+            tickTime = tickTime + resolutionInterval
+        end
+    end
+
     -- Calculate and draw item placement positions
-    -- This simulates the same algorithm used in DM_Ambiance_Generation.lua
+    -- This simulates the same algorithm used in Generation_Modes.lua
     local itemPositions = {}
 
-    -- Calculate duration and adaptive max positions
-    local duration = endTime - startTime
-    local maxPositions = math.min(5000, math.ceil(duration * noiseFrequency * 5))  -- Adaptive limit based on expected density
+    -- Adaptive max positions based on expected density
+    local maxPositions = math.min(5000, math.ceil(duration * noiseResolution * 2))
 
     -- Helper function to get placement probability at a specific time (same as generation)
     local function getPlacementProbability(time)
@@ -153,21 +175,52 @@ function NoisePreview.draw(dataObj, width, height)
         )
     end
 
+    -- Deterministic hash for uniform-distribution random decisions
+    -- Matches Generation_Modes.lua deterministicRandom()
+    local function deterministicRandom(t, seed)
+        local x = math.sin(t * 12345.6789 + seed * 0.9876) * 43758.5453
+        return x - math.floor(x)
+    end
+
     -- Get algorithm mode from dataObj (default to PROBABILITY)
     local algorithm = dataObj.noiseAlgorithm or globals.Constants.NOISE_ALGORITHMS.PROBABILITY
     local Constants = globals.Constants
 
+    -- Use resolution for stepping interval (decoupled from frequency)
+    local baseInterval = 1.0 / math.max(1, noiseResolution)
+
+    -- Compute average item length from actual items if available, else estimate
+    local previewAvgItemLength = 2.0
+    if dataObj.items and #dataObj.items > 0 then
+        local totalLen = 0
+        local count = 0
+        for _, item in ipairs(dataObj.items) do
+            if item.areas and #item.areas > 0 then
+                for _, area in ipairs(item.areas) do
+                    totalLen = totalLen + (area.endPos - area.startPos)
+                    count = count + 1
+                end
+            elseif item.length and item.length > 0 then
+                totalLen = totalLen + item.length
+                count = count + 1
+            end
+        end
+        if count > 0 then
+            previewAvgItemLength = totalLen / count
+        end
+    end
+
     -- ALGORITHM 1: PROBABILITY
     if algorithm == Constants.NOISE_ALGORITHMS.PROBABILITY then
         local currentTime = startTime
-        local baseInterval = 1.0 / math.max(0.01, noiseFrequency)
 
         while currentTime < endTime and #itemPositions < maxPositions do
             local placementProbability = getPlacementProbability(currentTime)
 
             if placementProbability >= thresholdNormalized then
-                local decisionNoise = getDecisionNoise(currentTime, 54321)
-                if decisionNoise <= placementProbability then
+                local decisionValue = deterministicRandom(currentTime, noiseSeed + 54321)
+                -- Scale by baseInterval so density is independent of resolution
+                if decisionValue <= placementProbability * baseInterval then
                     -- Add timing jitter to avoid perfectly regular placement
                     local jitterNoise = getDecisionNoise(currentTime, 11111)
                     local jitter = (jitterNoise - 0.5) * 0.5 * baseInterval
@@ -176,6 +229,11 @@ function NoisePreview.draw(dataObj, width, height)
                     -- Ensure we don't place outside bounds
                     if placementTime >= startTime and placementTime < endTime then
                         table.insert(itemPositions, placementTime)
+                    end
+
+                    -- End-to-Start: skip ahead by estimated item length
+                    if placementAnchor == Constants.NOISE_PLACEMENT_ANCHORS.END_TO_START then
+                        currentTime = currentTime + previewAvgItemLength
                     end
                 end
             end
@@ -186,10 +244,10 @@ function NoisePreview.draw(dataObj, width, height)
     -- ALGORITHM 2: ACCUMULATION
     elseif algorithm == Constants.NOISE_ALGORITHMS.ACCUMULATION then
         local currentTime = startTime
-        local sampleInterval = 1.0 / math.max(0.01, noiseFrequency * 10)
+        local sampleInterval = baseInterval
         local accumulated = 0.0
         local iterationCount = 0
-        local maxIterations = math.min(50000, math.ceil(duration / sampleInterval))  -- Limit iterations, not placements
+        local maxIterations = math.min(50000, math.ceil(duration / sampleInterval))
 
         while currentTime < endTime and iterationCount < maxIterations do
             local placementProbability = getPlacementProbability(currentTime)
@@ -201,6 +259,11 @@ function NoisePreview.draw(dataObj, width, height)
                 if accumulated >= 1.0 then
                     table.insert(itemPositions, currentTime)
                     accumulated = accumulated - 1.0
+
+                    -- End-to-Start: skip ahead by estimated item length
+                    if placementAnchor == Constants.NOISE_PLACEMENT_ANCHORS.END_TO_START then
+                        currentTime = currentTime + previewAvgItemLength
+                    end
                 end
             else
                 accumulated = accumulated * 0.9

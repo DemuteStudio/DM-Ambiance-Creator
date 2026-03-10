@@ -467,6 +467,8 @@ function TriggerSection.displayTriggerSettings(obj, objId, width, isGroup, group
             setNoiseLacunarity = function(v) obj.noiseLacunarity = v end,
             setNoiseDensity = function(v) obj.noiseDensity = v end,
             setNoiseThreshold = function(v) obj.noiseThreshold = v end,
+            setNoiseResolution = function(v) obj.noiseResolution = v end,
+            setNoisePlacementAnchor = function(v) obj.noisePlacementAnchor = v end,
             -- Euclidean mode callbacks
             setEuclideanMode = function(v)
                 obj.euclideanMode = v

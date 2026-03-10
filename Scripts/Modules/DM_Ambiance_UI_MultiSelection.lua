@@ -609,6 +609,24 @@ function UI_MultiSelection.drawMultiSelectionPanel(width)
                     end
                 end
                 commonNoiseThreshold = newValue
+            end,
+
+            setNoiseResolution = function(newValue)
+                for _, c in ipairs(containers) do
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noiseResolution = newValue
+                    end
+                end
+            end,
+
+            setNoisePlacementAnchor = function(newValue)
+                for _, c in ipairs(containers) do
+                    local container = globals.Structures.getContainerFromGroup(c.groupPath, c.containerIndex)
+                    if container then
+                        container.noisePlacementAnchor = newValue
+                    end
+                end
             end
         }
 

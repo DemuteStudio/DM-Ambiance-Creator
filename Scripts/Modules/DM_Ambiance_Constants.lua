@@ -66,6 +66,12 @@ Constants.NOISE_ALGORITHMS = {
     ACCUMULATION = 1,                   -- Probability accumulation until threshold
 }
 
+-- Noise Placement Anchor Constants
+Constants.NOISE_PLACEMENT_ANCHORS = {
+    START_TO_START = 0,                 -- Next item starts relative to previous start (allows overlap)
+    END_TO_START = 1,                   -- Next item starts after previous ends (no overlap)
+}
+
 -- Channel Mode Constants
 Constants.CHANNEL_MODES = {
     DEFAULT = 0,                        -- Standard stereo (1/2)
@@ -154,9 +160,6 @@ Constants.VARIATION_DIRECTIONS = {
 
 -- Noise Generation Algorithm Constants
 Constants.NOISE_GENERATION = {
-    SKIP_INTERVAL = 0.5,                -- Seconds to skip ahead in silent zones
-    MIN_INTERVAL_MULTIPLIER = 0.3,      -- Minimum interval as multiplier of average item length
-    MAX_INTERVAL_SECONDS = 10.0,        -- Maximum spacing when curve is near 0
     SELECTION_TIME_OFFSET = 0.123,      -- Time offset to decorrelate item selection noise
     SELECTION_SEED_OFFSET = 12345,      -- Seed offset for item selection noise
     SELECTION_FREQ_MULT = 1.23,         -- Frequency multiplier for item selection
@@ -190,7 +193,7 @@ Constants.DEFAULTS = {
     -- Noise Mode defaults
     NOISE_SEED_MIN = 1,                 -- Minimum seed value
     NOISE_SEED_MAX = 999999,            -- Maximum seed value
-    NOISE_FREQUENCY = 1.0,              -- Default noise frequency (Hz)
+    NOISE_FREQUENCY = 0.1,              -- Default noise frequency (Hz) — real Hz after /10.0 removal
     NOISE_AMPLITUDE = 100.0,            -- Default noise amplitude (%)
     NOISE_OCTAVES = 2,                  -- Default number of octaves
     NOISE_PERSISTENCE = 0.5,            -- Default persistence (amplitude decrease per octave)
@@ -198,6 +201,10 @@ Constants.DEFAULTS = {
     NOISE_DENSITY = 50.0,               -- Default average density percentage
     NOISE_THRESHOLD = 0.0,              -- Default minimum noise value to place item
     NOISE_ALGORITHM = 0,                -- Default algorithm (PROBABILITY)
+    NOISE_RESOLUTION = 10,              -- Default noise resolution (samples per second)
+    NOISE_RESOLUTION_MIN = 1,           -- Minimum noise resolution
+    NOISE_RESOLUTION_MAX = 100,         -- Maximum noise resolution
+    NOISE_PLACEMENT_ANCHOR = 0,         -- Default placement anchor (START_TO_START)
     -- Euclidean Mode defaults
     EUCLIDEAN_MODE = 0,                 -- Default mode (0=Tempo-Based, 1=Fit-to-Selection)
     EUCLIDEAN_TEMPO = 120,              -- Default tempo (BPM)

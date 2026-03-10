@@ -331,27 +331,42 @@ function Generation_Modes.placeItemsNoiseMode(effectiveParams, track, channelTra
     local noiseGen = Constants.NOISE_GENERATION
     local minDensityThreshold = effectiveParams.noiseThreshold / 100.0
 
+    -- Resolution controls stepping interval independently of frequency
+    local resolution = math.max(1, effectiveParams.noiseResolution or Constants.DEFAULTS.NOISE_RESOLUTION)
+    local placementAnchor = effectiveParams.noisePlacementAnchor or Constants.DEFAULTS.NOISE_PLACEMENT_ANCHOR
+
+    -- Deterministic hash for uniform-distribution random decisions
+    -- Perlin noise clusters around 0.5 (bell-curve), making it unsuitable
+    -- for probability tests. This hash produces uniform [0,1] distribution.
+    local function deterministicRandom(t, seed)
+        local x = math.sin(t * 12345.6789 + seed * 0.9876) * 43758.5453
+        return x - math.floor(x)
+    end
+
     -- Collection of item placement times (calculated by selected algorithm)
     local placementTimes = {}
 
     -- ========================================
     -- ALGORITHM 1: PROBABILITY
     -- Probability test at intervals with timing jitter
+    -- Resolution controls step interval; frequency controls curve shape only
     -- ========================================
     if algorithm == Constants.NOISE_ALGORITHMS.PROBABILITY then
         local currentTime = globals.startTime
-        local baseInterval = 1.0 / math.max(0.01, effectiveParams.noiseFrequency)
+        local baseInterval = 1.0 / math.max(1, resolution)
 
         while currentTime < globals.endTime do
             local placementProbability = getPlacementProbability(currentTime)
 
             -- Check if probability meets threshold
             if placementProbability >= minDensityThreshold then
-                -- Use deterministic random value to decide placement
-                local decisionNoise = getDecisionNoise(currentTime, 54321)
+                -- Use deterministic hash for uniform distribution decision
+                local decisionValue = deterministicRandom(currentTime, effectiveParams.noiseSeed + 54321)
 
-                -- Place item if decision noise falls within placement probability
-                if decisionNoise <= placementProbability then
+                -- Scale probability by baseInterval so density is independent of resolution
+                -- Without scaling: resolution=100 produces 10x more items than resolution=10
+                -- With scaling: expected items/sec = probability (constant regardless of resolution)
+                if decisionValue <= placementProbability * baseInterval then
                     -- Add timing jitter to avoid perfectly regular placement
                     -- Use another noise value for jitter amount
                     local jitterNoise = getDecisionNoise(currentTime, 11111)
@@ -363,6 +378,11 @@ function Generation_Modes.placeItemsNoiseMode(effectiveParams, track, channelTra
                     if placementTime >= globals.startTime and placementTime < globals.endTime then
                         table.insert(placementTimes, placementTime)
                     end
+
+                    -- End-to-Start anchor: skip ahead by average item length
+                    if placementAnchor == Constants.NOISE_PLACEMENT_ANCHORS.END_TO_START then
+                        currentTime = currentTime + avgItemLength
+                    end
                 end
             end
 
@@ -372,10 +392,11 @@ function Generation_Modes.placeItemsNoiseMode(effectiveParams, track, channelTra
     -- ========================================
     -- ALGORITHM 2: ACCUMULATION
     -- Accumulate probability until threshold is reached
+    -- Resolution controls step interval; frequency controls accumulation rate
     -- ========================================
     elseif algorithm == Constants.NOISE_ALGORITHMS.ACCUMULATION then
         local currentTime = globals.startTime
-        local sampleInterval = 1.0 / math.max(0.01, effectiveParams.noiseFrequency * 10)  -- Fine sampling
+        local sampleInterval = 1.0 / math.max(1, resolution)
         local accumulated = 0.0
 
         while currentTime < globals.endTime do
@@ -390,6 +411,11 @@ function Generation_Modes.placeItemsNoiseMode(effectiveParams, track, channelTra
                 if accumulated >= 1.0 then
                     table.insert(placementTimes, currentTime)
                     accumulated = accumulated - 1.0
+
+                    -- End-to-Start anchor: skip ahead by average item length
+                    if placementAnchor == Constants.NOISE_PLACEMENT_ANCHORS.END_TO_START then
+                        currentTime = currentTime + avgItemLength
+                    end
                 end
             else
                 -- Below threshold: decay accumulated probability
@@ -404,9 +430,16 @@ function Generation_Modes.placeItemsNoiseMode(effectiveParams, track, channelTra
     -- ITEM PLACEMENT
     -- Place items at all calculated times
     -- ========================================
+    local lastItemEnd = -math.huge  -- Track end time of last placed item for overlap filtering
+
     for _, currentTime in ipairs(placementTimes) do
         if currentTime >= globals.endTime then
             break
+        end
+
+        -- End-to-Start overlap filtering: skip if placement overlaps previous item
+        if placementAnchor == Constants.NOISE_PLACEMENT_ANCHORS.END_TO_START and currentTime < lastItemEnd then
+            goto continue_placement
         end
 
         -- Select item deterministically using noise-based index
@@ -580,7 +613,15 @@ function Generation_Modes.placeItemsNoiseMode(effectiveParams, track, channelTra
                     reaper.SetMediaItemInfo_Value(newItem, "C_FADEOUTSHAPE", effectiveParams.fadeOutShape or 0)
                     reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTDIR", effectiveParams.fadeOutCurve or 0.0)
                 end
+
+                -- Track actual item end for overlap filtering
+                local itemEnd = currentTime + actualLen
+                if itemEnd > lastItemEnd then
+                    lastItemEnd = itemEnd
+                end
             end
+
+        ::continue_placement::
     end
 end
 

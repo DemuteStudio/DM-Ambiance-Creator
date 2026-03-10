@@ -40,6 +40,15 @@ function TriggerSection_Noise.draw(dataObj, callbacks, trackingKey, width, check
     -- Noise Algorithm selector
     TriggerSection_Noise.drawAlgorithmSelector(dataObj, callbacks, trackingKey, controlWidth, padding, checkAutoRegen)
 
+    -- Noise Resolution slider (only for Probability algorithm; Accumulation is resolution-independent)
+    local algorithm = dataObj.noiseAlgorithm or globals.Constants.DEFAULTS.NOISE_ALGORITHM
+    if algorithm == globals.Constants.NOISE_ALGORITHMS.PROBABILITY then
+        TriggerSection_Noise.drawResolutionSlider(dataObj, callbacks, controlWidth, padding, checkAutoRegen)
+    end
+
+    -- Noise Placement Anchor toggle
+    TriggerSection_Noise.drawPlacementAnchorSelector(dataObj, callbacks, trackingKey, controlWidth, padding, checkAutoRegen)
+
     -- Noise Frequency slider
     TriggerSection_Noise.drawFrequencySlider(dataObj, callbacks, controlWidth, padding, checkAutoRegen)
 
@@ -243,6 +252,72 @@ function TriggerSection_Noise.drawAlgorithmSelector(dataObj, callbacks, tracking
     )
 end
 
+-- Draw resolution slider
+function TriggerSection_Noise.drawResolutionSlider(dataObj, callbacks, controlWidth, padding, checkAutoRegen)
+    local imgui = globals.imgui
+
+    imgui.BeginGroup(globals.ctx)
+    globals.SliderEnhanced.SliderInt({
+        id = "##NoiseResolution",
+        value = dataObj.noiseResolution or globals.Constants.DEFAULTS.NOISE_RESOLUTION,
+        min = globals.Constants.DEFAULTS.NOISE_RESOLUTION_MIN,
+        max = globals.Constants.DEFAULTS.NOISE_RESOLUTION_MAX,
+        defaultValue = globals.Constants.DEFAULTS.NOISE_RESOLUTION,
+        format = "%d",
+        width = controlWidth,
+        onChange = function(newValue)
+            callbacks.setNoiseResolution(newValue)
+        end,
+        onChangeComplete = function(oldValue, newValue)
+            checkAutoRegen("noiseResolution", oldValue, newValue)
+        end
+    })
+    imgui.EndGroup(globals.ctx)
+
+    imgui.SameLine(globals.ctx, controlWidth + padding)
+    imgui.Text(globals.ctx, "Resolution")
+    imgui.SameLine(globals.ctx)
+    globals.Utils.HelpMarker(
+        "Placement evaluation precision (samples per second).\n\n" ..
+        "Controls how often the noise curve is sampled for item placement.\n" ..
+        "Independent of Frequency (which controls curve shape).\n\n" ..
+        "• 1 = Coarse grid (1 evaluation/sec)\n" ..
+        "• 10 = Default (10 evaluations/sec)\n" ..
+        "• 100 = Very fine (100 evaluations/sec)\n\n" ..
+        "Higher values = more precise placement but more CPU usage."
+    )
+end
+
+-- Draw placement anchor selector
+function TriggerSection_Noise.drawPlacementAnchorSelector(dataObj, callbacks, trackingKey, controlWidth, padding, checkAutoRegen)
+    local imgui = globals.imgui
+
+    imgui.BeginGroup(globals.ctx)
+    imgui.PushItemWidth(globals.ctx, controlWidth)
+    local anchorNames = "Start \xE2\x86\x92 Start (allow overlap)\0End \xE2\x86\x92 Start (no overlap)\0"
+    local currentAnchor = dataObj.noisePlacementAnchor or globals.Constants.DEFAULTS.NOISE_PLACEMENT_ANCHOR
+    local rv, newAnchor = globals.UndoWrappers.Combo(globals.ctx, "##NoisePlacementAnchor", currentAnchor, anchorNames)
+    if rv then
+        callbacks.setNoisePlacementAnchor(newAnchor)
+        if checkAutoRegen then
+            checkAutoRegen("noisePlacementAnchor", currentAnchor, newAnchor)
+        end
+    end
+    imgui.PopItemWidth(globals.ctx)
+    imgui.EndGroup(globals.ctx)
+
+    imgui.SameLine(globals.ctx, controlWidth + padding)
+    imgui.Text(globals.ctx, "Placement")
+    imgui.SameLine(globals.ctx)
+    globals.Utils.HelpMarker(
+        "Controls how items relate to each other temporally:\n\n" ..
+        "• Start \xE2\x86\x92 Start: Next item is placed relative to previous item's START.\n" ..
+        "  Items may overlap. Good for layered textures.\n\n" ..
+        "• End \xE2\x86\x92 Start: Next item is placed AFTER previous item ends.\n" ..
+        "  No overlap. Good for SFX, dialogue, punctual sounds."
+    )
+end
+
 -- Draw frequency slider
 function TriggerSection_Noise.drawFrequencySlider(dataObj, callbacks, controlWidth, padding, checkAutoRegen)
     local imgui = globals.imgui
@@ -269,12 +344,12 @@ function TriggerSection_Noise.drawFrequencySlider(dataObj, callbacks, controlWid
     imgui.Text(globals.ctx, "Frequency")
     imgui.SameLine(globals.ctx)
     globals.Utils.HelpMarker(
-        "Controls the speed of density variations over time. " ..
-        "Measured in cycles per 10 seconds.\n\n" ..
-        "• 0.1 = Very slow (one cycle every 100 seconds) - for long, evolving ambient textures\n" ..
-        "• 1.0 = Default (one cycle every 10 seconds) - balanced variation\n" ..
-        "• 5.0 = Fast (5 cycles per 10 seconds) - for dynamic, rapidly changing patterns\n" ..
-        "• 10.0 = Very fast (one cycle per second) - for quick, jittery effects"
+        "Controls the speed of density variations over time (Hz).\n" ..
+        "Only affects the noise curve shape, NOT placement precision.\n\n" ..
+        "• 0.01 = Very slow (one cycle every 100 seconds)\n" ..
+        "• 0.1 = Default (one cycle every 10 seconds)\n" ..
+        "• 1.0 = Fast (one cycle per second)\n" ..
+        "• 10.0 = Very fast (ten cycles per second)"
     )
 end
 
