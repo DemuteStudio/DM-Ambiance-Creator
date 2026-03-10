@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.17.8-beta
+@version 0.17.9-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -14,6 +14,16 @@
     [nomain] Modules/Export/*.lua
     Icons/*.png
 @changelog
+  # Version 0.17.9-beta - Noise Types (Ridged, Worley, Sine)
+
+  ## New Features
+  + Noise: Add Noise Type selector with 4 curve shapes
+    - Perlin: Smooth organic curves (wind, rain, nature)
+    - Ridged: Sharp peaks with calm valleys (thunder, bursts)
+    - Worley: Cluster patterns with gaps (swarms, sporadic activity)
+    - Sine: Perfectly periodic wave (rhythmic pulses, breathing)
+  + Noise: Preview and generation both support all noise types
+
   # Version 0.17.8-beta - Noise Mode Resolution & Fixes
 
   ## New Features
@@ -149,7 +159,7 @@ end
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.17.8-beta",          -- Script version (sync with @version header)
+    version = "0.17.9-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
