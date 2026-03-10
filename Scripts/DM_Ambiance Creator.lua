@@ -1,6 +1,6 @@
 --[[
 @description DM_Ambiance Creator
-@version 0.17.6-beta
+@version 0.17.7-beta
 @about
     The Ambiance Creator is a tool that makes it easy to create soundscapes by randomly placing audio elements on the REAPER timeline according to user parameters.
 @author Anthony Deneyer
@@ -14,6 +14,20 @@
     [nomain] Modules/Export/*.lua
     Icons/*.png
 @changelog
+  # Version 0.17.7-beta - Keep Existing Tracks Fix & Generation Improvements
+
+  ## New Features
+  + Generation: Nest generated tracks inside selected parent track
+  + Generation: Apply preset nesting to generated track hierarchy
+  + MCP Remote execution support for Claude Code integration
+
+  ## Bug Fixes
+  * Fix: "Keep existing tracks" now preserves content outside time selection
+    - Previously, regenerating at a new position would erase all existing items
+    - Now only items within the current time selection are replaced
+  * Fix: Renamed option to "Keep existing tracks and content" for clarity
+  * Fix: Remove "Export - " prefix from export track names
+
   # Version 0.17.6-beta - Export Multichannel & Bug Fixes
 
   ## New Features
@@ -115,7 +129,7 @@ end
 
 -- Global state shared across modules and UI
 local globals = {
-    version = "0.17.6-beta",          -- Script version (sync with @version header)
+    version = "0.17.7-beta",          -- Script version (sync with @version header)
     items = {},                       -- Stores all items (folders and groups at top-level) - PATH-BASED SYSTEM
     timeSelectionValid = false,       -- Indicates if a valid time selection exists in the project
     startTime = 0,                    -- Start time of the current time selection
